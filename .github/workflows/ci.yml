@@ -1,0 +1,60 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: pip install ruff
+      - run: ruff check sdk/ server/
+
+  test-sdk:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: |
+          cd sdk
+          pip install -e ".[dev]"
+      - run: cd sdk && pytest tests/ -v
+
+  test-server:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: agentproof
+          POSTGRES_PASSWORD: agentproof
+          POSTGRES_DB: agentproof
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install server
+        run: |
+          cd server
+          pip install -e ".[dev]"
+      - name: Run tests
+        env:
+          DATABASE_URL: postgresql+asyncpg://agentproof:agentproof@localhost:5432/agentproof
+        run: cd server && pytest tests/ -v

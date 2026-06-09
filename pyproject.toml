@@ -1,0 +1,23 @@
+# Root configuration for the AgentProof monorepo.
+# Individual packages (sdk/, server/, demo_agent/) have their own pyproject.toml files.
+# This file configures workspace-wide tooling: ruff, pytest defaults.
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+extend-exclude = [
+    "**/migrations/**",
+    "dashboard/**",
+]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "N", "UP", "B", "SIM"]
+ignore = ["E501"]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["sdk/tests", "server/tests"]

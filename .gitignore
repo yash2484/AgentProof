@@ -1,0 +1,63 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+dist/
+*.egg-info/
+*.egg
+MANIFEST
+
+# Virtual environments
+.venv/
+venv/
+env/
+ENV/
+
+# Secrets and local config
+.env
+.env.local
+.env.*.local
+agentproof.yaml
+!agentproof.yaml.example
+
+# Testing
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+.tox/
+.nox/
+coverage.xml
+.hypothesis/
+
+# Type checking / linting
+.mypy_cache/
+.ruff_cache/
+.dmypy.json
+
+# Node / Frontend
+node_modules/
+.vite/
+*.log
+npm-debug.log*
+yarn-debug.log*
+pnpm-debug.log*
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# Project-specific
+demo_agent/demo_agent/data/chroma_db/
+*.sql.bak
+report.json
+reports/
+logs/

@@ -1,0 +1,28 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "agentproof"
+version = "0.1.0"
+description = "Framework-agnostic eval, observability, and security harness for multi-agent systems"
+readme = "../README.md"
+license = "MIT"
+requires-python = ">=3.11"
+authors = [
+    { name = "Yash", email = "your@email.com" },
+]
+dependencies = [
+    "pydantic>=2.0",
+    "httpx>=0.25.0",
+    "typing-extensions>=4.8",
+]
+
+[project.optional-dependencies]
+langgraph = ["langgraph>=0.2.0"]
+autogen = ["autogen-agentchat>=0.4.0"]
+all = ["langgraph>=0.2.0", "autogen-agentchat>=0.4.0"]
+dev = ["pytest>=8.0", "pytest-asyncio>=0.23"]
+
+[tool.hatch.build.targets.wheel]
+packages = ["agentproof"]
