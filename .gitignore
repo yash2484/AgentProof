@@ -20,8 +20,8 @@ ENV/
 .env
 .env.local
 .env.*.local
-agentproof.yaml
-!agentproof.yaml.example
+# Note: agentproof.yaml IS tracked (the default Phase-2 eval config the CLI/API
+# load). agentproof.yaml.example remains the full annotated reference.
 
 # Testing
 .pytest_cache/
