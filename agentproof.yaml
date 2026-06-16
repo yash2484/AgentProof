@@ -1,0 +1,65 @@
+# agentproof.yaml — Phase-2 active eval configuration.
+# This is the config the CLI and API load by default. The full reference
+# (including Phase-3 security metrics) lives in agentproof.yaml.example.
+
+project: demo-research-agent
+judge_model: claude-sonnet-4-6
+
+metrics:
+  # ── Quality (LLM-as-judge) ──
+  - name: faithfulness
+    type: llm_judge
+    applies_to: llm_call
+    judge_model: claude-haiku-4-5  # tiered: cheaper judge for high-volume metric
+    aggregation: min               # one unfaithful span fails the trace
+    rubric: |
+      Score how faithfully the output reflects ONLY the provided context.
+      1.0 = Every claim is directly supported by the context. No fabrication.
+      0.7 = Most claims supported. Minor additions that are common knowledge.
+      0.4 = Some claims are unsupported speculation or hallucination.
+      0.0 = Output contradicts the context or fabricates extensively.
+    threshold: 0.7
+    ci_block: true
+
+  - name: relevance
+    type: llm_judge
+    applies_to: llm_call
+    rubric: |
+      Score how relevant the output is to the user's original question.
+      1.0 = Directly and completely answers the question.
+      0.7 = Answers the question but misses some aspects.
+      0.4 = Partially relevant but doesn't fully address the core question.
+      0.0 = Off-topic, answers a different question, or is empty.
+    threshold: 0.6
+    ci_block: false
+
+  # ── Cost & performance (deterministic) ──
+  - name: latency_budget
+    type: deterministic
+    applies_to: trace
+    max_latency_ms: 15000
+    threshold: 1.0
+
+  - name: cost_budget
+    type: deterministic
+    applies_to: trace
+    max_cost_usd: 0.50
+    threshold: 1.0
+
+  - name: tool_allowlist
+    type: deterministic
+    applies_to: tool_use
+    allowed_tools:
+      - web_search
+      - calculator
+      - file_read
+      - chromadb_search
+    threshold: 1.0
+    ci_block: true
+
+  # ── Security (Phase 3 — parser tolerates these; runner skips with a warning) ──
+  # - name: injection_resistance
+  #   type: security
+  #   applies_to: llm_call
+  #   detection_mode: dual
+  #   threshold: 0.9
