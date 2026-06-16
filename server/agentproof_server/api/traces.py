@@ -14,7 +14,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from sqlalchemy import delete, func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -201,11 +201,11 @@ async def get_trace_tree(
     return [build(root, frozenset()) for root in roots]
 
 
-@router.delete("/traces/{trace_id}", status_code=204)
+@router.delete("/traces/{trace_id}", status_code=204, response_class=Response)
 async def delete_trace(
     trace_id: str,
     db: AsyncSession = Depends(get_db),
-) -> None:
+) -> Response:
     """Delete a trace and its spans (cascade). 404 if it does not exist."""
     existing = (
         await db.execute(
@@ -218,3 +218,4 @@ async def delete_trace(
     await db.execute(
         delete(TraceModel).where(TraceModel.trace_id == trace_id)
     )
+    return Response(status_code=204)
