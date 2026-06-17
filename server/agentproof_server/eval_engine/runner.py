@@ -89,6 +89,12 @@ class EvalRunner:
     def _make_result(
         self, trace_dict: dict, metric: MetricConfig, score: EvalScore, now: datetime
     ) -> EvalResult:
+        """Build an EvalResult persisted at the trace level.
+
+        ``span_id`` is intentionally left as the EvalResult default (None) even
+        for span-level metrics: per-span detail is preserved inside ``details``
+        and ``raw_judge_output`` rather than as separate span-keyed rows.
+        """
         return EvalResult(
             trace_id=trace_dict.get("trace_id", ""),
             metric_name=metric.name,

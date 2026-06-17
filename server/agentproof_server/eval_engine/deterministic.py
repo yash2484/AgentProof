@@ -38,6 +38,9 @@ class DeterministicEvaluator:
 
 def _budget_score(value: float | None, field: str, limit: float) -> EvalScore:
     """Shared logic for the three trace-level budget evaluators."""
+    # ``limit`` is guaranteed non-None here: ``resolve_deterministic_field``
+    # ensures exactly one budget field is populated before the evaluator is
+    # constructed, so ``value <= limit`` is always a valid comparison.
     if value is None:
         return EvalScore(
             value=0.0,
