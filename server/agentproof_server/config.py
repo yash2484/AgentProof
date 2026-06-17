@@ -26,6 +26,8 @@ class Settings(BaseSettings):
     anthropic_api_key: str = ""
     openai_api_key: str = ""
     project_name: str = "AgentProof"
+    # Path to the active eval config, resolved relative to the repo root.
+    eval_config_path: str = "agentproof.yaml"
     # NoDecode: skip pydantic-settings' JSON decoding so the validator below
     # can accept a comma-separated string from ``.env``.
     cors_origins: Annotated[list[str], NoDecode] = ["http://localhost:5173"]

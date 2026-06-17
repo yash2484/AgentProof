@@ -13,6 +13,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
+from agentproof_server.api.evals import router as evals_router
 from agentproof_server.api.traces import router as traces_router
 from agentproof_server.config import settings
 from agentproof_server.db.session import create_tables
@@ -53,3 +54,4 @@ async def health() -> dict:
 
 
 app.include_router(traces_router, prefix="/api/v1", tags=["traces"])
+app.include_router(evals_router, prefix="/api/v1", tags=["evals"])

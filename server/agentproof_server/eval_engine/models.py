@@ -1,0 +1,101 @@
+"""
+Pydantic data models for the eval engine.
+
+These are deliberately separate from the SDK span models and the SQLAlchemy
+ORM. ``EvalResult`` mirrors the columns of the Phase-1 ``eval_results`` table
+so a result can be persisted without a translation layer.
+"""
+
+from __future__ import annotations
+
+from datetime import datetime
+from enum import Enum
+from typing import Literal
+
+from pydantic import BaseModel, Field
+
+
+class MetricType(str, Enum):
+    """The kinds of evaluation a metric can perform."""
+
+    DETERMINISTIC = "deterministic"
+    LLM_JUDGE = "llm_judge"
+    SECURITY = "security"  # parsed in Phase 2; evaluators land in Phase 3
+    COMPOSITE = "composite"
+
+
+class EvalScore(BaseModel):
+    """The raw output of running one evaluator (before it becomes a result row)."""
+
+    value: float
+    explanation: str
+    details: dict | None = None
+    raw_judge_output: dict | None = None
+    latency_ms: int | None = None
+
+
+class EvalResult(BaseModel):
+    """A single metric's outcome on a trace or span — matches ``eval_results``."""
+
+    trace_id: str
+    span_id: str | None = None
+    metric_name: str
+    metric_type: MetricType
+    score: float
+    explanation: str | None = None
+    threshold: float | None = None
+    passed: bool
+    details: dict | None = None
+    raw_judge_output: dict | None = None
+    evaluated_at: datetime
+    baseline_id: str | None = None
+
+
+class MetricConfig(BaseModel):
+    """One metric as declared in ``agentproof.yaml``."""
+
+    name: str
+    type: MetricType
+    applies_to: str
+    threshold: float = 0.7
+    regression_alert: bool = True
+    ci_block: bool = True
+
+    # llm_judge
+    rubric: str | None = None
+    judge_model: str | None = None
+    aggregation: Literal["mean", "min", "max"] = "mean"
+
+    # deterministic
+    allowed_tools: list[str] | None = None
+    max_latency_ms: int | None = None
+    max_cost_usd: float | None = None
+    max_tokens: int | None = None
+    pattern: str | None = None
+
+    # composite
+    weights: dict[str, float] | None = None
+
+    # security (Phase 3 — parsed, not evaluated yet)
+    detection_mode: str | None = None
+    sensitive_patterns: list[str] | None = None
+
+
+class EvalConfig(BaseModel):
+    """A parsed, validated eval configuration."""
+
+    project: str
+    judge_model: str = "claude-sonnet-4-6"
+    metrics: list[MetricConfig] = Field(default_factory=list)
+
+
+class BatchEvalReport(BaseModel):
+    """Aggregated results across a batch of evaluated traces."""
+
+    results: list[EvalResult]
+    summary: dict
+    overall_passed: bool
+    evaluated_traces: int
+    total_metrics: int
+    failed_metrics: list[str]
+    timestamp: datetime
