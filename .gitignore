@@ -61,3 +61,7 @@ demo_agent/demo_agent/data/chroma_db/
 report.json
 reports/
 logs/
+
+# Local agent working artifacts (planning scratch, TDD checklists, session
+# context). Kept locally for cross-session continuity; not part of the repo.
+.claude/

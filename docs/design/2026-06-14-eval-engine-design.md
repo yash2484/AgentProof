@@ -1,6 +1,6 @@
 # Phase 2 — Eval Engine: Design Spec
 
-**Status:** Vetted (design approved 2026-06-14). Ready for `writing-plans` → execution.
+**Status:** Approved 2026-06-14 · Implemented in Phase 2.
 **Builds on:** Phase 1 (`phase-1` tag) — trace schema, collector SDK, FastAPI storage API, async Postgres.
 **Owner:** Yash · **Judge model default:** `claude-sonnet-4-6`
 
@@ -145,7 +145,7 @@ once `ANTHROPIC_API_KEY` is present.
 
 ---
 
-## 8. Suggested build order (for `writing-plans`)
+## 8. Build order
 
 1. `models.py` (manual)
 2. `config_parser.py` + real `agentproof.yaml` + `settings.eval_config_path`
