@@ -9,19 +9,19 @@ before they reach production.
 
 ## Status: Active Development
 
-Built in phases (see `AgentProof-Complete-Build-Guide`). Current milestone: **Phase 1 complete** (`phase-1` tag).
+Built in phases (see `AgentProof-Complete-Build-Guide`). Current milestone: **Phase 2 complete** (`phase-2-eval-engine` branch).
 
 | Phase | Feature | State |
 |-------|---------|-------|
 | 0 | Monorepo scaffolding, Docker, CI | ✅ Done |
 | 1 | Trace schema + collector SDK + storage API | ✅ Done |
-| 2 | Eval engine (deterministic + LLM-as-judge via Claude) | ⏳ Next |
+| 2 | Eval engine (deterministic + LLM-as-judge via Claude) | ✅ Done |
 | 3 | Security eval module (prompt injection, tool misuse, data exfiltration) | ◻ Planned |
 | 4 | Regression detector (Welch's t-test) + CI/CD GitHub Action | ◻ Planned |
 | 5 | Dashboard (trace waterfall, eval timeseries, security reports) | ◻ Planned |
 | 6–7 | Demo agent, narrative, docs, launch | ◻ Planned |
 
-### What works today (Phase 1)
+### What works today (Phase 2)
 
 - **Trace data model** — a DAG of typed spans (`llm_call`, `tool_use`, `retrieval`,
   `agent_handoff`, `human_decision`) with multi-parent support for parallel/merge topologies.
@@ -31,8 +31,12 @@ Built in phases (see `AgentProof-Complete-Build-Guide`). Current milestone: **Ph
 - **Storage API** (FastAPI + Postgres) — batch/single trace ingestion, filtered listing,
   full-trace detail, span-DAG tree view, and delete, backed by SQLAlchemy 2.0 (async) with
   GIN/composite indexes. Alembic async migrations scaffolded.
-- **Tests** — 22 SDK unit tests; server import + an SDK→server→DB→API integration round-trip
-  (auto-skips without a live Postgres). `ruff` clean across `sdk/` and `server/`.
+- **Eval Engine** — deterministic + LLM-as-judge + composite evaluators driven by
+  `agentproof.yaml`, runnable via `python -m agentproof_server.eval_engine.cli evaluate
+  --trace-id <id>` and the `/api/v1/evals/*` endpoints. Results persist to `eval_results`
+  and are readable via `GET /api/v1/evals/results/{trace_id}`.
+- **Tests** — 62 unit tests + integration tests (auto-skips without a live server/key).
+  `ruff` clean across `sdk/` and `server/`.
 
 ## Quick Start
 
