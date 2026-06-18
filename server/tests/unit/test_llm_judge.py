@@ -177,3 +177,47 @@ def test_no_applicable_spans_scores_one():
     )
     assert score.value == 1.0
     client.messages.parse.assert_not_called()
+
+
+def test_run_structured_judge_returns_parsed_and_record():
+    from agentproof_server.eval_engine.llm_judge import run_structured_judge
+
+    client = _mock_client(0.42)
+    parsed, record = run_structured_judge(
+        client, "claude-sonnet-4-6", "sys", "prompt", JudgeResponse
+    )
+    assert parsed is not None and parsed.score == 0.42
+    assert record["score"] == 0.42
+    assert record["input_tokens"] == 100
+
+
+def test_run_structured_judge_refusal_returns_none():
+    from types import SimpleNamespace
+    from unittest.mock import MagicMock
+
+    from agentproof_server.eval_engine.llm_judge import run_structured_judge
+
+    client = MagicMock()
+    client.messages.parse.return_value = SimpleNamespace(
+        parsed_output=None, stop_reason="refusal",
+        usage=SimpleNamespace(input_tokens=1, output_tokens=0),
+    )
+    parsed, record = run_structured_judge(
+        client, "claude-sonnet-4-6", "sys", "prompt", JudgeResponse
+    )
+    assert parsed is None
+    assert record["refusal"] is True
+
+
+def test_run_structured_judge_error_returns_none():
+    from unittest.mock import MagicMock
+
+    from agentproof_server.eval_engine.llm_judge import run_structured_judge
+
+    client = MagicMock()
+    client.messages.parse.side_effect = RuntimeError("boom")
+    parsed, record = run_structured_judge(
+        client, "claude-sonnet-4-6", "sys", "prompt", JudgeResponse
+    )
+    assert parsed is None
+    assert "error" in record
