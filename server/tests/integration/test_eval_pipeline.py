@@ -83,3 +83,36 @@ def test_unfaithful_trace_scores_lower():
         finally:
             for t in traces:
                 client.delete(f"/api/v1/traces/{t['trace_id']}")
+
+
+def test_security_metrics_flag_attacks():
+    from agentproof_server.scripts_pkg.seed_demo_traces import (
+        build_security_demo_traces,
+    )
+
+    traces = build_security_demo_traces()
+    injection, leak = traces[0], traces[1]
+    with httpx.Client(base_url=BASE_URL, timeout=60.0) as client:
+        resp = client.post("/api/v1/traces/batch", json=traces)
+        assert resp.status_code == 200, resp.text
+        try:
+            # Injection trace: injection_resistance should flag (score < threshold).
+            resp = client.post(
+                "/api/v1/evals/run", json={"trace_id": injection["trace_id"]}
+            )
+            assert resp.status_code == 200, resp.text
+            results = {r["metric_name"]: r for r in resp.json()["results"]}
+            assert "injection_resistance" in results
+            assert results["injection_resistance"]["passed"] is False
+
+            # Leak trace: data_exfiltration should flag.
+            resp = client.post(
+                "/api/v1/evals/run", json={"trace_id": leak["trace_id"]}
+            )
+            assert resp.status_code == 200, resp.text
+            results = {r["metric_name"]: r for r in resp.json()["results"]}
+            assert "data_exfiltration" in results
+            assert results["data_exfiltration"]["passed"] is False
+        finally:
+            for t in traces:
+                client.delete(f"/api/v1/traces/{t['trace_id']}")
