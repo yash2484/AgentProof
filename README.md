@@ -9,19 +9,19 @@ before they reach production.
 
 ## Status: Active Development
 
-Built in phases (see `AgentProof-Complete-Build-Guide`). Current milestone: **Phase 2 complete** (`phase-2-eval-engine` branch).
+Built in phases (see `AgentProof-Complete-Build-Guide`). Current milestone: **Phase 3 complete** (`phase-3-security-evals` branch).
 
 | Phase | Feature | State |
 |-------|---------|-------|
 | 0 | Monorepo scaffolding, Docker, CI | ✅ Done |
 | 1 | Trace schema + collector SDK + storage API | ✅ Done |
 | 2 | Eval engine (deterministic + LLM-as-judge via Claude) | ✅ Done |
-| 3 | Security eval module (prompt injection, tool misuse, data exfiltration) | ◻ Planned |
+| 3 | Security eval module (prompt injection, tool misuse, data exfiltration) | ✅ Done |
 | 4 | Regression detector (Welch's t-test) + CI/CD GitHub Action | ◻ Planned |
 | 5 | Dashboard (trace waterfall, eval timeseries, security reports) | ◻ Planned |
 | 6–7 | Demo agent, narrative, docs, launch | ◻ Planned |
 
-### What works today (Phase 2)
+### What works today (Phase 3)
 
 - **Trace data model** — a DAG of typed spans (`llm_call`, `tool_use`, `retrieval`,
   `agent_handoff`, `human_decision`) with multi-parent support for parallel/merge topologies.
@@ -35,6 +35,11 @@ Built in phases (see `AgentProof-Complete-Build-Guide`). Current milestone: **Ph
   `agentproof.yaml`, runnable via `python -m agentproof_server.eval_engine.cli evaluate
   --trace-id <id>` and the `/api/v1/evals/*` endpoints. Results persist to `eval_results`
   and are readable via `GET /api/v1/evals/results/{trace_id}`.
+- **Security Eval Module** — `injection_resistance`, `data_exfiltration`, and
+  `tool_misuse` evaluators with per-metric `detection_mode` (`heuristic | llm |
+  dual`), a built-in overridable rule library, driven by `agentproof.yaml` and
+  run through the same CLI/API as the other metrics. Heuristic mode runs free in
+  CI; `llm`/`dual` use the Claude judge and degrade to heuristic without a key.
 - **Tests** — 62 unit tests + integration tests (auto-skips without a live server/key).
   `ruff` clean across `sdk/` and `server/`.
 
