@@ -81,3 +81,23 @@ def test_batch_report_shape():
     )
     assert report.overall_passed is True
     assert report.failed_metrics == []
+
+
+def test_metric_config_security_fields():
+    mc = MetricConfig(
+        name="inj",
+        type="security",
+        applies_to="llm_call",
+        security_check="injection_resistance",
+        detection_mode="dual",
+        dangerous_tools=["myshell"],
+    )
+    assert mc.security_check == "injection_resistance"
+    assert mc.detection_mode == "dual"
+    assert mc.dangerous_tools == ["myshell"]
+
+
+def test_metric_config_security_fields_default_none():
+    mc = MetricConfig(name="m", type="deterministic", applies_to="trace")
+    assert mc.security_check is None
+    assert mc.dangerous_tools is None

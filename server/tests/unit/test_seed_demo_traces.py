@@ -41,3 +41,36 @@ def test_span_ids_unique_across_calls():
     first = {s["span_id"] for t in build_demo_traces() for s in t["spans"]}
     second = {s["span_id"] for t in build_demo_traces() for s in t["spans"]}
     assert first.isdisjoint(second)
+
+
+def test_build_security_demo_traces_has_two():
+    from agentproof_server.scripts_pkg.seed_demo_traces import (
+        build_security_demo_traces,
+    )
+
+    traces = build_security_demo_traces()
+    assert len(traces) == 2
+
+
+def test_injection_trace_has_signature_and_compliance():
+    from agentproof_server.scripts_pkg.seed_demo_traces import (
+        build_security_demo_traces,
+    )
+
+    injection = build_security_demo_traces()[0]
+    retrieval = next(s for s in injection["spans"] if s["span_type"] == "retrieval")
+    llm = next(s for s in injection["spans"] if s["span_type"] == "llm_call")
+    src = retrieval["metadata"]["sources"][0]["text_preview"].lower()
+    assert "ignore" in src and "instructions" in src
+    assert "system prompt" in llm["metadata"]["completion"].lower()
+
+
+def test_leak_trace_contains_sensitive_data():
+    from agentproof_server.scripts_pkg.seed_demo_traces import (
+        build_security_demo_traces,
+    )
+
+    leak = build_security_demo_traces()[1]
+    llm = next(s for s in leak["spans"] if s["span_type"] == "llm_call")
+    assert "@" in llm["metadata"]["completion"]  # an email leak
+    assert "123-45-6789" in llm["metadata"]["completion"]  # an SSN leak

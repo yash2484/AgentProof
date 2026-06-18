@@ -107,14 +107,45 @@ def test_composite_without_weights_raises(tmp_path):
         load_config(_write(tmp_path, body))
 
 
-def test_security_metric_is_tolerated(tmp_path):
+def test_security_metric_loads_with_security_check(tmp_path):
     body = """
         project: demo
         metrics:
-          - {name: injection, type: security, applies_to: llm_call, detection_mode: dual}
+          - name: injection
+            type: security
+            applies_to: llm_call
+            security_check: injection_resistance
+            detection_mode: dual
     """
     cfg = load_config(_write(tmp_path, body))
-    assert cfg.metrics[0].type == "security"
+    assert cfg.metrics[0].security_check == "injection_resistance"
+
+
+def test_security_metric_without_security_check_raises(tmp_path):
+    body = """
+        project: demo
+        metrics:
+          - name: injection
+            type: security
+            applies_to: llm_call
+            detection_mode: dual
+    """
+    with pytest.raises(ConfigError, match="injection"):
+        load_config(_write(tmp_path, body))
+
+
+def test_security_metric_bad_detection_mode_raises(tmp_path):
+    body = """
+        project: demo
+        metrics:
+          - name: inj
+            type: security
+            applies_to: llm_call
+            security_check: injection_resistance
+            detection_mode: telepathy
+    """
+    with pytest.raises(ConfigError, match="detection_mode"):
+        load_config(_write(tmp_path, body))
 
 
 def test_validate_config_warns_when_no_judge_metrics(tmp_path):

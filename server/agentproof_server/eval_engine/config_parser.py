@@ -35,6 +35,9 @@ _DETERMINISTIC_FIELDS = (
     "pattern",
 )
 
+VALID_SECURITY_CHECKS = {"injection_resistance", "data_exfiltration", "tool_misuse"}
+VALID_DETECTION_MODES = {"heuristic", "llm", "dual"}
+
 
 class ConfigError(Exception):
     """Raised when ``agentproof.yaml`` is structurally or semantically invalid."""
@@ -49,6 +52,17 @@ def resolve_deterministic_field(metric: MetricConfig) -> str:
             f"{_DETERMINISTIC_FIELDS} (found {populated or 'none'})."
         )
     return populated[0]
+
+
+def resolve_security_check(metric: MetricConfig) -> str:
+    """Return the metric's security_check, or raise ConfigError naming it."""
+    check = metric.security_check
+    if check not in VALID_SECURITY_CHECKS:
+        raise ConfigError(
+            f"Security metric '{metric.name}' must set security_check to one of "
+            f"{sorted(VALID_SECURITY_CHECKS)} (found {check!r})."
+        )
+    return check
 
 
 def load_config(path: str | Path) -> EvalConfig:
@@ -85,6 +99,16 @@ def load_config(path: str | Path) -> EvalConfig:
 
         if metric.type == MetricType.COMPOSITE and not metric.weights:
             raise ConfigError(f"composite metric '{metric.name}' requires weights.")
+
+        if metric.type == MetricType.SECURITY:
+            resolve_security_check(metric)  # raises if unresolvable
+            mode = metric.detection_mode or "heuristic"
+            if mode not in VALID_DETECTION_MODES:
+                raise ConfigError(
+                    f"Security metric '{metric.name}' has invalid detection_mode "
+                    f"'{metric.detection_mode}' (use one of "
+                    f"{sorted(VALID_DETECTION_MODES)})."
+                )
 
     return config
 

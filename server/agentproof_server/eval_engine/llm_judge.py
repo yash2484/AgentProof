@@ -52,6 +52,45 @@ def _clamp(x: float) -> float:
     return max(0.0, min(1.0, x))
 
 
+def run_structured_judge(client, model: str, system: str, prompt: str, schema):
+    """Call the structured-output judge once; never raises.
+
+    Returns ``(parsed_output | None, record)``. On refusal or error the parsed
+    value is ``None`` and the record carries a ``refusal``/``error`` marker;
+    otherwise the record carries reasoning/score (if present on the schema) plus
+    token usage. Score clamping is the caller's responsibility (schemas differ).
+    """
+    try:
+        with _JUDGE_SEMAPHORE:
+            # messages.parse / output_format is the Anthropic SDK's structured-outputs
+            # surface (see SDK changelog); a version bump may affect this call.
+            response = client.messages.parse(
+                model=model,
+                max_tokens=1024,
+                system=system,
+                messages=[{"role": "user", "content": prompt}],
+                output_format=schema,
+            )
+    except Exception as exc:  # API/network/parse failure — degrade gracefully
+        return None, {"error": f"{type(exc).__name__}: {exc}"}
+
+    if (
+        getattr(response, "stop_reason", None) == "refusal"
+        or response.parsed_output is None
+    ):
+        return None, {"refusal": True}
+
+    parsed = response.parsed_output
+    usage = getattr(response, "usage", None)
+    record = {
+        "reasoning": getattr(parsed, "reasoning", None),
+        "score": getattr(parsed, "score", None),
+        "input_tokens": getattr(usage, "input_tokens", None),
+        "output_tokens": getattr(usage, "output_tokens", None),
+    }
+    return parsed, record
+
+
 class LLMJudgeEvaluator:
     """Scores spans against a rubric via a Claude judge with structured output."""
 
@@ -115,38 +154,12 @@ class LLMJudgeEvaluator:
     def _judge_one(self, trace_dict: dict, span: dict) -> tuple[float, dict]:
         """Return (clamped_score, raw_record) for one span; never raises."""
         prompt = self._build_prompt(trace_dict, span)
-        try:
-            with _JUDGE_SEMAPHORE:
-                # messages.parse / output_format is the Anthropic SDK's structured-outputs
-                # surface (see SDK changelog); a version bump may affect this call.
-                response = self.client.messages.parse(
-                    model=self.judge_model,
-                    max_tokens=1024,
-                    system=_SYSTEM_PROMPT,
-                    messages=[{"role": "user", "content": prompt}],
-                    output_format=JudgeResponse,
-                )
-        except Exception as exc:  # API/network/parse failure — degrade gracefully
-            return 0.0, {
-                "error": f"{type(exc).__name__}: {exc}",
-                "span_id": span.get("span_id"),
-            }
-
-        if (
-            getattr(response, "stop_reason", None) == "refusal"
-            or response.parsed_output is None
-        ):
-            return 0.0, {"refusal": True, "span_id": span.get("span_id")}
-
-        parsed = response.parsed_output
-        usage = getattr(response, "usage", None)
-        record = {
-            "span_id": span.get("span_id"),
-            "reasoning": parsed.reasoning,
-            "score": parsed.score,
-            "input_tokens": getattr(usage, "input_tokens", None),
-            "output_tokens": getattr(usage, "output_tokens", None),
-        }
+        parsed, record = run_structured_judge(
+            self.client, self.judge_model, _SYSTEM_PROMPT, prompt, JudgeResponse
+        )
+        record["span_id"] = span.get("span_id")
+        if parsed is None:
+            return 0.0, record
         return _clamp(parsed.score), record
 
     def evaluate(self, trace_dict: dict, spans: list[dict]) -> EvalScore:

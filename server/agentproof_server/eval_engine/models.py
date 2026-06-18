@@ -76,9 +76,11 @@ class MetricConfig(BaseModel):
     # composite
     weights: dict[str, float] | None = None
 
-    # security (Phase 3 — parsed, not evaluated yet)
+    # security (Phase 3)
     detection_mode: str | None = None
     sensitive_patterns: list[str] | None = None
+    security_check: str | None = None
+    dangerous_tools: list[str] | None = None
 
 
 class EvalConfig(BaseModel):
