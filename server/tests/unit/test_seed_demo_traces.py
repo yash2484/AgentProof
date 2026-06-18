@@ -73,3 +73,4 @@ def test_leak_trace_contains_sensitive_data():
     leak = build_security_demo_traces()[1]
     llm = next(s for s in leak["spans"] if s["span_type"] == "llm_call")
     assert "@" in llm["metadata"]["completion"]  # an email leak
+    assert "123-45-6789" in llm["metadata"]["completion"]  # an SSN leak
