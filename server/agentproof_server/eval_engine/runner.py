@@ -2,10 +2,10 @@
 """
 EvalRunner: a pure, synchronous orchestrator over trace dicts.
 
-It builds evaluators from an ``EvalConfig`` (explicit dispatch by metric type;
-unknown/security types are skipped with a warning), runs deterministic and
-llm_judge metrics per trace, then a composite pass over the already-computed
-results, and aggregates a ``BatchEvalReport`` across traces.
+It builds evaluators from an ``EvalConfig`` (explicit dispatch by metric type),
+runs deterministic, llm_judge, and security metrics per trace, then a composite
+pass over the already-computed results, and aggregates a ``BatchEvalReport``
+across traces.
 
 No database access lives here — the API wraps it in ``asyncio.to_thread`` and
 the CLI calls it directly.
@@ -18,7 +18,10 @@ from datetime import UTC, datetime
 from typing import Protocol
 
 from agentproof_server.eval_engine.composite import CompositeEvaluator
-from agentproof_server.eval_engine.config_parser import resolve_deterministic_field
+from agentproof_server.eval_engine.config_parser import (
+    resolve_deterministic_field,
+    resolve_security_check,
+)
 from agentproof_server.eval_engine.deterministic import (
     CostBudgetEvaluator,
     LatencyBudgetEvaluator,
@@ -35,6 +38,7 @@ from agentproof_server.eval_engine.models import (
     MetricConfig,
     MetricType,
 )
+from agentproof_server.eval_engine.security import SECURITY_EVALUATORS
 
 logger = logging.getLogger("agentproof_server.eval_engine")
 
@@ -64,7 +68,7 @@ class EvalRunner:
         """Populate ``_base_metrics`` and ``_composite_metrics`` from config.
 
         Malformed deterministic configs raise ``ConfigError``/``KeyError`` at
-        construction (fail-fast); unknown/security types are skipped with a
+        construction (fail-fast); unknown types are skipped with a
         warning so the runner degrades gracefully for future metric kinds.
         """
         for metric in self.config.metrics:
@@ -79,9 +83,15 @@ class EvalRunner:
                 self._base_metrics.append((metric, evaluator))
             elif metric.type == MetricType.COMPOSITE:
                 self._composite_metrics.append(metric)
-            else:  # security — Phase 3
+            elif metric.type == MetricType.SECURITY:
+                check = resolve_security_check(metric)
+                evaluator = SECURITY_EVALUATORS[check](
+                    metric, self.config.judge_model, client=self._judge_client
+                )
+                self._base_metrics.append((metric, evaluator))
+            else:
                 logger.warning(
-                    "Skipping metric '%s' of unsupported type '%s' (Phase 3+).",
+                    "Skipping metric '%s' of unknown type '%s'.",
                     metric.name,
                     metric.type,
                 )

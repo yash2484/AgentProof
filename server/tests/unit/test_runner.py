@@ -65,19 +65,25 @@ def test_passed_flag_uses_threshold():
     assert results["latency_budget"].passed is True
 
 
-def test_security_metric_is_skipped_with_warning():
+def test_security_metric_is_evaluated():
     cfg = EvalConfig(
         project="demo",
         metrics=[
-            MetricConfig(name="injection", type="security", applies_to="llm_call",
-                         detection_mode="dual"),
-            MetricConfig(name="latency_budget", type="deterministic",
-                         applies_to="trace", max_latency_ms=15000, threshold=1.0),
+            MetricConfig(
+                name="injection", type="security", applies_to="llm_call",
+                security_check="injection_resistance", detection_mode="heuristic",
+            ),
+            MetricConfig(
+                name="latency_budget", type="deterministic", applies_to="trace",
+                max_latency_ms=15000, threshold=1.0,
+            ),
         ],
     )
     runner = EvalRunner(cfg, judge_client=_judge_client(1.0))
-    results = runner.evaluate_trace(_trace())
-    assert {r.metric_name for r in results} == {"latency_budget"}
+    results = {r.metric_name: r for r in runner.evaluate_trace(_trace())}
+    assert set(results) == {"injection", "latency_budget"}
+    # Clean trace (no injection signatures) → resistant → passes.
+    assert results["injection"].passed is True
 
 
 def test_composite_runs_after_base_metrics():
