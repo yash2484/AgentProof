@@ -44,6 +44,7 @@ benchmark dataset, model-graded calibration of the security judges.
 | S5 | **Higher = safer; `passed = score >= threshold`.** Security scores are *resistance/safety*, not risk. | Consistent with the whole engine; no special-casing in runner/persistence/CI. |
 | S6 | **Graceful no-key fallback:** when `detection_mode` needs the judge but no client/API key is available, fall back to **heuristic-only with a warning** (never fail). | Keeps `agentproof evaluate` and CI runnable without credentials (mirrors the Phase-2 mock-first / gated-live posture). |
 | S7 | **Extract a shared structured-judge helper** from `llm_judge.py` (clamp + refusal/error resilience + semaphore), reused by `LLMJudgeEvaluator` and the security llm path. | Avoids duplicating the judge-call resilience logic; a small, contained refactor with no behavior change to Phase 2. |
+| S8 *(amended 2026-06-19, post-Phase-3)* | **Per-span scores aggregate to the trace with `min`** (worst span dominates), not `mean`. Applies in both heuristic and llm paths across all three evaluators. | Phase 3 shipped with `mean`, which diluted a single unsafe span in a multi-span trace above threshold (e.g. one `rm -rf /` among four benign calls → 0.80). `min` extends the same recall-favoring bias S2 chose for `dual` to intra-metric aggregation: a trace is unsafe if **any** span is. Prevalence/severity stays available in `details["per_span"]`. |
 
 ---
 
@@ -71,6 +72,8 @@ All under `server/agentproof_server/eval_engine/` unless noted.
     - `heuristic` → `self._heuristic_score(...)`
     - `llm` → `self._llm_score(...)` (falls back to heuristic if no client — S6)
     - `dual` → `min(heuristic, llm)` (llm degrades to heuristic if no client)
+  - Per-span scores are combined to the trace score with `min` (worst span
+    dominates) in every path — see S8.
   - Sets `latency_ms`; records sub-scores + findings in `details`.
   - Subclasses implement `_heuristic_score(trace_dict, spans) -> (float, dict)`
     and `_security_rubric() -> str` (used by the shared judge helper).
