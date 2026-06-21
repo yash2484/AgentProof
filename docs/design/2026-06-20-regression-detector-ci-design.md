@@ -44,7 +44,7 @@ large enough to matter (effect-size guard).
 | R3 | **File-backed, DB-free CI.** The Action evaluates a committed fixture corpus with the current config and compares to a committed baseline JSON. | Self-contained, fast, no Postgres service. The server keeps its DB path independently. |
 | R4 | **Welch's t-test via scipy.** `scipy.stats.ttest_ind(equal_var=False, alternative="less")`. | scipy ≥ 1.12 and numpy ≥ 1.26 are already server dependencies — zero new deps, and a battle-tested implementation rather than a hand-rolled t-distribution CDF. |
 | R5 | **Same corpus for baseline and candidate.** Baseline and candidate evaluate the identical committed corpus. | A green run has zero score delta; a regression can only appear when the *config or code* lowers scores on that fixed corpus — exactly the signal CI should catch. |
-| R6 | **Deterministic CI gate.** The blocking workflow runs deterministic + heuristic-security metrics only (no API key, reproducible). | LLM-judge metrics are nondeterministic; the detector still supports them, but they are excluded from the default blocking gate (opt-in, documented). |
+| R6 | **Deterministic CI gate via a dedicated config.** The workflow runs against a committed `fixtures/regression_config.yaml` containing only deterministic + heuristic-security metrics (no API key, reproducible). | A pure `llm_judge` metric with no key degrades to score 0.0, so running it in CI would be meaningless and would falsely flag a huge regression against a key-built baseline. A separate config cleanly excludes them; the main `agentproof.yaml` is untouched. The detector itself still supports llm_judge metrics for non-CI use. |
 | R7 | **Separate `regression.yml` workflow.** A new workflow file, not a job inside `ci.yml`. | Keeps the regression gate independently visible and runnable. |
 
 ## 4. Components
@@ -99,18 +99,24 @@ Two new subcommands alongside the existing DB-backed `evaluate`:
 - Both read traces from a JSON file (`[trace_dict, ...]`); no Postgres. The
   existing `evaluate` subcommand is unchanged.
 
-### 4.5 Fixtures
-- `fixtures/regression_corpus.json` — a committed corpus (~12–20 traces) built in
-  the style of `seed_demo_traces.py` (`build_demo_traces` /
-  `build_security_demo_traces`), with stable `trace_id`s and enough per-metric
-  variance for a meaningful t-test.
-- `baselines/demo-research-agent.json` — the committed pinned baseline generated
-  from that corpus with the tracked `agentproof.yaml`.
+### 4.5 Fixtures & CI config
+- `server/agentproof_server/scripts_pkg/regression_fixtures.py` — a deterministic
+  `build_regression_corpus() -> list[dict]` builder (stable `trace_id`s, no random
+  UUIDs) reusing the span shapes and proven injection/leak strings from
+  `seed_demo_traces.py`, with per-metric score spread so each baseline has variance.
+- `fixtures/regression_corpus.json` — the committed corpus, generated from the builder.
+- `fixtures/regression_config.yaml` — a committed eval config with **only
+  deterministic + heuristic-security metrics** (latency_budget, cost_budget,
+  tool_allowlist, injection_resistance, data_exfiltration, tool_misuse). No
+  `llm_judge` metrics, so the run needs no API key.
+- `baselines/demo-research-agent.json` — the committed pinned baseline, generated
+  by running the `baseline` CLI subcommand on the corpus + the CI config.
 
 ### 4.6 GitHub Action — `.github/workflows/regression.yml`
-- Triggers on `pull_request` and `push` to `main`.
-- Installs the server package, runs
-  `python -m agentproof_server.eval_engine.cli regression --traces fixtures/regression_corpus.json --baseline baselines/demo-research-agent.json`.
+- A separate workflow (not a job in `ci.yml`), triggered on `pull_request` and
+  `push` to `main`.
+- Installs the server package, then runs
+  `python -m agentproof_server.eval_engine.cli regression --traces fixtures/regression_corpus.json --baseline baselines/demo-research-agent.json --config fixtures/regression_config.yaml`.
 - **No Postgres service.** Non-zero exit fails the check.
 
 ## 5. Data flow
@@ -134,8 +140,8 @@ fixture corpus (JSON) ──EvalRunner.evaluate_batch──▶ BatchEvalReport
 - **Candidate improved** (`candidate_mean >= baseline.mean`) → never a
   regression (short-circuit), even if "significant".
 - **Metric present in config but missing from baseline** (e.g. newly added) →
-  reported as `is_regression=False` with a `reason` noting no baseline; does not
-  fail CI.
+  skipped (the check iterates over baselined metrics), so it never fails CI until
+  a baseline is re-pinned.
 - **Empty corpus** → CLI errors out (mirrors `evaluate_batch`'s existing
   `ValueError`).
 
