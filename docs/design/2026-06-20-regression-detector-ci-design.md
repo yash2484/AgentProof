@@ -59,11 +59,17 @@ large enough to matter (effect-size guard).
 - `detect_regression(baseline: Baseline, candidate_scores: Sequence[float], cfg: RegressionConfig) -> RegressionResult`
   — the decision rule:
   1. **Short-circuit:** if `candidate_mean >= baseline.mean` → not a regression.
-  2. **Sample / variance guard:** if either sample has fewer than
-     `cfg.min_sample_size` points, or the t-test returns `nan` (zero variance in
-     both samples), fall back to the absolute floor: regression iff
-     `baseline.mean - candidate_mean >= cfg.min_mean_drop`.
-  3. **Normal case:** regression iff `p < cfg.alpha` **and**
+  2. **Small-sample guard:** if either sample has fewer than
+     `cfg.min_sample_size` points, fall back to the absolute floor: regression
+     iff `baseline.mean - candidate_mean >= cfg.min_mean_drop`.
+  3. **Zero-variance guard:** if both samples are constant (zero variance), the
+     t-test is undefined — checked *before* calling scipy (no RuntimeWarning),
+     since scipy returns `p=0.0` rather than `nan` when two differing constants
+     are compared, which would otherwise slip past the step-4 effect-size guard
+     (`cohens_d` is 0 when the pooled SD is 0). Fall back to the same absolute
+     floor. A defensive `nan` check after the t-test routes any residual
+     degenerate case to the floor too.
+  4. **Normal case:** regression iff `p < cfg.alpha` **and**
      `cohens_d >= cfg.min_effect_size`.
   Each result carries a human-readable `reason`.
 
@@ -135,8 +141,12 @@ fixture corpus (JSON) ──EvalRunner.evaluate_batch──▶ BatchEvalReport
 ```
 
 ## 6. Error handling & edge cases
-- **n < `min_sample_size`** or **zero variance in both samples** → t-test `nan`;
-  fall back to the `min_mean_drop` absolute floor (§4.1 step 2).
+- **n < `min_sample_size`** → small-sample fallback to the `min_mean_drop`
+  absolute floor (§4.1 step 2).
+- **Zero variance in both samples** → t-test undefined (scipy returns `p=0.0`,
+  not `nan`, for two differing constants); a pre-scipy check routes this to the
+  same absolute floor (§4.1 step 3), avoiding both a false negative and a noisy
+  RuntimeWarning.
 - **Candidate improved** (`candidate_mean >= baseline.mean`) → never a
   regression (short-circuit), even if "significant".
 - **Metric present in config but missing from baseline** (e.g. newly added) →
