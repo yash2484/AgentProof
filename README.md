@@ -9,7 +9,7 @@ before they reach production.
 
 ## Status: Active Development
 
-Built in phases (see `AgentProof-Complete-Build-Guide`). Current milestone: **Phase 3 complete** (`phase-3-security-evals` branch).
+Built in phases (see `AgentProof-Complete-Build-Guide`). Current milestone: **Phase 4 complete** (`phase-4-regression-detector` branch).
 
 | Phase | Feature | State |
 |-------|---------|-------|
@@ -17,7 +17,7 @@ Built in phases (see `AgentProof-Complete-Build-Guide`). Current milestone: **Ph
 | 1 | Trace schema + collector SDK + storage API | ✅ Done |
 | 2 | Eval engine (deterministic + LLM-as-judge via Claude) | ✅ Done |
 | 3 | Security eval module (prompt injection, tool misuse, data exfiltration) | ✅ Done |
-| 4 | Regression detector (Welch's t-test) + CI/CD GitHub Action | ◻ Planned |
+| 4 | Regression detector (Welch's t-test) + CI/CD GitHub Action | ✅ Done |
 | 5 | Dashboard (trace waterfall, eval timeseries, security reports) | ◻ Planned |
 | 6–7 | Demo agent, narrative, docs, launch | ◻ Planned |
 
@@ -40,6 +40,13 @@ Built in phases (see `AgentProof-Complete-Build-Guide`). Current milestone: **Ph
   dual`), a built-in overridable rule library, driven by `agentproof.yaml` and
   run through the same CLI/API as the other metrics. Heuristic mode runs free in
   CI; `llm`/`dual` use the Claude judge and degrade to heuristic without a key.
+- **Regression Detector** — a pinned-baseline Welch's t-test (one-sided, with a
+  Cohen's d effect-size guard) flags statistically significant *drops* in eval
+  scores. File-based, DB-free CLI subcommands
+  (`python -m agentproof_server.eval_engine.cli baseline ...` /
+  `regression ...`) build a baseline and gate a run against it; a separate
+  `regression.yml` GitHub Action runs the check on a committed fixture corpus
+  with no database or API key.
 - **Tests** — 62 unit tests + integration tests (auto-skips without a live server/key).
   `ruff` clean across `sdk/` and `server/`.
 
