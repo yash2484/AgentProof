@@ -150,6 +150,9 @@ def cmd_regression(args) -> int:
     for name, baseline in baselines.items():
         scores = candidate.get(name, [])
         if not scores:
+            # A baseline metric with no candidate scores this run (e.g. a metric
+            # the current config no longer evaluates) cannot be assessed -> skip it
+            # rather than treat a missing sample as a 0.0 drop / false regression.
             print(f"note: metric '{name}' has no candidate scores in this run — skipped")
             continue
         results.append(detect_regression(baseline, scores, cfg))

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import math
+import warnings
 
 from agentproof_server.eval_engine.regression import cohens_d, welch_t_test
 
@@ -24,7 +25,9 @@ def test_welch_no_drop_is_not_significant():
 
 
 def test_welch_zero_variance_both_returns_nan_pvalue():
-    t, df, p = welch_t_test([1.0, 1.0, 1.0], [1.0, 1.0, 1.0])
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", RuntimeWarning)
+        t, df, p = welch_t_test([1.0, 1.0, 1.0], [1.0, 1.0, 1.0])
     assert math.isnan(p)
 
 

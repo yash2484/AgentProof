@@ -47,7 +47,7 @@ Built in phases (see `AgentProof-Complete-Build-Guide`). Current milestone: **Ph
   `regression ...`) build a baseline and gate a run against it; a separate
   `regression.yml` GitHub Action runs the check on a committed fixture corpus
   with no database or API key.
-- **Tests** — 62 unit tests + integration tests (auto-skips without a live server/key).
+- **Tests** — 123 unit tests + integration tests (auto-skips without a live server/key).
   `ruff` clean across `sdk/` and `server/`.
 
 ## Quick Start
