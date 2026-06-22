@@ -101,3 +101,52 @@ class BatchEvalReport(BaseModel):
     total_metrics: int
     failed_metrics: list[str]
     timestamp: datetime
+
+
+class Baseline(BaseModel):
+    """A pinned, file-serializable score distribution for one metric.
+
+    Carries the ``baselines`` table's core score columns; the DB-only
+    ``pinned`` / ``updated_at`` columns are not modelled here because Phase 4
+    is file-based.
+    """
+
+    project: str
+    metric_name: str
+    scores: list[float]
+    mean: float
+    std: float
+    sample_size: int
+    created_at: datetime
+
+
+class RegressionConfig(BaseModel):
+    """Thresholds governing the regression decision rule."""
+
+    alpha: float = 0.05
+    min_effect_size: float = 0.5
+    min_mean_drop: float = 0.05
+    min_sample_size: int = 2
+
+
+class RegressionResult(BaseModel):
+    """The verdict for one metric: baseline vs candidate."""
+
+    metric_name: str
+    baseline_mean: float
+    candidate_mean: float
+    delta: float  # candidate_mean - baseline_mean; negative == a drop
+    t_statistic: float | None
+    p_value: float | None
+    cohens_d: float | None
+    is_regression: bool
+    reason: str
+
+
+class RegressionReport(BaseModel):
+    """Aggregated regression verdicts across all baselined metrics."""
+
+    results: list[RegressionResult]
+    regressed_metrics: list[str]
+    passed: bool  # True == no CI-blocking regression
+    timestamp: datetime

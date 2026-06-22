@@ -1,0 +1,27 @@
+name: Regression
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  regression:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install server
+        run: |
+          cd server
+          pip install -e ".[dev]"
+      - name: Detect eval-score regressions
+        run: |
+          cd server
+          python -m agentproof_server.eval_engine.cli regression \
+            --traces ../fixtures/regression_corpus.json \
+            --baseline ../baselines/demo-research-agent.json \
+            --config ../fixtures/regression_config.yaml
