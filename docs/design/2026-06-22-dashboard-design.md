@@ -39,14 +39,23 @@ production build/serving optimization.
 - Reads `VITE_API_URL` (already provided to the container as
   `http://localhost:8000`).
 
-### API typing — generated, not hand-written
+### API typing — hand-written domain types (single source of truth)
 
-The server is FastAPI and serves an OpenAPI schema at `/openapi.json`. We
-generate TypeScript types from it with **`openapi-typescript`** via an
-`npm run gen:api` script, and the `src/api/` client consumes those generated
-types. This removes the server↔dashboard contract-drift risk: types are a build
-artifact, not hand-maintained. The generated file is committed so the app builds
-without a running server.
+The FastAPI routes currently return bare `-> dict` / `-> list[dict]`, so the
+server's OpenAPI schema does **not** describe the trace/span/eval response
+bodies — `openapi-typescript` would only generate request-param types, not the
+response shapes we actually render. Generating types therefore buys little here.
+
+Instead, the dashboard keeps **hand-written domain types** in `src/types/` that
+mirror the data contract in §10, used as the single source of truth by the
+`src/api/` client and all components. To keep them honest against the real API,
+the `api/` client tests assert the fixture shapes match these types, and the
+seed script + live API exercise the same shapes end-to-end during dev.
+
+> **Future improvement (out of scope for Phase 5):** add Pydantic
+> `response_model`s to the FastAPI endpoints so the OpenAPI schema becomes rich;
+> at that point we can switch `src/types/` to generated types via
+> `openapi-typescript`.
 
 ## 3. Views (routes)
 
@@ -90,7 +99,7 @@ minimum-width sliver), a single span, error spans, and multi-parent spans.
 dashboard/
   package.json, vite.config.ts, tsconfig.json, .eslintrc, index.html
   src/
-    api/         generated OpenAPI types + a thin typed fetch client (one fn per endpoint)
+    api/         thin typed fetch client (one fn per endpoint), typed via src/types
     hooks/       TanStack Query hooks: useTraces, useTrace, useTraceTree,
                  useEvalResults, useMetrics, useRunEval, useDeleteTrace
     pages/       TracesPage, TraceDetailPage, EvalsPage, SecurityPage
@@ -98,7 +107,7 @@ dashboard/
                  Filters, AppShell, QueryBoundary
     lib/         waterfall layout fn; formatters (formatDuration/formatCost/formatTokens);
                  SPAN_TYPE_COLORS map (single source of truth, used by waterfall, legend, panel)
-    types/       domain types not covered by generated API types
+    types/       hand-written domain types mirroring the §10 data contract (single source of truth)
     test/        fixtures + setup
 ```
 
