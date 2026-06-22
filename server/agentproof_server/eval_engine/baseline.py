@@ -46,7 +46,7 @@ def build_baselines_from_report(
 def baselines_to_json(baselines: list[Baseline]) -> str:
     """Serialize baselines to a stable ``{"baselines": [...]}`` JSON document."""
     payload = {"baselines": [b.model_dump(mode="json") for b in baselines]}
-    return json.dumps(payload, indent=2)
+    return json.dumps(payload, indent=2) + "\n"
 
 
 def baselines_from_json(text: str) -> dict[str, Baseline]:

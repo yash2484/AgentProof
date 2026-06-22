@@ -146,10 +146,13 @@ def cmd_regression(args) -> int:
         candidate.setdefault(r.metric_name, []).append(r.score)
 
     ci_block = {m.name for m in config.metrics if m.ci_block}
-    results = [
-        detect_regression(baseline, candidate.get(name, []), cfg)
-        for name, baseline in baselines.items()
-    ]
+    results = []
+    for name, baseline in baselines.items():
+        scores = candidate.get(name, [])
+        if not scores:
+            print(f"note: metric '{name}' has no candidate scores in this run — skipped")
+            continue
+        results.append(detect_regression(baseline, scores, cfg))
     regressed = [r.metric_name for r in results if r.is_regression]
     blocking = [n for n in regressed if n in ci_block]
     report_out = RegressionReport(
