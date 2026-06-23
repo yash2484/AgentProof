@@ -51,7 +51,12 @@ export function TraceDetailPage() {
       >
         <Stack spacing={1}>
           {results.map((r) => (
-            <Stack key={`${r.metric_name}-${r.span_id}`} direction="row" spacing={1} alignItems="center">
+            <Stack
+              key={`${r.metric_name}-${r.span_id ?? "trace"}-${r.evaluated_at}`}
+              direction="row"
+              spacing={1}
+              alignItems="center"
+            >
               <Chip
                 size="small"
                 color={r.passed ? "success" : "error"}

@@ -1,6 +1,6 @@
 import { useState } from "react";
-import { Box, Button, Typography } from "@mui/material";
-import { DataGrid, GridColDef } from "@mui/x-data-grid";
+import { Box, Button, Snackbar, Alert, Typography } from "@mui/material";
+import { DataGrid, GridColDef, GridPaginationModel } from "@mui/x-data-grid";
 import { useNavigate } from "react-router-dom";
 import { useTraces, useDeleteTrace } from "../hooks/queries";
 import { QueryBoundary } from "../components/QueryBoundary";
@@ -10,9 +10,19 @@ import type { Trace } from "../types";
 
 export function TracesPage() {
   const [filters, setFilters] = useState<TraceFilters>({});
+  const [pagination, setPagination] = useState<GridPaginationModel>({ page: 0, pageSize: 50 });
   const navigate = useNavigate();
-  const { data, isLoading, isError, refetch } = useTraces(filters);
+  const { data, isLoading, isError, refetch } = useTraces({
+    ...filters,
+    limit: pagination.pageSize,
+    offset: pagination.page * pagination.pageSize,
+  });
   const del = useDeleteTrace();
+
+  const onFilterChange = (next: TraceFilters) => {
+    setFilters(next);
+    setPagination((p) => ({ ...p, page: 0 }));
+  };
 
   const columns: GridColDef<Trace>[] = [
     { field: "name", headerName: "Name", flex: 1, minWidth: 160 },
@@ -38,7 +48,9 @@ export function TracesPage() {
           color="error"
           onClick={(e) => {
             e.stopPropagation();
-            del.mutate(params.row.trace_id);
+            if (window.confirm(`Delete trace "${params.row.name}"? This cannot be undone.`)) {
+              del.mutate(params.row.trace_id);
+            }
           }}
         >
           Delete
@@ -52,7 +64,7 @@ export function TracesPage() {
   return (
     <Box>
       <Typography variant="h5" sx={{ mb: 2 }}>Traces</Typography>
-      <ProjectStatusFilters value={filters} onChange={setFilters} />
+      <ProjectStatusFilters value={filters} onChange={onFilterChange} />
       <QueryBoundary
         isLoading={isLoading}
         isError={isError}
@@ -67,9 +79,19 @@ export function TracesPage() {
             getRowId={(row) => row.trace_id}
             onRowClick={(params) => navigate(`/traces/${params.row.trace_id}`)}
             disableRowSelectionOnClick
+            paginationMode="server"
+            rowCount={data?.total ?? 0}
+            paginationModel={pagination}
+            onPaginationModelChange={setPagination}
+            pageSizeOptions={[25, 50, 100]}
           />
         </div>
       </QueryBoundary>
+      <Snackbar open={del.isError} autoHideDuration={6000} onClose={() => del.reset()}>
+        <Alert severity="error" onClose={() => del.reset()}>
+          Failed to delete trace.
+        </Alert>
+      </Snackbar>
     </Box>
   );
 }

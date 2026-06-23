@@ -35,7 +35,7 @@ export function EvalsPage() {
         emptyMessage="No eval results yet — run evals to populate this chart."
         onRetry={refetch}
       >
-        <ScoreTimeseries results={results} />
+        <ScoreTimeseries results={results} metrics={metrics.data?.metrics ?? []} />
       </QueryBoundary>
     </Box>
   );

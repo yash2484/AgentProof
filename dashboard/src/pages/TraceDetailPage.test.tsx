@@ -36,6 +36,14 @@ describe("TraceDetailPage", () => {
     await waitFor(() => expect(api.runEval).toHaveBeenCalledWith("tr-1"));
   });
 
+  it("refetches eval results after a successful run-eval", async () => {
+    renderPage();
+    await waitFor(() => expect(api.getEvalResultsForTrace).toHaveBeenCalledTimes(1));
+    fireEvent.click(screen.getByRole("button", { name: /run eval/i }));
+    // useRunEval onSuccess invalidates the trace's eval-results query -> refetch.
+    await waitFor(() => expect((api.getEvalResultsForTrace as ReturnType<typeof vi.fn>).mock.calls.length).toBeGreaterThan(1));
+  });
+
   it("opens the span panel when a bar is clicked", async () => {
     renderPage();
     await waitFor(() => screen.getByText("generate"));

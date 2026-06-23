@@ -14,13 +14,18 @@ export function useTraces(params: Parameters<typeof api.listTraces>[0] = {}) {
 }
 
 export function useTraceTree(id: string) {
-  return useQuery({ queryKey: queryKeys.traceTree(id), queryFn: () => api.getTraceTree(id) });
+  return useQuery({
+    queryKey: queryKeys.traceTree(id),
+    queryFn: () => api.getTraceTree(id),
+    enabled: !!id,
+  });
 }
 
 export function useEvalResultsForTrace(id: string) {
   return useQuery({
     queryKey: queryKeys.evalResultsForTrace(id),
     queryFn: () => api.getEvalResultsForTrace(id),
+    enabled: !!id,
   });
 }
 
