@@ -221,6 +221,17 @@ class SpanContext:
     def set_tags(self, **tags: str) -> None:
         self._tags.update({k: str(v) for k, v in tags.items()})
 
+    def set_error(self, message: str) -> None:
+        """Mark this span as errored without raising an exception.
+
+        Used by adapters that observe a node-level failure but must let the
+        surrounding run complete (so the trace is still exported with an
+        error span). ``__exit__`` only flips status to ERROR on a raised
+        exception; this provides the non-raising path.
+        """
+        self._status = SpanStatus.ERROR
+        self._error_message = message
+
     # -- conversion ---------------------------------------------------------
 
     def to_span(self) -> Span:

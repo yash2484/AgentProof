@@ -214,3 +214,17 @@ class TestTraceFunction:
             return _span
 
         assert f(21) == 42  # Would TypeError if _span were wrongly injected.
+
+
+def test_set_error_marks_span_error_without_exception():
+    from agentproof import AgentProof, SpanType
+    from agentproof.spans import SpanStatus
+
+    ap = AgentProof(server_url="http://localhost:8000", project="t")
+    with ap.trace("trace") as t:
+        with t.span("tool", SpanType.TOOL_USE) as s:
+            s.record_tool_use(tool_name="web_search", tool_input={"q": "x"}, success=False)
+            s.set_error("HTTP 503 from search provider")
+        span = t._spans[-1]
+    assert span.status == SpanStatus.ERROR
+    assert span.error_message == "HTTP 503 from search provider"
