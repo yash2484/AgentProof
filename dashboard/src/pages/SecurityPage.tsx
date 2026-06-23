@@ -2,6 +2,7 @@ import { Box, Stack, Typography } from "@mui/material";
 import { useEvalResults, useMetrics } from "../hooks/queries";
 import { QueryBoundary } from "../components/QueryBoundary";
 import { SecurityReportCard } from "../components/SecurityReportCard";
+import { useProject } from "../context/ProjectContext";
 import type { MetricDef } from "../types";
 
 export function securityMetricNames(metrics: MetricDef[]): string[] {
@@ -11,7 +12,8 @@ export function securityMetricNames(metrics: MetricDef[]): string[] {
 export function SecurityPage() {
   const metrics = useMetrics();
   const names = securityMetricNames(metrics.data?.metrics ?? []);
-  const { data, isLoading, isError, refetch } = useEvalResults({ limit: 200 });
+  const { project } = useProject();
+  const { data, isLoading, isError, refetch } = useEvalResults({ project, limit: 200 });
 
   const securityResults = (data?.results ?? []).filter(
     (r) => r.metric_type === "security" || names.includes(r.metric_name),

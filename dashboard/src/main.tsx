@@ -5,6 +5,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter } from "react-router-dom";
 import App from "./App";
 import { theme } from "./theme";
+import { ProjectProvider } from "./context/ProjectContext";
 
 const queryClient = new QueryClient();
 
@@ -13,9 +14,11 @@ ReactDOM.createRoot(document.getElementById("root")!).render(
     <QueryClientProvider client={queryClient}>
       <ThemeProvider theme={theme}>
         <CssBaseline />
-        <BrowserRouter>
-          <App />
-        </BrowserRouter>
+        <ProjectProvider>
+          <BrowserRouter>
+            <App />
+          </BrowserRouter>
+        </ProjectProvider>
       </ThemeProvider>
     </QueryClientProvider>
   </React.StrictMode>,

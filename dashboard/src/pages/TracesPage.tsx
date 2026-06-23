@@ -4,7 +4,8 @@ import { DataGrid, GridColDef, GridPaginationModel } from "@mui/x-data-grid";
 import { useNavigate } from "react-router-dom";
 import { useTraces, useDeleteTrace } from "../hooks/queries";
 import { QueryBoundary } from "../components/QueryBoundary";
-import { ProjectStatusFilters, TraceFilters } from "../components/Filters";
+import { TraceListFilters, TraceFilters } from "../components/Filters";
+import { useProject } from "../context/ProjectContext";
 import { formatCost, formatDuration, formatTokens } from "../lib/format";
 import type { Trace } from "../types";
 
@@ -12,8 +13,10 @@ export function TracesPage() {
   const [filters, setFilters] = useState<TraceFilters>({});
   const [pagination, setPagination] = useState<GridPaginationModel>({ page: 0, pageSize: 50 });
   const navigate = useNavigate();
+  const { project } = useProject();
   const { data, isLoading, isError, refetch } = useTraces({
     ...filters,
+    project,
     limit: pagination.pageSize,
     offset: pagination.page * pagination.pageSize,
   });
@@ -64,7 +67,7 @@ export function TracesPage() {
   return (
     <Box>
       <Typography variant="h5" sx={{ mb: 2 }}>Traces</Typography>
-      <ProjectStatusFilters value={filters} onChange={onFilterChange} />
+      <TraceListFilters value={filters} onChange={onFilterChange} />
       <QueryBoundary
         isLoading={isLoading}
         isError={isError}

@@ -69,6 +69,7 @@ export function listEvalResults(params: {
   trace_id?: string;
   metric_name?: string;
   passed?: boolean;
+  project?: string;
   limit?: number;
   offset?: number;
 } = {}): Promise<EvalResultsResponse> {

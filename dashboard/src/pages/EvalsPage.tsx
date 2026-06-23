@@ -3,13 +3,17 @@ import { Box, MenuItem, TextField, Typography } from "@mui/material";
 import { useEvalResults, useMetrics } from "../hooks/queries";
 import { QueryBoundary } from "../components/QueryBoundary";
 import { ScoreTimeseries } from "../components/ScoreTimeseries";
+import { useProject } from "../context/ProjectContext";
 
 export function EvalsPage() {
   const [metricName, setMetricName] = useState<string>("");
   const metrics = useMetrics();
-  const { data, isLoading, isError, refetch } = useEvalResults(
-    metricName ? { metric_name: metricName, limit: 200 } : { limit: 200 },
-  );
+  const { project } = useProject();
+  const { data, isLoading, isError, refetch } = useEvalResults({
+    ...(metricName ? { metric_name: metricName } : {}),
+    project,
+    limit: 200,
+  });
   const results = data?.results ?? [];
 
   return (

@@ -1,7 +1,6 @@
 import { MenuItem, Stack, TextField } from "@mui/material";
 
 export interface TraceFilters {
-  project?: string;
   status?: string;
   start_after?: string;
   start_before?: string;
@@ -9,7 +8,7 @@ export interface TraceFilters {
 
 const STATUSES = ["", "ok", "error", "running"];
 
-export function ProjectStatusFilters({
+export function TraceListFilters({
   value,
   onChange,
 }: {
@@ -18,12 +17,6 @@ export function ProjectStatusFilters({
 }) {
   return (
     <Stack direction="row" spacing={2} sx={{ mb: 2 }}>
-      <TextField
-        label="Project"
-        size="small"
-        value={value.project ?? ""}
-        onChange={(e) => onChange({ ...value, project: e.target.value || undefined })}
-      />
       <TextField
         label="Status"
         size="small"

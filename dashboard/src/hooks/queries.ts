@@ -37,6 +37,17 @@ export function useMetrics() {
   return useQuery({ queryKey: queryKeys.metrics(), queryFn: () => api.listMetrics() });
 }
 
+/** Distinct project names, derived from recent traces (no dedicated endpoint). */
+export function useProjects() {
+  return useQuery({
+    queryKey: ["projects"],
+    queryFn: async () => {
+      const res = await api.listTraces({ limit: 200 });
+      return [...new Set(res.traces.map((t) => t.project))].sort();
+    },
+  });
+}
+
 export function useDeleteTrace() {
   const qc = useQueryClient();
   return useMutation({

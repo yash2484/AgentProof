@@ -215,3 +215,50 @@ def test_list_traces_endpoint():
         body = resp.json()
         assert "traces" in body and "total" in body
         assert isinstance(body["traces"], list)
+
+
+def test_eval_results_project_filter():
+    """GET /evals/results?project=X scopes results to that project's traces."""
+    proj_a = f"proj-a-{uuid.uuid4().hex[:8]}"
+    proj_b = f"proj-b-{uuid.uuid4().hex[:8]}"
+    start = datetime.now(UTC).isoformat()
+
+    def _raw_trace(project: str) -> dict:
+        tid = str(uuid.uuid4())
+        return {
+            "trace_id": tid,
+            "project": project,
+            "name": "filter-test",
+            "status": "ok",
+            "spans": [
+                {
+                    "span_id": str(uuid.uuid4()),
+                    "parent_span_ids": [],
+                    "span_type": "llm_call",
+                    "name": "gen",
+                    "start_time": start,
+                    "status": "ok",
+                    "metadata": {"model": "x", "user_prompt": "hi", "completion": "hello"},
+                }
+            ],
+        }
+
+    ta, tb = _raw_trace(proj_a), _raw_trace(proj_b)
+    with httpx.Client(base_url=BASE_URL, timeout=60.0) as client:
+        assert client.post("/api/v1/traces/batch", json=[ta, tb]).status_code == 200
+        try:
+            # Generate eval rows for both (heuristic/deterministic metrics run key-free).
+            client.post("/api/v1/evals/run", json={"trace_id": ta["trace_id"]})
+            client.post("/api/v1/evals/run", json={"trace_id": tb["trace_id"]})
+
+            resp = client.get(
+                "/api/v1/evals/results", params={"project": proj_a, "limit": 200}
+            )
+            assert resp.status_code == 200, resp.text
+            tids = {r["trace_id"] for r in resp.json()["results"]}
+            # The filter must exclude project B and never leak other-project rows.
+            assert tb["trace_id"] not in tids
+            assert tids <= {ta["trace_id"]}
+        finally:
+            client.delete(f"/api/v1/traces/{ta['trace_id']}")
+            client.delete(f"/api/v1/traces/{tb['trace_id']}")
