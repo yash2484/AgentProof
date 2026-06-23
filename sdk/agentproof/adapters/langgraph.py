@@ -107,6 +107,50 @@ def _usage_get(usage: Any, key: str) -> int:
     return int(getattr(usage, key, 0) or 0)
 
 
+def _record_from_meta(span: SpanContext, meta: dict, node_name: str) -> None:
+    """Build span metadata from an explicit ``agentproof_meta`` dict.
+
+    This is the opt-in path used by callers that already know their span's
+    type and metadata (e.g. nodes that don't emit LangChain message objects).
+    It is strictly additive: auto-detection still applies when no meta is
+    present.
+    """
+    span_type = SpanType(meta["span_type"])
+    if span_type == SpanType.LLM_CALL:
+        span.record_llm_call(
+            model=meta.get("model", "unknown"),
+            user_prompt=meta.get("user_prompt", ""),
+            completion=meta.get("completion", ""),
+            input_tokens=int(meta.get("input_tokens", 0)),
+            output_tokens=int(meta.get("output_tokens", 0)),
+            system_prompt=meta.get("system_prompt"),
+        )
+    elif span_type == SpanType.RETRIEVAL:
+        sources = meta.get("sources", [])
+        span.record_retrieval(
+            query=meta.get("query", ""),
+            sources=sources,
+            top_k=int(meta.get("top_k", len(sources))),
+        )
+    elif span_type == SpanType.TOOL_USE:
+        is_error = meta.get("status") == "error"
+        span.record_tool_use(
+            tool_name=meta.get("tool_name", node_name),
+            tool_input=meta.get("tool_input", {}),
+            tool_output=meta.get("tool_output"),
+            success=not is_error,
+            error_message=meta.get("error_message"),
+        )
+    else:  # AGENT_HANDOFF
+        span.record_handoff(
+            from_agent=meta.get("from_agent", node_name),
+            to_agent=meta.get("to_agent", "next"),
+            payload_summary=meta.get("payload_summary"),
+        )
+    if meta.get("status") == "error":
+        span.set_error(meta.get("error_message", "error"))
+
+
 def _record_from_output(
     span: SpanContext,
     span_type: SpanType,
@@ -169,6 +213,8 @@ class InstrumentedGraph:
         self._graph = graph
         self._ap = ap
         self._trace_name = trace_name or "langgraph-run"
+        self.trace_ids: list[str] = []
+        self.last_trace_id: str | None = None
 
     def __getattr__(self, item: str) -> Any:
         # Transparently delegate everything we don't override.
@@ -182,6 +228,8 @@ class InstrumentedGraph:
         **kwargs: Any,
     ) -> Any:
         with self._ap.trace(self._trace_name, tags=trace_tags) as trace:
+            self.last_trace_id = trace.trace_id
+            self.trace_ids.append(trace.trace_id)
             return self._invoke_with_spans(trace, input, config, **kwargs)
 
     def _invoke_with_spans(
@@ -213,14 +261,25 @@ class InstrumentedGraph:
                 continue
             for node_name, update in chunk.items():
                 try:
-                    span_type = _detect_span_type(update)
+                    meta = (
+                        update.get("agentproof_meta")
+                        if isinstance(update, dict)
+                        else None
+                    )
+                    if meta:
+                        span_type = SpanType(meta["span_type"])
+                    else:
+                        span_type = _detect_span_type(update)
                     span = trace.span(
                         node_name,
                         span_type,
                         parent_span_ids=[prev_span_id] if prev_span_id else None,
                     )
                     with span:
-                        _record_from_output(span, span_type, node_name, update)
+                        if meta:
+                            _record_from_meta(span, meta, node_name)
+                        else:
+                            _record_from_output(span, span_type, node_name, update)
                     prev_span_id = span.span_id
                 except Exception:  # noqa: BLE001 - tracing must never break the agent
                     logger.exception(
