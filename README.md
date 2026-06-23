@@ -9,7 +9,7 @@ before they reach production.
 
 ## Status: Active Development
 
-Built in phases (see `AgentProof-Complete-Build-Guide`). Current milestone: **Phase 4 complete** (`phase-4-regression-detector` branch).
+Built in phases (see `AgentProof-Complete-Build-Guide`). Current milestone: **Phase 5 complete** (`phase-5-dashboard` branch).
 
 | Phase | Feature | State |
 |-------|---------|-------|
@@ -18,10 +18,10 @@ Built in phases (see `AgentProof-Complete-Build-Guide`). Current milestone: **Ph
 | 2 | Eval engine (deterministic + LLM-as-judge via Claude) | ✅ Done |
 | 3 | Security eval module (prompt injection, tool misuse, data exfiltration) | ✅ Done |
 | 4 | Regression detector (Welch's t-test) + CI/CD GitHub Action | ✅ Done |
-| 5 | Dashboard (trace waterfall, eval timeseries, security reports) | ◻ Planned |
+| 5 | Dashboard (trace waterfall, eval timeseries, security reports) | ✅ Done |
 | 6–7 | Demo agent, narrative, docs, launch | ◻ Planned |
 
-### What works today (Phase 3)
+### What works today (Phase 5)
 
 - **Trace data model** — a DAG of typed spans (`llm_call`, `tool_use`, `retrieval`,
   `agent_handoff`, `human_decision`) with multi-parent support for parallel/merge topologies.
@@ -47,8 +47,13 @@ Built in phases (see `AgentProof-Complete-Build-Guide`). Current milestone: **Ph
   `regression ...`) build a baseline and gate a run against it; a separate
   `regression.yml` GitHub Action runs the check on a committed fixture corpus
   with no database or API key.
-- **Tests** — 123 unit tests + integration tests (auto-skips without a live server/key).
-  `ruff` clean across `sdk/` and `server/`.
+- **Dashboard** — a Vite + React + MUI single-page app (`dashboard/`) that reads
+  the existing API: trace list with filters/delete, a span **waterfall** with a
+  per-span detail panel and a **Run eval** action, an **eval-score timeseries**,
+  and a **security report**. A `scripts/seed_dashboard.py` loads demo data.
+- **Tests** — 123 server/SDK unit tests + integration tests (auto-skips without a
+  live server/key); 37 dashboard unit tests (Vitest). `ruff` clean across `sdk/`
+  and `server/`; dashboard `eslint` + `tsc` clean.
 
 ## Quick Start
 
@@ -56,6 +61,24 @@ Built in phases (see `AgentProof-Complete-Build-Guide`). Current milestone: **Ph
 cp .env.example .env   # Fill in your API keys
 docker compose up -d   # Postgres + API (+ dashboard once Phase 5 lands)
 # Server: http://localhost:8000  (GET /health -> {"status": "ok"})
+```
+
+### Dashboard (Phase 5)
+
+```bash
+docker compose up -d                 # postgres + server + dashboard
+python scripts/seed_dashboard.py     # load demo traces + evals (server must be up)
+# open http://localhost:5173
+```
+
+The dashboard (Vite + React + MUI) reads the existing API and provides a trace
+list, a span **waterfall** with a per-span detail panel, an **eval-score
+timeseries**, and a **security report** — plus run-eval, filtering, and delete.
+
+Run the dashboard tests:
+
+```bash
+cd dashboard && npm install && npm test
 ```
 
 ### Instrument an agent (SDK)

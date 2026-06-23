@@ -162,11 +162,17 @@ async def list_results(
     trace_id: str | None = None,
     metric_name: str | None = None,
     passed: bool | None = None,
+    project: str | None = None,
     limit: int = Query(default=50, le=200),
     offset: int = Query(default=0, ge=0),
 ) -> dict:
     """List eval results, newest first, with optional filters."""
     stmt = select(EvalResultModel)
+    if project is not None:
+        # Eval rows carry no project; scope via the owning trace.
+        stmt = stmt.join(
+            TraceModel, EvalResultModel.trace_id == TraceModel.trace_id
+        ).where(TraceModel.project == project)
     if trace_id is not None:
         stmt = stmt.where(EvalResultModel.trace_id == trace_id)
     if metric_name is not None:
