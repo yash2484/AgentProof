@@ -12,9 +12,14 @@ timeseries**, and read a focused **security report**, plus a small set of
 interactions (trigger an eval, filter, refresh, delete a trace).
 
 The dashboard talks to the existing FastAPI server over its current REST API.
-**No backend changes are required** — CORS is already enabled and already
-defaults to allowing the dashboard origin (`http://localhost:5173`, see
-`server/agentproof_server/config.py`).
+CORS is already enabled and already defaults to allowing the dashboard origin
+(`http://localhost:5173`, see `server/agentproof_server/config.py`).
+
+> **Scope update (post-review):** one additive backend change was made — an
+> optional `?project=` filter on `GET /evals/results` (scopes results via the
+> owning trace) — to support the top-bar **project switcher** across the Evals
+> and Security views. This relaxes the original "no backend changes" constraint
+> by a single, backward-compatible query parameter.
 
 ### Scope (this milestone): "MVP + interactions"
 
@@ -144,11 +149,13 @@ the live server.
 - hooks / pages — loading / error / data render paths via RTL + fixtures.
 - One smoke test per page (`/traces`, `/traces/:id`, `/evals`, `/security`).
 
-## 9. Backend Notes (no code changes expected)
+## 9. Backend Notes
 
 - CORS already enabled (`main.py`) and `cors_origins` already defaults to
   `["http://localhost:5173"]` (`config.py`). Confirm only.
-- All required endpoints already exist:
+- One additive change (post-review, see §1): `GET /evals/results` gained an
+  optional `?project=` query param that filters via the owning trace.
+- All other required endpoints already exist:
   - Traces: `GET /traces`, `GET /traces/{id}`, `GET /traces/{id}/tree`,
     `DELETE /traces/{id}`.
   - Evals: `POST /evals/run`, `POST /evals/run-batch`, `GET /evals/results`,
