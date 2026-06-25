@@ -266,10 +266,7 @@ class InstrumentedGraph:
                         if isinstance(update, dict)
                         else None
                     )
-                    if meta:
-                        span_type = SpanType(meta["span_type"])
-                    else:
-                        span_type = _detect_span_type(update)
+                    span_type = SpanType(meta["span_type"]) if meta else _detect_span_type(update)
                     span = trace.span(
                         node_name,
                         span_type,

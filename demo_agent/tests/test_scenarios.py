@@ -1,5 +1,4 @@
 import pytest
-
 from demo_agent.scenarios import SCENARIOS, scenario_names
 
 

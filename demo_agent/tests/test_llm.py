@@ -1,5 +1,4 @@
 import pytest
-
 from demo_agent.llm import AnthropicBackend, LLMResponse, ReplayBackend, get_backend
 
 

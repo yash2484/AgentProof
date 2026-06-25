@@ -12,11 +12,10 @@ from __future__ import annotations
 from functools import partial
 from typing import Any
 
-from typing_extensions import TypedDict
-
 from agentproof import AgentProof
 from agentproof.adapters.langgraph import instrument_langgraph
 from langgraph.graph import END, START, StateGraph
+from typing_extensions import TypedDict
 
 from demo_agent.llm import LLMBackend
 from demo_agent.nodes import (

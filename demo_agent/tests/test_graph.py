@@ -1,7 +1,6 @@
 from agentproof import AgentProof
 from agentproof.spans import SpanStatus, SpanType
-
-from demo_agent.graph import build_graph, run_instrumented
+from demo_agent.graph import run_instrumented
 from demo_agent.llm import ReplayBackend
 from demo_agent.scenarios import SCENARIOS
 
