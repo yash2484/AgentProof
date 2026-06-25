@@ -72,6 +72,15 @@ class AgentProof:
             tags=tags,
         )
 
+    def flush(self, timeout: float = 10.0) -> None:
+        """Synchronously flush buffered traces to the server.
+
+        Delegates to the exporter's idempotent ``shutdown``. Call this before
+        triggering server-side work (e.g. evals) that depends on the traces
+        already being persisted.
+        """
+        self._exporter.shutdown(timeout=timeout)
+
     def trace_function(
         self,
         span_type: SpanType,

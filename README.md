@@ -9,7 +9,7 @@ before they reach production.
 
 ## Status: Active Development
 
-Built in phases (see `AgentProof-Complete-Build-Guide`). Current milestone: **Phase 5 complete** (`phase-5-dashboard` branch).
+Built in phases (see `AgentProof-Complete-Build-Guide`). Current milestone: **Phase 6 complete** — demo research-assistant agent (`phase-6-demo-agent` branch).
 
 | Phase | Feature | State |
 |-------|---------|-------|
@@ -19,7 +19,7 @@ Built in phases (see `AgentProof-Complete-Build-Guide`). Current milestone: **Ph
 | 3 | Security eval module (prompt injection, tool misuse, data exfiltration) | ✅ Done |
 | 4 | Regression detector (Welch's t-test) + CI/CD GitHub Action | ✅ Done |
 | 5 | Dashboard (trace waterfall, eval timeseries, security reports) | ✅ Done |
-| 6–7 | Demo agent, narrative, docs, launch | ◻ Planned |
+| 6 | Demo research-assistant agent (LangGraph) + narrative/docs | ✅ Done |
 
 ### What works today (Phase 5)
 
@@ -80,6 +80,24 @@ Run the dashboard tests:
 ```bash
 cd dashboard && npm install && npm test
 ```
+
+### Demo agent (Phase 6)
+
+A real LangGraph research assistant (planner → retriever → writer → fact_checker),
+instrumented only via the `agentproof` SDK. Runs key-free (recorded replay) or
+live (`ANTHROPIC_API_KEY`).
+
+```bash
+docker compose up -d                 # postgres + server + dashboard
+pip install -e ./sdk -e ./demo_agent
+python -m demo_agent run --scenario all --mode replay --export
+# open the dashboard — three traces appear: success, error, injection
+```
+
+- `--mode replay` (default) needs no API key; `--mode live` calls Claude.
+- Without `--export` the agent runs locally and prints a summary (no server).
+
+See `docs/walkthrough.md` for the full end-to-end story.
 
 ### Instrument an agent (SDK)
 
