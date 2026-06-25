@@ -9,7 +9,7 @@ before they reach production.
 
 ## Status: Active Development
 
-Built in phases (see `AgentProof-Complete-Build-Guide`). Current milestone: **Phase 5 complete** (`phase-5-dashboard` branch).
+Built in phases (see `AgentProof-Complete-Build-Guide`). Current milestone: **Phase 6 complete** — demo research-assistant agent (`phase-6-demo-agent` branch).
 
 | Phase | Feature | State |
 |-------|---------|-------|
