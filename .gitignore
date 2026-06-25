@@ -65,3 +65,9 @@ logs/
 # Local agent working artifacts (planning scratch, TDD checklists, session
 # context). Kept locally for cross-session continuity; not part of the repo.
 .claude/
+
+# Tooling / build artifacts (not part of the repo)
+.serena/
+dashboard/*.tsbuildinfo
+dashboard/vite.config.js
+dashboard/vite.config.d.ts
