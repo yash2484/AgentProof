@@ -7,7 +7,9 @@ on:
     branches: [main]
 
 jobs:
-  regression:
+  # Gate 1 — the detector itself, against a committed corpus with known
+  # variance. This exercises the Welch's t-test + Cohen's d path.
+  fixture-gate:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -18,10 +20,41 @@ jobs:
         run: |
           cd server
           pip install -e ".[dev]"
-      - name: Detect eval-score regressions
+      - name: Detect eval-score regressions (fixture corpus)
         run: |
           cd server
           python -m agentproof_server.eval_engine.cli regression \
             --traces ../fixtures/regression_corpus.json \
             --baseline ../baselines/demo-research-agent.json \
+            --config ../fixtures/regression_config.yaml
+
+  # Gate 2 — the agent itself. Runs the LangGraph demo agent on this commit,
+  # captures the traces it actually produces, and gates them against a pinned
+  # baseline. A change that makes the agent less faithful or less
+  # injection-resistant fails here, on the PR that introduced it.
+  #
+  # Replay mode is deterministic and needs no API key, so this costs nothing
+  # per PR and cannot flake on model nondeterminism.
+  agent-gate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install SDK, demo agent, and server
+        run: pip install -e ./sdk -e ./demo_agent -e "./server[dev]"
+      - name: Capture traces from the current agent
+        run: |
+          python -m demo_agent capture \
+            --scenario all \
+            --mode replay \
+            --project demo-research-agent \
+            --out "${RUNNER_TEMP}/agent_corpus.json"
+      - name: Gate the captured traces against the pinned baseline
+        run: |
+          cd server
+          python -m agentproof_server.eval_engine.cli regression \
+            --traces "${RUNNER_TEMP}/agent_corpus.json" \
+            --baseline ../baselines/demo-agent-replay.json \
             --config ../fixtures/regression_config.yaml

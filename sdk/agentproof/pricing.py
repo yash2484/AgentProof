@@ -23,6 +23,11 @@ DEFAULT_PRICING: dict[str, dict[str, float]] = {
     "claude-sonnet-4-20250514": {"input": 3.00, "output": 15.00},
     "claude-haiku-4-20250414": {"input": 0.80, "output": 4.00},
     "claude-opus-4-20250514": {"input": 15.00, "output": 75.00},
+    # Current generation. Aliases are listed without a date suffix; dated
+    # snapshots (e.g. "claude-haiku-4-5-20251001") resolve via prefix match.
+    "claude-opus-4-6": {"input": 5.00, "output": 25.00},
+    "claude-sonnet-4-6": {"input": 3.00, "output": 15.00},
+    "claude-haiku-4-5": {"input": 1.00, "output": 5.00},
 }
 
 # Aliases for convenience.

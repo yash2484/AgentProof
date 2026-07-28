@@ -16,15 +16,65 @@ down the agent is not.
 
 from __future__ import annotations
 
+import json
 import logging
 import queue
 import threading
+from pathlib import Path
 
 import httpx
 
 from agentproof.spans import Trace
 
 logger = logging.getLogger("agentproof.exporter")
+
+
+class FileExporter:
+    """Exporter that captures traces to a JSON file instead of a server.
+
+    Same duck-typed interface as :class:`AsyncExporter` (``enqueue`` /
+    ``shutdown`` / ``stats``) so it drops into ``AgentProof(exporter=...)``.
+
+    Unlike the async exporter this is deliberately synchronous and lossless:
+    its purpose is producing a reproducible eval corpus from an agent run, and
+    a corpus with a trace silently dropped is a corpus that lies. Traces are
+    buffered in memory and written once, on ``shutdown``, so the file is only
+    ever a complete run.
+    """
+
+    def __init__(self, path: str | Path) -> None:
+        self._path = Path(path)
+        self._traces: list[Trace] = []
+        self._written = False
+
+    # -- public API ---------------------------------------------------------
+
+    def enqueue(self, trace: Trace) -> None:
+        """Buffer a trace for the next write. Never drops."""
+        self._traces.append(trace)
+
+    def shutdown(self, timeout: float = 10.0) -> None:
+        """Write every buffered trace to the target file.
+
+        Idempotent, matching ``AsyncExporter.shutdown`` — the client's atexit
+        hook and an explicit ``flush()`` both land here. ``timeout`` is unused
+        and exists only to keep the interface interchangeable.
+        """
+        if self._written:
+            return
+        payload = [trace.model_dump(mode="json") for trace in self._traces]
+        self._path.parent.mkdir(parents=True, exist_ok=True)
+        self._path.write_text(json.dumps(payload, indent=2) + "\n")
+        self._written = True
+        logger.info("Captured %d traces to %s", len(payload), self._path)
+
+    @property
+    def stats(self) -> dict:
+        return {
+            "sent": len(self._traces) if self._written else 0,
+            "dropped": 0,
+            "buffered": 0 if self._written else len(self._traces),
+        }
 
 
 class AsyncExporter:

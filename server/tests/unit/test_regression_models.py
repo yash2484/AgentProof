@@ -18,7 +18,7 @@ def test_regression_config_defaults():
     assert cfg.alpha == 0.05
     assert cfg.min_effect_size == 0.5
     assert cfg.min_mean_drop == 0.05
-    assert cfg.min_sample_size == 2
+    assert cfg.min_sample_size == 9
 
 
 def test_baseline_round_trips_through_json():

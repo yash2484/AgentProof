@@ -9,7 +9,7 @@ before they reach production.
 
 ## Status: Active Development
 
-Built in phases (see `AgentProof-Complete-Build-Guide`). Current milestone: **Phase 6 complete** — demo research-assistant agent (`phase-6-demo-agent` branch).
+Built in phases (see `AgentProof-Complete-Build-Guide`). Current milestone: **Phase 6 complete** — demo research-assistant agent, merged to `main`.
 
 | Phase | Feature | State |
 |-------|---------|-------|
@@ -21,7 +21,7 @@ Built in phases (see `AgentProof-Complete-Build-Guide`). Current milestone: **Ph
 | 5 | Dashboard (trace waterfall, eval timeseries, security reports) | ✅ Done |
 | 6 | Demo research-assistant agent (LangGraph) + narrative/docs | ✅ Done |
 
-### What works today (Phase 5)
+### What works today
 
 - **Trace data model** — a DAG of typed spans (`llm_call`, `tool_use`, `retrieval`,
   `agent_handoff`, `human_decision`) with multi-parent support for parallel/merge topologies.
@@ -42,28 +42,38 @@ Built in phases (see `AgentProof-Complete-Build-Guide`). Current milestone: **Ph
   CI; `llm`/`dual` use the Claude judge and degrade to heuristic without a key.
 - **Regression Detector** — a pinned-baseline Welch's t-test (one-sided, with a
   Cohen's d effect-size guard) flags statistically significant *drops* in eval
-  scores. File-based, DB-free CLI subcommands
+  scores. Below `min_sample_size` samples per group the t-test is underpowered,
+  so an absolute-drop floor decides instead. File-based, DB-free CLI subcommands
   (`python -m agentproof_server.eval_engine.cli baseline ...` /
-  `regression ...`) build a baseline and gate a run against it; a separate
-  `regression.yml` GitHub Action runs the check on a committed fixture corpus
-  with no database or API key.
+  `regression ...`) build a baseline and gate a run against it.
+- **CI gates** — `regression.yml` runs two jobs on every PR, both DB-free and
+  key-free. `fixture-gate` checks the detector against a committed corpus with
+  known variance (the t-test path). `agent-gate` runs the demo agent *on that
+  commit*, captures the traces it actually produces, and gates them against a
+  pinned baseline — so a change that makes the agent less injection-resistant
+  fails the build that introduced it.
 - **Dashboard** — a Vite + React + MUI single-page app (`dashboard/`) that reads
   the existing API: trace list with filters/delete, a span **waterfall** with a
   per-span detail panel and a **Run eval** action, an **eval-score timeseries**,
   and a **security report**. A `scripts/seed_dashboard.py` loads demo data.
-- **Tests** — 123 server/SDK unit tests + integration tests (auto-skips without a
-  live server/key); 37 dashboard unit tests (Vitest). `ruff` clean across `sdk/`
-  and `server/`; dashboard `eslint` + `tsc` clean.
+- **Tests** — 125 server + 43 SDK + 37 demo-agent unit tests, plus integration
+  tests that auto-skip without a live server/key; 37 dashboard unit tests
+  (Vitest). `ruff` clean across `sdk/`, `server/`, and `demo_agent/`; dashboard
+  `eslint` + `tsc` clean.
 
 ## Quick Start
 
 ```bash
-cp .env.example .env   # Fill in your API keys
-docker compose up -d   # Postgres + API (+ dashboard once Phase 5 lands)
-# Server: http://localhost:8000  (GET /health -> {"status": "ok"})
+cp .env.example .env   # Works as-is for local dev; add ANTHROPIC_API_KEY only for live mode
+docker compose up -d   # Postgres + API + dashboard
+# Server:    http://localhost:8000  (GET /health -> {"status": "ok"})
+# Dashboard: http://localhost:5173
 ```
 
-### Dashboard (Phase 5)
+The first `docker compose up -d` builds the server and dashboard images and can
+take several minutes; subsequent runs start in seconds.
+
+### Dashboard
 
 ```bash
 docker compose up -d                 # postgres + server + dashboard
@@ -96,6 +106,20 @@ python -m demo_agent run --scenario all --mode replay --export
 
 - `--mode replay` (default) needs no API key; `--mode live` calls Claude.
 - Without `--export` the agent runs locally and prints a summary (no server).
+
+To capture the agent's traces as an eval corpus instead of shipping them to a
+server — no database, no API key, this is what CI runs:
+
+```bash
+python -m demo_agent capture --scenario all --mode replay --out corpus.json
+cd server && python -m agentproof_server.eval_engine.cli regression \
+  --traces ../corpus.json \
+  --baseline ../baselines/demo-agent-replay.json \
+  --config ../fixtures/regression_config.yaml
+```
+
+Exits 0 when the agent still matches its pinned baseline, 1 when a CI-blocking
+metric has regressed.
 
 See `docs/walkthrough.md` for the full end-to-end story.
 

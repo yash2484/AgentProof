@@ -39,18 +39,28 @@ class AgentProof:
         server_url: str = "http://localhost:8000",
         project: str = "default",
         api_key: str | None = None,
+        exporter: Any | None = None,
     ) -> None:
+        """Initialize the client.
+
+        ``exporter`` injects an alternative sink (e.g. ``FileExporter``) for
+        offline capture; when given, ``server_url`` is unused and no HTTP
+        exporter thread is started. Any object with ``enqueue`` / ``shutdown``
+        / ``stats`` works.
+        """
         self._server_url = server_url
         self._project = project
-        self._exporter = AsyncExporter(server_url=server_url, api_key=api_key)
+        self._exporter = exporter or AsyncExporter(
+            server_url=server_url, api_key=api_key
+        )
 
         # Flush buffered traces on interpreter exit.
         atexit.register(self._exporter.shutdown)
 
         logger.info(
-            "AgentProof initialized — project='%s', server='%s'",
+            "AgentProof initialized — project='%s', sink='%s'",
             project,
-            server_url,
+            type(self._exporter).__name__ if exporter else server_url,
         )
 
     def trace(
