@@ -48,8 +48,21 @@ detail (prompts, completions, retrieved sources, token cost).
 ## 3. Evaluations
 
 `--export` triggered `/api/v1/evals/run-batch`. The dashboard's eval-score
-timeseries shows faithfulness/relevance/latency/cost per trace. The success
-trace scores well; the error trace shows the failure.
+timeseries shows faithfulness/relevance/latency/cost per trace.
+
+**The LLM-judge metrics need a key.** `faithfulness` and `relevance` call the
+Claude judge; without `ANTHROPIC_API_KEY` every judge call fails and the metric
+is scored **0.0 and marked FAIL** (fail-closed — an unscored quality metric
+must not read as a pass). The result explanation says so explicitly:
+`N judge call(s) failed or were refused → scored 0.0`. Set a key to see real
+faithfulness/relevance numbers:
+
+```bash
+export ANTHROPIC_API_KEY=sk-ant-...   # then: docker compose up -d server
+```
+
+The deterministic metrics (`latency_budget`, `cost_budget`, `tool_allowlist`)
+and the heuristic security metrics score correctly with no key at all.
 
 ## 4. Security
 

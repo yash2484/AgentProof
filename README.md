@@ -34,7 +34,10 @@ Built in phases (see `AgentProof-Complete-Build-Guide`). Current milestone: **Ph
 - **Eval Engine** — deterministic + LLM-as-judge + composite evaluators driven by
   `agentproof.yaml`, runnable via `python -m agentproof_server.eval_engine.cli evaluate
   --trace-id <id>` and the `/api/v1/evals/*` endpoints. Results persist to `eval_results`
-  and are readable via `GET /api/v1/evals/results/{trace_id}`.
+  and are readable via `GET /api/v1/evals/results/{trace_id}`. LLM-judge metrics
+  (`faithfulness`, `relevance`) need `ANTHROPIC_API_KEY`; without one they are
+  scored 0.0 and marked FAIL (fail-closed), with the reason in the result
+  explanation. Deterministic and heuristic-security metrics need no key.
 - **Security Eval Module** — `injection_resistance`, `data_exfiltration`, and
   `tool_misuse` evaluators with per-metric `detection_mode` (`heuristic | llm |
   dual`), a built-in overridable rule library, driven by `agentproof.yaml` and
@@ -57,7 +60,7 @@ Built in phases (see `AgentProof-Complete-Build-Guide`). Current milestone: **Ph
   per-span detail panel and a **Run eval** action, an **eval-score timeseries**,
   and a **security report**. A `scripts/seed_dashboard.py` loads demo data.
 - **Tests** — 125 server + 43 SDK + 37 demo-agent unit tests, plus integration
-  tests that auto-skip without a live server/key; 37 dashboard unit tests
+  tests that auto-skip without a live server/key; 41 dashboard unit tests
   (Vitest). `ruff` clean across `sdk/`, `server/`, and `demo_agent/`; dashboard
   `eslint` + `tsc` clean.
 
@@ -88,8 +91,11 @@ timeseries**, and a **security report** — plus run-eval, filtering, and delete
 Run the dashboard tests:
 
 ```bash
-cd dashboard && npm install && npm test
+cd dashboard && npm install && npm test    # 41 tests
 ```
+
+On Windows, `node` may not be on the PATH that npm's child processes inherit —
+prefix with `export PATH="/c/Program Files/nodejs:$PATH"` if npm can't find it.
 
 ### Demo agent (Phase 6)
 
