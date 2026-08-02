@@ -1,6 +1,7 @@
 """AgentProof SDK — instrument, evaluate, and secure your multi-agent systems."""
 
 from agentproof.client import AgentProof
+from agentproof.exporters import AsyncExporter, FileExporter
 from agentproof.spans import (
     AgentHandoffMetadata,
     HumanDecisionMetadata,
@@ -15,6 +16,8 @@ from agentproof.spans import (
 
 __all__ = [
     "AgentProof",
+    "AsyncExporter",
+    "FileExporter",
     "SpanType",
     "SpanStatus",
     "Span",

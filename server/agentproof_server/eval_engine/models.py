@@ -126,7 +126,12 @@ class RegressionConfig(BaseModel):
     alpha: float = 0.05
     min_effect_size: float = 0.5
     min_mean_drop: float = 0.05
-    min_sample_size: int = 2
+    # Below this many samples per group, Welch's t-test has too little power to
+    # be trusted and the absolute-drop floor decides instead. Empirically, a
+    # one-in-three failure (a 33% mean drop, Cohen's d 0.82) yields p=0.21 at
+    # n=3, p=0.09 at n=6, and only reaches alpha=0.05 at n=9 -- so a threshold
+    # of 2 let real, reproducible regressions pass as "not significant".
+    min_sample_size: int = 9
 
 
 class RegressionResult(BaseModel):
