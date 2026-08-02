@@ -68,6 +68,8 @@ logs/
 
 # Tooling / build artifacts (not part of the repo)
 .serena/
+# Brainstorming companion mockups (local design scratch, kept across restarts)
+.superpowers/
 dashboard/*.tsbuildinfo
 dashboard/vite.config.js
 dashboard/vite.config.d.ts
