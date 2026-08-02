@@ -11,9 +11,10 @@ Query endpoints read results back with the usual filters.
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Sequence
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import select
+from sqlalchemy import case, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from agentproof_server.api.serialization import _span_to_dict, _trace_to_dict
@@ -227,5 +228,132 @@ async def list_metrics() -> dict:
             for m in config.metrics
         ],
     }
+
+
+# ---------------------------------------------------------------------------
+# Aggregate summary (read-only)
+# ---------------------------------------------------------------------------
+#
+# The dashboard overview needs project-wide numbers. Aggregating client-side
+# over the 200-row result cap would show a sample while implying full history,
+# so every figure below is computed in SQL.
+#
+# ``project`` is optional: the dashboard's project switcher has an "All
+# projects" state, and the overview must not 422 on first render. When it is
+# omitted the statements neither join nor filter, and the response's
+# ``project`` is null.
+
+
+def _summary_metrics_stmt(project: str | None):
+    """Per-metric aggregates, one row per metric name.
+
+    ``passed`` is boolean, so a bare ``avg()`` over it is invalid in
+    Postgres — the pass rate goes through an explicit CASE.
+    """
+    stmt = select(
+        EvalResultModel.metric_name,
+        func.avg(EvalResultModel.score).label("mean_score"),
+        func.avg(
+            case((EvalResultModel.passed, 1.0), else_=0.0)
+        ).label("pass_rate"),
+        func.count().label("count"),
+        func.max(EvalResultModel.evaluated_at).label("last_evaluated_at"),
+    )
+    if project is not None:
+        stmt = stmt.join(
+            TraceModel, EvalResultModel.trace_id == TraceModel.trace_id
+        ).where(TraceModel.project == project)
+    return stmt.group_by(EvalResultModel.metric_name).order_by(
+        EvalResultModel.metric_name
+    )
+
+
+def _summary_trace_count_stmt(project: str | None):
+    """How many traces the project holds (not how many were evaluated)."""
+    stmt = select(func.count()).select_from(TraceModel)
+    if project is not None:
+        stmt = stmt.where(TraceModel.project == project)
+    return stmt
+
+
+def _summary_p99_stmt(project: str | None):
+    """p99 total latency across the project's traces.
+
+    ``percentile_cont`` is an ordered-set aggregate: it ignores NULL inputs
+    and returns NULL when every input is NULL.
+    """
+    stmt = select(
+        func.percentile_cont(0.99).within_group(
+            TraceModel.total_latency_ms.asc()
+        )
+    ).select_from(TraceModel)
+    if project is not None:
+        stmt = stmt.where(TraceModel.project == project)
+    return stmt
+
+
+def _summary_payload(
+    project: str | None,
+    trace_count: int,
+    p99_latency_ms: float | None,
+    metric_rows: Sequence[tuple],
+) -> dict:
+    """Assemble the summary response from already-fetched aggregates.
+
+    ``overall_pass_rate`` is the count-weighted mean of the per-metric pass
+    rates, which is exactly the average over every eval row — so it needs no
+    second query. It is ``None`` (not 0.0) when there is nothing to average,
+    because "no data" and "everything failed" are different facts.
+    """
+    metrics = [
+        {
+            "metric_name": name,
+            "mean_score": float(mean_score) if mean_score is not None else None,
+            "pass_rate": float(pass_rate) if pass_rate is not None else None,
+            "count": int(count),
+            "last_evaluated_at": (
+                last_evaluated_at.isoformat() if last_evaluated_at else None
+            ),
+        }
+        for name, mean_score, pass_rate, count, last_evaluated_at in metric_rows
+    ]
+
+    total = sum(m["count"] for m in metrics)
+    if total:
+        weighted = sum(
+            (m["pass_rate"] or 0.0) * m["count"] for m in metrics
+        )
+        overall_pass_rate: float | None = round(weighted / total, 6)
+    else:
+        overall_pass_rate = None
+
+    return {
+        "project": project,
+        "trace_count": trace_count,
+        "overall_pass_rate": overall_pass_rate,
+        "p99_latency_ms": (
+            float(p99_latency_ms) if p99_latency_ms is not None else None
+        ),
+        "metrics": metrics,
+    }
+
+
+@router.get("/evals/summary")
+async def get_evals_summary(
+    db: AsyncSession = Depends(get_db),
+    project: str | None = None,
+) -> dict:
+    """Project-wide eval aggregates for the dashboard overview.
+
+    An empty or unknown project returns ``trace_count: 0`` with a null pass
+    rate and no metrics — not a 404 — so a fresh install renders guidance
+    rather than an error.
+    """
+    metric_rows = (await db.execute(_summary_metrics_stmt(project))).all()
+    trace_count = (
+        await db.execute(_summary_trace_count_stmt(project))
+    ).scalar_one()
+    p99 = (await db.execute(_summary_p99_stmt(project))).scalar_one_or_none()
+    return _summary_payload(project, trace_count, p99, metric_rows)
 
 
