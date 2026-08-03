@@ -48,22 +48,33 @@ export function OverviewPage() {
           latest.refetch();
         }}
       >
+        {/*
+         * The spec's breakpoints (3 cols >=1024px, 2 >=768px, 1 below) don't
+         * line up with MUI's default sm/lg keys (600px/1200px) and this repo
+         * defines no custom breakpoints. Scoped media queries here express
+         * the spec exactly without a global `breakpoints` override — this
+         * page is the only breakpoint consumer in the codebase today, and a
+         * global change would be invisible action-at-a-distance the moment a
+         * second consumer appears.
+         */}
         <Box
           sx={{
             display: "grid",
             gap: `${TILE_GAP}px`,
-            gridTemplateColumns: {
-              xs: "repeat(1, 1fr)",
-              sm: "repeat(2, 1fr)",
-              lg: "repeat(3, 1fr)",
-            },
+            gridTemplateColumns: "1fr",
+            "@media (min-width:768px)": { gridTemplateColumns: "repeat(2, 1fr)" },
+            "@media (min-width:1024px)": { gridTemplateColumns: "repeat(3, 1fr)" },
           }}
         >
           <Box
             sx={{
-              gridColumn: { xs: "span 1", sm: "span 2" },
-              gridRow: { xs: "auto", sm: "span 2" },
-              minHeight: { sm: 240 },
+              gridColumn: "span 1",
+              gridRow: "auto",
+              "@media (min-width:768px)": {
+                gridColumn: "span 2",
+                gridRow: "span 2",
+                minHeight: 240,
+              },
             }}
           >
             <VerdictTile summary={summary.data} />

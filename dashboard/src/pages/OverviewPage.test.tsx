@@ -26,7 +26,7 @@ describe("OverviewPage", () => {
     expect(screen.getByText("Security verdict")).toBeInTheDocument();
   });
 
-  it("shows the gate, p99 latency and trace count", async () => {
+  it("shows the gate, p99 latency, trace count and overall pass rate", async () => {
     renderWithProviders(<OverviewPage />, { route: "/" });
     await waitFor(() => expect(screen.getByText("Gate")).toBeInTheDocument());
     // sampleSummary: injection held, exfiltration and relevance did not.
@@ -34,6 +34,9 @@ describe("OverviewPage", () => {
     expect(screen.getByText("p99 latency")).toBeInTheDocument();
     expect(screen.getByText("1.82 s")).toBeInTheDocument();
     expect(screen.getByText("247 traces")).toBeInTheDocument();
+    expect(screen.getByText("Overall pass rate")).toBeInTheDocument();
+    expect(screen.getByText("94%")).toBeInTheDocument();
+    expect(screen.getByText("3 metrics")).toBeInTheDocument();
   });
 
   it("renders a mini waterfall for the latest trace", async () => {
