@@ -24,6 +24,7 @@ from agentproof_server.api.serialization import (
     _span_to_dict,
     _trace_to_dict,
 )
+from agentproof_server.db.models import EvalResult as EvalResultModel
 from agentproof_server.db.models import Span as SpanModel
 from agentproof_server.db.models import Trace as TraceModel
 from agentproof_server.db.session import get_db
@@ -206,7 +207,7 @@ async def delete_trace(
     trace_id: str,
     db: AsyncSession = Depends(get_db),
 ) -> Response:
-    """Delete a trace and its spans (cascade). 404 if it does not exist."""
+    """Delete a trace with its spans and eval results. 404 if absent."""
     existing = (
         await db.execute(
             select(TraceModel.id).where(TraceModel.trace_id == trace_id)
@@ -215,6 +216,16 @@ async def delete_trace(
     if existing is None:
         raise HTTPException(status_code=404, detail="Trace not found")
 
+    # Eval rows must go first. This is a Core-level bulk delete, which
+    # bypasses the ORM's delete-orphan cascade entirely and leans on the
+    # database rule instead -- and databases created before eval_results
+    # gained ``ondelete="CASCADE"`` still carry the constraint as NO ACTION,
+    # so Postgres rejects the parent delete. Deleting explicitly here fixes
+    # those existing databases without a migration, and is a no-op on new
+    # ones where the constraint cascades.
+    await db.execute(
+        delete(EvalResultModel).where(EvalResultModel.trace_id == trace_id)
+    )
     await db.execute(
         delete(TraceModel).where(TraceModel.trace_id == trace_id)
     )
