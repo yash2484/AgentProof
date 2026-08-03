@@ -3734,7 +3734,276 @@ git commit -m "style(dashboard): control-room density pass over the working page
 
 ---
 
-### Task 14: Full verification sweep
+### Task 14: Collapse the left rail on narrow viewports
+
+**Added after Task 9 review.** Not in the original spec — found while investigating the Overview's breakpoints, and more consequential than the breakpoints were.
+
+**The problem.** `AppShell` renders `variant="permanent"` at a fixed `RAIL_WIDTH = 208` with no responsive handling. That slice is taken from every viewport, so the content column is `viewport − 208 − 48`:
+
+| Viewport | Content | 2-col tile |
+|---:|---:|---:|
+| 1440 | 1184 | 586 |
+| 1024 | 768 | 378 |
+| 768 | 512 | 250 |
+| 600 | 344 | 166 |
+| **375** | **119** | 54 |
+
+At 375px the page has 119px to work with. No grid breakpoint fixes that — the rail has to go.
+
+**Why the current test suite misses it.** Task 15's Playwright sweep asserts *no horizontal scroll* at 375px, and `minWidth: 0` on the main Box guarantees content squeezes rather than overflows. The assertion passes on an unusable page. Step 6 below fixes that check too.
+
+**Files:**
+- Modify: `dashboard/src/components/AppShell.tsx`
+- Modify: `dashboard/src/components/AppShell.test.tsx`
+
+**Interfaces:**
+- Consumes: `tokens`, `SPACE` from `../theme`; `useProjects`, `useProject`.
+- Produces: `AppShell` — props unchanged (`{ children: ReactNode }`). New export `RAIL_BREAKPOINT = 768`.
+
+The threshold is 768 to match the Overview grid's own single-column breakpoint, so the rail disappears exactly when the grid collapses. Below it the content column would otherwise fall under ~512px.
+
+- [ ] **Step 1: Write the failing tests**
+
+jsdom does not implement `window.matchMedia`, so MUI's `useMediaQuery` returns its default (`false`) unless stubbed. Stubbing it is what makes both branches genuinely testable — without it, only the wide branch would ever run.
+
+Append to `dashboard/src/components/AppShell.test.tsx`:
+
+```tsx
+/** Stub matchMedia so useMediaQuery can be driven deterministically. */
+function setViewport(matches: boolean) {
+  vi.stubGlobal(
+    "matchMedia",
+    (query: string) => ({
+      matches,
+      media: query,
+      onchange: null,
+      addListener: () => {},
+      removeListener: () => {},
+      addEventListener: () => {},
+      removeEventListener: () => {},
+      dispatchEvent: () => false,
+    }),
+  );
+}
+
+describe("AppShell responsive rail", () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  it("shows the rail and no menu button on a wide viewport", async () => {
+    setViewport(false); // not narrow
+    renderWithProviders(<AppShell><div>content</div></AppShell>, { route: "/traces" });
+    expect(screen.getByRole("link", { name: "Traces" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /open navigation/i })).not.toBeInTheDocument();
+    await waitFor(() => expect(api.listTraces).toHaveBeenCalled());
+  });
+
+  it("hides the rail behind a menu button on a narrow viewport", () => {
+    setViewport(true); // narrow
+    renderWithProviders(<AppShell><div>content</div></AppShell>, { route: "/traces" });
+    expect(screen.getByRole("button", { name: /open navigation/i })).toBeInTheDocument();
+    // The temporary drawer is closed initially, so nav links are not rendered.
+    expect(screen.queryByRole("link", { name: "Traces" })).not.toBeInTheDocument();
+  });
+
+  it("opens the drawer when the menu button is clicked", () => {
+    setViewport(true);
+    renderWithProviders(<AppShell><div>content</div></AppShell>, { route: "/traces" });
+    fireEvent.click(screen.getByRole("button", { name: /open navigation/i }));
+    expect(screen.getByRole("link", { name: "Traces" })).toBeInTheDocument();
+  });
+
+  it("closes the drawer after following a link", () => {
+    setViewport(true);
+    renderWithProviders(<AppShell><div>content</div></AppShell>, { route: "/traces" });
+    fireEvent.click(screen.getByRole("button", { name: /open navigation/i }));
+    fireEvent.click(screen.getByRole("link", { name: "Evals" }));
+    // Navigating must not leave the overlay covering the page.
+    expect(screen.queryByRole("link", { name: "Evals" })).not.toBeInTheDocument();
+  });
+
+  it("keeps the project switcher reachable on a narrow viewport", () => {
+    setViewport(true);
+    renderWithProviders(<AppShell><div>content</div></AppShell>, { route: "/traces" });
+    fireEvent.click(screen.getByRole("button", { name: /open navigation/i }));
+    expect(screen.getByLabelText("Project")).toBeInTheDocument();
+  });
+});
+```
+
+Add `fireEvent` and `afterEach` to the existing imports at the top of the file.
+
+- [ ] **Step 2: Run to verify they fail**
+
+Run: `cd dashboard; npx vitest run src/components/AppShell.test.tsx --reporter=basic`
+Expected: FAIL — no element with an accessible name matching "open navigation".
+
+- [ ] **Step 3: Make the rail responsive**
+
+In `dashboard/src/components/AppShell.tsx`:
+
+Extend the imports:
+
+```tsx
+import { ReactNode, useState } from "react";
+import {
+  Box, Drawer, IconButton, List, ListItemButton, ListItemText, MenuItem,
+  Select, Typography, useMediaQuery,
+} from "@mui/material";
+import MenuIcon from "@mui/icons-material/Menu";
+```
+
+Add below `RAIL_WIDTH`:
+
+```tsx
+/**
+ * Below this the rail's fixed 208px costs more than it gives: at 375px it
+ * would leave 119px of content. Matches the Overview grid's own
+ * single-column breakpoint, so the rail leaves exactly when the grid folds.
+ */
+export const RAIL_BREAKPOINT = 768;
+const NARROW = `(max-width:${RAIL_BREAKPOINT - 0.05}px)`;
+```
+
+Inside the component, add state and the query, and extract the rail's contents so both drawer variants render the same thing:
+
+```tsx
+  const isNarrow = useMediaQuery(NARROW);
+  const [open, setOpen] = useState(false);
+
+  const railContent = (
+    <>
+      <Typography
+        variant="h6"
+        sx={{ px: `${SPACE.xs}px`, color: tokens.ink, letterSpacing: "-0.01em" }}
+      >
+        Agent<Box component="span" sx={{ color: tokens.brand.text }}>Proof</Box>
+      </Typography>
+
+      <List sx={{ display: "flex", flexDirection: "column", gap: "2px", py: 0 }}>
+        {NAV.map((item) => {
+          const current = isCurrent(pathname, item.to, item.exact);
+          return (
+            <ListItemButton
+              key={item.to}
+              component={RouterLink}
+              to={item.to}
+              selected={current}
+              aria-current={current ? "page" : undefined}
+              onClick={() => setOpen(false)}
+              sx={{ py: "6px" }}
+            >
+              <ListItemText primary={item.label} primaryTypographyProps={{ variant: "body1" }} />
+            </ListItemButton>
+          );
+        })}
+      </List>
+
+      <Box sx={{ mt: "auto", px: `${SPACE.xs}px` }}>
+        <Typography variant="caption" sx={{ color: tokens.muted, display: "block", mb: "4px" }}>
+          Project
+        </Typography>
+        <Select
+          size="small"
+          displayEmpty
+          fullWidth
+          value={project ?? ""}
+          onChange={(e) => setProject(e.target.value || undefined)}
+          inputProps={{ "aria-label": "Project" }}
+          sx={{ bgcolor: tokens.bg }}
+        >
+          <MenuItem value="">All projects</MenuItem>
+          {(projects.data ?? []).map((p) => (
+            <MenuItem key={p} value={p}>{p}</MenuItem>
+          ))}
+        </Select>
+      </Box>
+    </>
+  );
+
+  const paperSx = {
+    width: RAIL_WIDTH,
+    boxSizing: "border-box" as const,
+    bgcolor: tokens.surface,
+    borderRight: `1px solid ${tokens.border}`,
+    borderRadius: 0,
+    px: `${SPACE.xs}px`,
+    py: `${SPACE.md}px`,
+    gap: `${SPACE.md}px`,
+    display: "flex",
+    flexDirection: "column" as const,
+  };
+```
+
+Then replace the returned JSX with:
+
+```tsx
+  return (
+    <Box sx={{ display: "flex", minHeight: "100vh", bgcolor: tokens.bg }}>
+      {isNarrow ? (
+        <Drawer
+          variant="temporary"
+          open={open}
+          onClose={() => setOpen(false)}
+          ModalProps={{ keepMounted: true }}
+          sx={{ [`& .MuiDrawer-paper`]: paperSx }}
+        >
+          {railContent}
+        </Drawer>
+      ) : (
+        <Drawer
+          variant="permanent"
+          component="nav"
+          aria-label="Main navigation"
+          sx={{ width: RAIL_WIDTH, flexShrink: 0, [`& .MuiDrawer-paper`]: paperSx }}
+        >
+          {railContent}
+        </Drawer>
+      )}
+
+      <Box component="main" sx={{ flexGrow: 1, p: `${SPACE.lg}px`, minWidth: 0, bgcolor: tokens.bg }}>
+        {isNarrow && (
+          <IconButton
+            aria-label="Open navigation"
+            onClick={() => setOpen(true)}
+            sx={{ mb: `${SPACE.sm}px`, color: tokens.ink }}
+          >
+            <MenuIcon />
+          </IconButton>
+        )}
+        {children}
+      </Box>
+    </Box>
+  );
+```
+
+`component="nav"` and `aria-label` on the permanent rail also close the missing-landmark finding recorded against Task 5.
+
+- [ ] **Step 4: Run to verify they pass**
+
+Run: `cd dashboard; npx vitest run src/components/AppShell.test.tsx --reporter=basic`
+Expected: PASS, including the four pre-existing `AppShell` tests. Those run without a `matchMedia` stub, so `useMediaQuery` returns `false` and they exercise the wide branch exactly as before — confirm that rather than assuming it.
+
+- [ ] **Step 5: Run the full suite, typecheck, lint**
+
+Run: `cd dashboard; npm test`, then `npx tsc -b`, then `npx eslint . --ext ts,tsx`
+Expected: all clean. `App.test.tsx` also renders `AppShell`; it must stay green.
+
+- [ ] **Step 6: Commit**
+
+```bash
+git add dashboard/src/components/AppShell.tsx dashboard/src/components/AppShell.test.tsx
+git commit -m "feat(dashboard): collapse the left rail below 768px
+
+The rail was permanent at a fixed 208px, so it took that slice from every
+viewport -- at 375px it left 119px of content. Below 768px it now folds into
+a temporary drawer behind a menu button, matching the Overview grid's own
+single-column breakpoint. Also adds the nav landmark the permanent rail was
+missing."
+```
+
+---
+
+### Task 15: Full verification sweep
 
 Nothing here is optional, and nothing here may be reported as passing without the command having been run and its output read.
 
@@ -3808,6 +4077,11 @@ BASE = "http://localhost:5173"
 ROUTES = ["/", "/traces", "/evals", "/security"]
 WIDTHS = [(1440, 900), (375, 812)]
 
+# No-overflow alone is not enough. `minWidth: 0` on <main> guarantees content
+# squeezes rather than overflows, so a page whose content column has collapsed
+# to 119px still passes a horizontal-scroll check. Assert usable width too.
+MIN_CONTENT_PX = 320
+
 def main() -> int:
     failures: list[str] = []
     with sync_playwright() as p:
@@ -3829,6 +4103,17 @@ def main() -> int:
                 )
                 if overflow:
                     failures.append(f"{route} @ {width}px: horizontal scroll")
+
+                content_px = page.evaluate(
+                    "() => { const m = document.querySelector('main');"
+                    " return m ? Math.round(m.getBoundingClientRect().width) : -1; }"
+                )
+                if content_px < MIN_CONTENT_PX:
+                    failures.append(
+                        f"{route} @ {width}px: main is only {content_px}px wide "
+                        f"(min {MIN_CONTENT_PX}) — no-overflow passed but the page is unusable"
+                    )
+
                 if errors:
                     failures.append(f"{route} @ {width}px: console errors {errors}")
                 page.screenshot(path=f"shot-{width}-{route.strip('/') or 'overview'}.png")
