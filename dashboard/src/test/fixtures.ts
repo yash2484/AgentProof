@@ -160,3 +160,73 @@ export const emptySummary: EvalSummary = {
   p99_latency_ms: null,
   metrics: [],
 };
+
+/**
+ * A replay-mode trace: four spans inside one millisecond, and a
+ * `fact_checker` that carries no timestamp at all. This is the shape that
+ * broke the waterfall — it must render four readable bars.
+ */
+export const replaySpanTree: SpanNode[] = [
+  {
+    span_id: "r-root",
+    trace_id: "tr-replay",
+    parent_span_ids: [],
+    span_type: "agent_handoff",
+    name: "orchestrator",
+    start_time: "2026-08-02T10:00:00.000Z",
+    end_time: "2026-08-02T10:00:00.001Z",
+    latency_ms: 1,
+    status: "ok",
+    error_message: null,
+    metadata: {},
+    tags: {},
+    children: [
+      {
+        span_id: "r-search",
+        trace_id: "tr-replay",
+        parent_span_ids: ["r-root"],
+        span_type: "retrieval",
+        name: "search",
+        start_time: "2026-08-02T10:00:00.000Z",
+        end_time: "2026-08-02T10:00:00.000Z",
+        latency_ms: 0,
+        status: "ok",
+        error_message: null,
+        metadata: {},
+        tags: {},
+        children: [],
+      },
+      {
+        span_id: "r-summarize",
+        trace_id: "tr-replay",
+        parent_span_ids: ["r-root"],
+        span_type: "llm_call",
+        name: "summarize",
+        start_time: "2026-08-02T10:00:00.001Z",
+        end_time: "2026-08-02T10:00:00.001Z",
+        latency_ms: 0,
+        status: "ok",
+        error_message: null,
+        metadata: {},
+        tags: {},
+        children: [],
+      },
+      {
+        // No timestamps at all — the span that used to vanish.
+        span_id: "r-fact-checker",
+        trace_id: "tr-replay",
+        parent_span_ids: ["r-root"],
+        span_type: "llm_call",
+        name: "fact_checker",
+        start_time: null,
+        end_time: null,
+        latency_ms: 0,
+        status: "ok",
+        error_message: null,
+        metadata: {},
+        tags: {},
+        children: [],
+      },
+    ],
+  },
+];
