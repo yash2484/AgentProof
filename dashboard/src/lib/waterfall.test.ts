@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { computeWaterfall, MIN_BAR_PX } from "./waterfall";
 import type { SpanNode } from "../types";
-import { replaySpanTree } from "../test/fixtures";
+import { replaySpanTree, timedOnlySpanTree } from "../test/fixtures";
 
 function span(partial: Partial<SpanNode> & { span_id: string }): SpanNode {
   return {
@@ -99,7 +99,7 @@ describe("computeWaterfall", () => {
     expect(MIN_BAR_PX).toBe(3);
   });
 
-  describe("replay-mode traces (regression: defect 1)", () => {
+  describe("replay-mode rendering", () => {
     it("renders every span, including one with no timestamps", () => {
       const rows = computeWaterfall(replaySpanTree);
       expect(rows).toHaveLength(4);
@@ -110,7 +110,9 @@ describe("computeWaterfall", () => {
         "summarize",
       ]);
     });
+  });
 
+  describe("replay-mode traces (regression: defect 1)", () => {
     it("keeps every bar inside the track", () => {
       // The epoch-coercion bug pushed real spans to offset ~100%, off-screen.
       for (const row of computeWaterfall(replaySpanTree)) {
@@ -136,9 +138,21 @@ describe("computeWaterfall", () => {
       expect(rows.find((r) => r.span.name === "summarize")!.offsetPct).toBeCloseTo(100, 5);
     });
 
-    it("anchors an untimed span at the start rather than at the epoch", () => {
-      const rows = computeWaterfall(replaySpanTree);
-      expect(rows.find((r) => r.span.name === "fact_checker")!.offsetPct).toBe(0);
+    it("does not let an untimed span shift the timed spans", () => {
+      // The defect: one untimed span dragged the window origin back to the
+      // Unix epoch, so every timed span's offset collapsed to ~100%. Adding an
+      // untimed span must leave the timed spans exactly where they were.
+      const control = computeWaterfall(timedOnlySpanTree);
+      const withUntimed = computeWaterfall(replaySpanTree);
+
+      for (const name of ["orchestrator", "search", "summarize"]) {
+        const before = control.find((r) => r.span.name === name)!;
+        const after = withUntimed.find((r) => r.span.name === name)!;
+        expect(after.offsetPct).toBeCloseTo(before.offsetPct, 5);
+        expect(after.widthPct).toBeCloseTo(before.widthPct, 5);
+      }
+      // And the untimed span itself anchors at the start, not the epoch.
+      expect(withUntimed.find((r) => r.span.name === "fact_checker")!.offsetPct).toBe(0);
     });
   });
 });

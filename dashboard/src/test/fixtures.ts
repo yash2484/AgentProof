@@ -230,3 +230,17 @@ export const replaySpanTree: SpanNode[] = [
     ],
   },
 ];
+
+/**
+ * Control fixture for the untimed-span comparison: identical to
+ * `replaySpanTree` but with the untimed `fact_checker` child removed. Used to
+ * prove that adding an untimed span does not shift where the *timed* spans
+ * land — that shift (not the untimed span's own position) was the actual
+ * defect, since one untimed span dragged the whole window back to the epoch.
+ */
+export const timedOnlySpanTree: SpanNode[] = [
+  {
+    ...replaySpanTree[0],
+    children: replaySpanTree[0].children.filter((c) => c.name !== "fact_checker"),
+  },
+];

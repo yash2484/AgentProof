@@ -20,22 +20,13 @@ describe("Waterfall", () => {
   });
 });
 
-describe("Waterfall — replay-mode traces (regression: defect 1)", () => {
+describe("Waterfall — replay-mode rendering", () => {
   it("renders all four spans, fact_checker included", () => {
     renderWithProviders(<Waterfall roots={replaySpanTree} onSelect={() => {}} />);
     expect(screen.getByText("orchestrator")).toBeInTheDocument();
     expect(screen.getByText("search")).toBeInTheDocument();
     expect(screen.getByText("summarize")).toBeInTheDocument();
     expect(screen.getByText("fact_checker")).toBeInTheDocument();
-  });
-
-  it("gives every bar a 3px minimum rendered width", () => {
-    renderWithProviders(<Waterfall roots={replaySpanTree} onSelect={() => {}} />);
-    for (const id of ["r-root", "r-search", "r-summarize", "r-fact-checker"]) {
-      expect(screen.getByTestId(`waterfall-bar-${id}`)).toHaveStyle({
-        minWidth: "3px",
-      });
-    }
   });
 
   it("keeps a near-zero span clickable", () => {
@@ -45,5 +36,16 @@ describe("Waterfall — replay-mode traces (regression: defect 1)", () => {
     expect(onSelect).toHaveBeenCalledWith(
       expect.objectContaining({ span_id: "r-fact-checker" }),
     );
+  });
+});
+
+describe("Waterfall — replay-mode traces (regression: defect 1)", () => {
+  it("gives every bar a 3px minimum rendered width", () => {
+    renderWithProviders(<Waterfall roots={replaySpanTree} onSelect={() => {}} />);
+    for (const id of ["r-root", "r-search", "r-summarize", "r-fact-checker"]) {
+      expect(screen.getByTestId(`waterfall-bar-${id}`)).toHaveStyle({
+        minWidth: "3px",
+      });
+    }
   });
 });
