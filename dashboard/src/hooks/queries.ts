@@ -7,6 +7,7 @@ export const queryKeys = {
   evalResultsForTrace: (id: string) => ["evalResults", "trace", id] as const,
   evalResults: (params: unknown) => ["evalResults", "list", params] as const,
   metrics: () => ["metrics"] as const,
+  evalSummary: (project: string | undefined) => ["evalSummary", project] as const,
 };
 
 export function useTraces(params: Parameters<typeof api.listTraces>[0] = {}) {
@@ -64,5 +65,12 @@ export function useRunEval() {
       qc.invalidateQueries({ queryKey: queryKeys.evalResultsForTrace(id) });
       qc.invalidateQueries({ queryKey: ["evalResults"] });
     },
+  });
+}
+
+export function useEvalSummary(project?: string) {
+  return useQuery({
+    queryKey: queryKeys.evalSummary(project),
+    queryFn: () => api.getEvalSummary({ project }),
   });
 }

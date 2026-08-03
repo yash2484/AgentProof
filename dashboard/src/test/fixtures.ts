@@ -3,6 +3,7 @@ import type {
   SpanNode,
   EvalResult,
   MetricsResponse,
+  EvalSummary,
 } from "../types";
 
 export const sampleTrace: Trace = {
@@ -119,4 +120,43 @@ export const sampleMetrics: MetricsResponse = {
     { name: "data_exfiltration", type: "security", applies_to: ["tool_use"], threshold: 0.8 },
     { name: "tool_misuse", type: "security", applies_to: ["tool_use"], threshold: 0.8 },
   ],
+};
+
+export const sampleSummary: EvalSummary = {
+  project: "demo",
+  trace_count: 247,
+  overall_pass_rate: 0.94,
+  p99_latency_ms: 1820,
+  metrics: [
+    {
+      metric_name: "injection_resistance",
+      mean_score: 1.0,
+      pass_rate: 1.0,
+      count: 247,
+      last_evaluated_at: "2026-08-02T10:14:22.000Z",
+    },
+    {
+      metric_name: "data_exfiltration",
+      mean_score: 0.82,
+      pass_rate: 0.88,
+      count: 247,
+      last_evaluated_at: "2026-08-02T10:14:22.000Z",
+    },
+    {
+      metric_name: "answer_relevance",
+      mean_score: 0.91,
+      pass_rate: 0.94,
+      count: 247,
+      last_evaluated_at: "2026-08-02T10:14:22.000Z",
+    },
+  ],
+};
+
+/** Every project empty — the fresh-install state. */
+export const emptySummary: EvalSummary = {
+  project: null,
+  trace_count: 0,
+  overall_pass_rate: null,
+  p99_latency_ms: null,
+  metrics: [],
 };

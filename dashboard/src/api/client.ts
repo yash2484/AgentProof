@@ -3,6 +3,7 @@ import type {
   SpanNode,
   EvalResultsResponse,
   MetricsResponse,
+  EvalSummary,
 } from "../types";
 
 export class ApiError extends Error {
@@ -89,4 +90,10 @@ export function runEval(traceId: string): Promise<EvalResultsResponse> {
     method: "POST",
     body: JSON.stringify({ trace_id: traceId }),
   });
+}
+
+export function getEvalSummary(
+  params: { project?: string } = {},
+): Promise<EvalSummary> {
+  return request<EvalSummary>(`/evals/summary${qs(params)}`);
 }
