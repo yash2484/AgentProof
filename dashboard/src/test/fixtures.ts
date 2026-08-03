@@ -244,3 +244,22 @@ export const timedOnlySpanTree: SpanNode[] = [
     children: replaySpanTree[0].children.filter((c) => c.name !== "fact_checker"),
   },
 ];
+
+/**
+ * Six results across three runs, all inside the same second — the batch
+ * export shape that collapsed the old time axis.
+ */
+export const batchEvalResults: EvalResult[] = [0, 1, 2].flatMap((i) => [
+  {
+    ...sampleEvalResults[0],
+    trace_id: `tr-batch-${i}`,
+    score: 0.9 - i * 0.1,
+    evaluated_at: `2026-08-02T10:00:00.${String(100 + i * 10).padStart(3, "0")}Z`,
+  },
+  {
+    ...sampleEvalResults[1],
+    trace_id: `tr-batch-${i}`,
+    score: 0.5 + i * 0.1,
+    evaluated_at: `2026-08-02T10:00:00.${String(100 + i * 10).padStart(3, "0")}Z`,
+  },
+]);
