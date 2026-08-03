@@ -3408,10 +3408,37 @@ In `dashboard/src/pages/SecurityPage.tsx`, replace the key on line 34:
 Run: `cd dashboard; npx vitest run src/components/SecurityReportCard.test.tsx src/pages/SecurityPage.test.tsx`
 Expected: PASS, including the pre-existing "renders only security findings" test.
 
-- [ ] **Step 7: Commit**
+- [ ] **Step 7: Lock the filled-chip contrast pairing**
+
+The PASS/FAIL chips here are MUI filled `Chip`s, so they render `palette.<tone>.main` as the background with `contrastText` as the label — a foreground/background pairing the Task 1 contrast test never covered, because it only checked tokens against the two page backgrounds. Measured values are safe today (`status.pass` 9.57, `status.warn` 8.66, `status.fail.solid` 4.88, `brand.solid` 4.63) but nothing guards them.
+
+Append to `dashboard/src/theme/contrast.test.ts`:
+
+```ts
+describe("filled-chip label contrast", () => {
+  // MUI's filled Chip/Button render palette.<tone>.main as the background
+  // and contrastText as the label. palette.ts sets contrastText to onFill on
+  // every one of these, so each pairing is real and must clear the body floor.
+  const FILLED: Array<[string, string]> = [
+    ["success", tokens.status.pass],
+    ["error", tokens.status.fail.solid],
+    ["warning", tokens.status.warn],
+    ["primary", tokens.brand.solid],
+  ];
+
+  it.each(FILLED)("onFill on %s.main clears 4.5:1", (_tone, background) => {
+    expect(contrastRatio(tokens.onFill, background)).toBeGreaterThanOrEqual(4.5);
+  });
+});
+```
+
+Run: `cd dashboard; npx vitest run src/theme/contrast.test.ts`
+Expected: PASS, 4 new cases.
+
+- [ ] **Step 8: Commit**
 
 ```bash
-git add dashboard/src/components/SecurityReportCard.tsx dashboard/src/components/SecurityReportCard.test.tsx dashboard/src/pages/SecurityPage.tsx dashboard/src/pages/SecurityPage.test.tsx dashboard/src/test/fixtures.ts
+git add dashboard/src/components/SecurityReportCard.tsx dashboard/src/components/SecurityReportCard.test.tsx dashboard/src/pages/SecurityPage.tsx dashboard/src/pages/SecurityPage.test.tsx dashboard/src/test/fixtures.ts dashboard/src/theme/contrast.test.ts
 git commit -m "fix(dashboard): attribute every security card to its trace"
 ```
 
