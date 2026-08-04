@@ -21,10 +21,7 @@ export function TraceDetailPage() {
   return (
     <Box>
       <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: `${SPACE.md}px` }}>
-        <Box>
-          <Typography variant="h5" sx={{ color: tokens.ink }}>Trace {traceId}</Typography>
-          <Typography variant="body2" sx={{ color: tokens.muted }}>{traceId}</Typography>
-        </Box>
+        <Typography variant="h5" sx={{ color: tokens.ink }}>Trace {traceId}</Typography>
         <Button
           variant="contained"
           disabled={runEval.isPending}
