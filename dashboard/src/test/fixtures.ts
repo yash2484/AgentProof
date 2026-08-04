@@ -263,3 +263,24 @@ export const batchEvalResults: EvalResult[] = [0, 1, 2].flatMap((i) => [
     evaluated_at: `2026-08-02T10:00:00.${String(100 + i * 10).padStart(3, "0")}Z`,
   },
 ]);
+
+/**
+ * Three runs, but `injection_resistance` is missing from the middle one.
+ * On a shared axis its two points sit at indices 0 and 2; on a per-metric
+ * axis they would be renumbered 0 and 1. That difference is what makes the
+ * shared-axis property observable at all.
+ */
+export const sparseBatchEvalResults: EvalResult[] = [
+  ...[0, 1, 2].map((i) => ({
+    ...sampleEvalResults[0],
+    trace_id: `tr-sparse-${i}`,
+    score: 0.9 - i * 0.1,
+    evaluated_at: `2026-08-02T10:00:00.${String(100 + i * 10).padStart(3, "0")}Z`,
+  })),
+  ...[0, 2].map((i) => ({
+    ...sampleEvalResults[1],
+    trace_id: `tr-sparse-${i}`,
+    score: 0.5 + i * 0.1,
+    evaluated_at: `2026-08-02T10:00:00.${String(100 + i * 10).padStart(3, "0")}Z`,
+  })),
+];

@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { screen } from "@testing-library/react";
 import { renderWithProviders } from "../test/utils";
-import { sampleEvalResults, batchEvalResults } from "../test/fixtures";
+import { sampleEvalResults, batchEvalResults, sparseBatchEvalResults } from "../test/fixtures";
 import { ScoreTimeseries, seriesFromResults, thresholdsFor, runTimestamps } from "./ScoreTimeseries";
 import { sampleMetrics } from "../test/fixtures";
 
@@ -64,9 +64,15 @@ describe("run-index axis (regression: defect 2)", () => {
   });
 
   it("indexes every metric against the same shared run axis", () => {
-    const series = seriesFromResults(batchEvalResults);
-    const indices = series.map((s) => s.points.map((p) => p.runIndex));
-    expect(indices[0]).toEqual(indices[1]);
+    const series = seriesFromResults(sparseBatchEvalResults);
+    const full = series.find((s) => s.name === "answer_relevance")!;
+    const sparse = series.find((s) => s.name === "injection_resistance")!;
+
+    expect(full.points.map((p) => p.runIndex)).toEqual([0, 1, 2]);
+    // injection_resistance has no result for run 1. On the shared axis its
+    // points keep positions 0 and 2, leaving a real gap. A per-metric axis
+    // would renumber them to [0, 1] and silently close that gap.
+    expect(sparse.points.map((p) => p.runIndex)).toEqual([0, 2]);
   });
 
   it("ignores results with no score when building the axis", () => {
@@ -76,7 +82,9 @@ describe("run-index axis (regression: defect 2)", () => {
     ]);
     expect(runs).toHaveLength(3);
   });
+});
 
+describe("ScoreTimeseries with a batch fixture", () => {
   it("still renders with the sample fixture", () => {
     renderWithProviders(
       <ScoreTimeseries results={batchEvalResults} metrics={sampleMetrics.metrics} />,
