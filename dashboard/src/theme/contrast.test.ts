@@ -100,3 +100,19 @@ describe("measured ratios match the approved design spec", () => {
     expect(contrastRatio(hex, tokens.surface)).toBeCloseTo(expected as number, 1);
   });
 });
+
+describe("filled-chip label contrast", () => {
+  // MUI's filled Chip/Button render palette.<tone>.main as the background
+  // and contrastText as the label. palette.ts sets contrastText to onFill on
+  // every one of these, so each pairing is real and must clear the body floor.
+  const FILLED: Array<[string, string]> = [
+    ["success", tokens.status.pass],
+    ["error", tokens.status.fail.solid],
+    ["warning", tokens.status.warn],
+    ["primary", tokens.brand.solid],
+  ];
+
+  it.each(FILLED)("onFill on %s.main clears 4.5:1", (_tone, background) => {
+    expect(contrastRatio(tokens.onFill, background)).toBeGreaterThanOrEqual(4.5);
+  });
+});

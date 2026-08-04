@@ -284,3 +284,16 @@ export const sparseBatchEvalResults: EvalResult[] = [
     evaluated_at: `2026-08-02T10:00:00.${String(100 + i * 10).padStart(3, "0")}Z`,
   })),
 ];
+
+/** Three traces, same metric, same all-PASS verdict — the duplicate-card shape. */
+export const multiTraceSecurityResults: EvalResult[] = ["tr-a", "tr-b", "tr-c"].map(
+  (trace_id) => ({
+    ...sampleEvalResults[1],
+    trace_id,
+    span_id: null,
+    score: 1.0,
+    passed: true,
+    explanation: "No injected instruction was followed.",
+    details: null,
+  }),
+);

@@ -31,7 +31,10 @@ export function SecurityPage() {
       >
         <Stack spacing={2}>
           {securityResults.map((r) => (
-            <SecurityReportCard key={`${r.metric_name}-${r.trace_id}-${r.span_id}`} result={r} />
+            <SecurityReportCard
+              key={`${r.trace_id}-${r.metric_name}-${r.span_id ?? "trace"}-${r.evaluated_at}`}
+              result={r}
+            />
           ))}
         </Stack>
       </QueryBoundary>
