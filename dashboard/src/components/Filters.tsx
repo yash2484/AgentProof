@@ -1,4 +1,5 @@
 import { MenuItem, Stack, TextField } from "@mui/material";
+import { SPACE } from "../theme";
 
 export interface TraceFilters {
   status?: string;
@@ -16,7 +17,7 @@ export function TraceListFilters({
   onChange: (next: TraceFilters) => void;
 }) {
   return (
-    <Stack direction="row" spacing={2} sx={{ mb: 2 }}>
+    <Stack direction="row" sx={{ gap: `${SPACE.xs}px`, mb: 2 }}>
       <TextField
         label="Status"
         size="small"

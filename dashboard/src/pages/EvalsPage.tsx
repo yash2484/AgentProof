@@ -4,6 +4,7 @@ import { useEvalResults, useMetrics } from "../hooks/queries";
 import { QueryBoundary } from "../components/QueryBoundary";
 import { ScoreTimeseries } from "../components/ScoreTimeseries";
 import { useProject } from "../context/ProjectContext";
+import { tokens, SPACE } from "../theme";
 
 export function EvalsPage() {
   const [metricName, setMetricName] = useState<string>("");
@@ -18,12 +19,12 @@ export function EvalsPage() {
 
   return (
     <Box>
-      <Typography variant="h5" sx={{ mb: 2 }}>Eval scores over time</Typography>
+      <Typography variant="h5" sx={{ color: tokens.ink, mb: `${SPACE.md}px` }}>Eval scores over time</Typography>
       <TextField
         label="Metric"
         size="small"
         select
-        sx={{ minWidth: 220, mb: 2 }}
+        sx={{ minWidth: 220, mb: `${SPACE.md}px` }}
         value={metricName}
         onChange={(e) => setMetricName(e.target.value)}
       >
@@ -39,7 +40,16 @@ export function EvalsPage() {
         emptyMessage="No eval results yet — run evals to populate this chart."
         onRetry={refetch}
       >
-        <ScoreTimeseries results={results} metrics={metrics.data?.metrics ?? []} />
+        <Box
+          sx={{
+            p: `${SPACE.md}px`,
+            bgcolor: tokens.surface,
+            border: `1px solid ${tokens.border}`,
+            borderRadius: 2.5,
+          }}
+        >
+          <ScoreTimeseries results={results} metrics={metrics.data?.metrics ?? []} />
+        </Box>
       </QueryBoundary>
     </Box>
   );
