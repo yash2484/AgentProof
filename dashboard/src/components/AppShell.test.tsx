@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { screen, waitFor } from "@testing-library/react";
+import { screen, waitFor, fireEvent } from "@testing-library/react";
 import { renderWithProviders } from "../test/utils";
 import { sampleTraces } from "../test/fixtures";
 import * as api from "../api/client";
@@ -54,6 +54,66 @@ describe("AppShell left rail", () => {
   it("keeps the project switcher reachable from the rail", async () => {
     renderWithProviders(<AppShell><div>content</div></AppShell>, { route: "/traces" });
     await waitFor(() => expect(api.listTraces).toHaveBeenCalled());
+    expect(screen.getByLabelText("Project")).toBeInTheDocument();
+  });
+});
+
+/** Stub matchMedia so useMediaQuery can be driven deterministically. */
+function setViewport(matches: boolean) {
+  vi.stubGlobal(
+    "matchMedia",
+    (query: string) => ({
+      matches,
+      media: query,
+      onchange: null,
+      addListener: () => {},
+      removeListener: () => {},
+      addEventListener: () => {},
+      removeEventListener: () => {},
+      dispatchEvent: () => false,
+    }),
+  );
+}
+
+describe("AppShell responsive rail", () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  it("shows the rail and no menu button on a wide viewport", async () => {
+    setViewport(false); // not narrow
+    renderWithProviders(<AppShell><div>content</div></AppShell>, { route: "/traces" });
+    expect(screen.getByRole("link", { name: "Traces" })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /open navigation/i })).not.toBeInTheDocument();
+    await waitFor(() => expect(api.listTraces).toHaveBeenCalled());
+  });
+
+  it("hides the rail behind a menu button on a narrow viewport", () => {
+    setViewport(true); // narrow
+    renderWithProviders(<AppShell><div>content</div></AppShell>, { route: "/traces" });
+    expect(screen.getByRole("button", { name: /open navigation/i })).toBeInTheDocument();
+    // The temporary drawer is closed initially, so nav links are not rendered.
+    expect(screen.queryByRole("link", { name: "Traces" })).not.toBeInTheDocument();
+  });
+
+  it("opens the drawer when the menu button is clicked", () => {
+    setViewport(true);
+    renderWithProviders(<AppShell><div>content</div></AppShell>, { route: "/traces" });
+    fireEvent.click(screen.getByRole("button", { name: /open navigation/i }));
+    expect(screen.getByRole("link", { name: "Traces" })).toBeInTheDocument();
+  });
+
+  it("closes the drawer after following a link", () => {
+    setViewport(true);
+    renderWithProviders(<AppShell><div>content</div></AppShell>, { route: "/traces" });
+    fireEvent.click(screen.getByRole("button", { name: /open navigation/i }));
+    fireEvent.click(screen.getByRole("link", { name: "Evals" }));
+    // Navigating must not leave the overlay covering the page.
+    expect(screen.queryByRole("link", { name: "Evals" })).not.toBeInTheDocument();
+  });
+
+  it("keeps the project switcher reachable on a narrow viewport", () => {
+    setViewport(true);
+    renderWithProviders(<AppShell><div>content</div></AppShell>, { route: "/traces" });
+    fireEvent.click(screen.getByRole("button", { name: /open navigation/i }));
     expect(screen.getByLabelText("Project")).toBeInTheDocument();
   });
 });
