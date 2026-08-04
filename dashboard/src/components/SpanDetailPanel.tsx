@@ -1,3 +1,4 @@
+import { useEffect } from "react";
 import { Box, Drawer, IconButton, Stack, Typography } from "@mui/material";
 import CloseIcon from "@mui/icons-material/Close";
 import { formatDuration } from "../lib/format";
@@ -21,6 +22,19 @@ export function SpanDetailPanel({
   span: Span | null;
   onClose: () => void;
 }) {
+  // MUI wires Escape-to-close as onKeyDown on the Modal root, so it stops
+  // working the moment focus leaves the panel -- and disableEnforceFocus
+  // lets that happen by design. With no backdrop to click either, the panel
+  // would otherwise be a keyboard trap. Listen on document instead.
+  useEffect(() => {
+    if (span === null) return;
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") onClose();
+    };
+    document.addEventListener("keydown", onKeyDown);
+    return () => document.removeEventListener("keydown", onKeyDown);
+  }, [span, onClose]);
+
   return (
     <Drawer
       anchor="right"
@@ -42,7 +56,7 @@ export function SpanDetailPanel({
         },
       }}
     >
-      <Box sx={{ width: PANEL_WIDTH, p: `${SPACE.md}px` }}>
+      <Box sx={{ p: `${SPACE.md}px` }}>
         {span && (
           <>
             <Stack direction="row" justifyContent="space-between" alignItems="center">

@@ -46,11 +46,33 @@ describe("SpanDetailPanel", () => {
     });
 
     it("still accepts pointer events inside the panel", () => {
+      // Baseline assertion, not part of the defect-4 regression proof:
+      // "auto" is CSS's initial value for pointer-events, so this holds
+      // whether or not the fix is applied. It documents intent, it does not
+      // discriminate.
       const { baseElement } = renderWithProviders(
         <SpanDetailPanel span={span} onClose={() => {}} />,
       );
       const paper = baseElement.querySelector(".MuiDrawer-paper") as HTMLElement;
       expect(paper).toHaveStyle({ pointerEvents: "auto" });
+    });
+  });
+
+  describe("keyboard dismissal", () => {
+    it("closes on Escape even when focus has left the panel", () => {
+      const onClose = vi.fn();
+      renderWithProviders(<SpanDetailPanel span={span} onClose={onClose} />);
+      // Focus is on document.body, i.e. outside the modal root -- exactly the
+      // state disableEnforceFocus permits and where MUI's own handler is dead.
+      fireEvent.keyDown(document, { key: "Escape" });
+      expect(onClose).toHaveBeenCalledTimes(1);
+    });
+
+    it("does not listen for Escape while closed", () => {
+      const onClose = vi.fn();
+      renderWithProviders(<SpanDetailPanel span={null} onClose={onClose} />);
+      fireEvent.keyDown(document, { key: "Escape" });
+      expect(onClose).not.toHaveBeenCalled();
     });
   });
 });
