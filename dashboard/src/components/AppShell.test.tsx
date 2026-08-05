@@ -1,5 +1,10 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { screen, waitFor, fireEvent } from "@testing-library/react";
+import { screen, waitFor, fireEvent, render } from "@testing-library/react";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { MemoryRouter } from "react-router-dom";
+import { ThemeProvider } from "@mui/material";
+import { theme } from "../theme";
+import { ProjectProvider } from "../context/ProjectContext";
 import { renderWithProviders } from "../test/utils";
 import { sampleTraces } from "../test/fixtures";
 import * as api from "../api/client";
@@ -91,6 +96,11 @@ describe("AppShell responsive rail", () => {
     renderWithProviders(<AppShell><div>content</div></AppShell>, { route: "/traces" });
     expect(screen.getByRole("button", { name: /open navigation/i })).toBeInTheDocument();
     // The temporary drawer is closed initially, so nav links are not rendered.
+    // ModalProps={{ keepMounted: true }} keeps railContent mounted while closed,
+    // but MUI's Modal applies inline `visibility: hidden`, which Testing
+    // Library's role queries treat as inaccessible and exclude by default --
+    // that's what makes this assertion (rather than a "not in the DOM" check)
+    // a valid guard.
     expect(screen.queryByRole("link", { name: "Traces" })).not.toBeInTheDocument();
   });
 
@@ -115,5 +125,48 @@ describe("AppShell responsive rail", () => {
     renderWithProviders(<AppShell><div>content</div></AppShell>, { route: "/traces" });
     fireEvent.click(screen.getByRole("button", { name: /open navigation/i }));
     expect(screen.getByLabelText("Project")).toBeInTheDocument();
+  });
+
+  it("does not reopen the drawer after the viewport widens and narrows again", () => {
+    // renderWithProviders wraps `ui` inside its own provider tree before
+    // calling RTL's render(), so its `rerender` only replaces `ui` -- it
+    // can't be handed a bare <AppShell> here because that would drop the
+    // Router/Query/Project providers rendered around it and throw. Mirror
+    // the same wrapper locally so `rerender` keeps the same AppShell
+    // instance (and its state) across viewport flips.
+    //
+    // Each call below builds a fresh element tree rather than reusing one
+    // reference: React bails out of re-rendering a subtree whose top-level
+    // element is referentially unchanged, which would silently stop
+    // useMediaQuery from ever re-reading the re-stubbed matchMedia.
+    const client = new QueryClient({
+      defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
+    });
+    const buildTree = () => (
+      <QueryClientProvider client={client}>
+        <ThemeProvider theme={theme}>
+          <ProjectProvider>
+            <MemoryRouter initialEntries={["/traces"]}>
+              <AppShell><div>content</div></AppShell>
+            </MemoryRouter>
+          </ProjectProvider>
+        </ThemeProvider>
+      </QueryClientProvider>
+    );
+
+    setViewport(true); // narrow
+    const { rerender } = render(buildTree());
+    fireEvent.click(screen.getByRole("button", { name: /open navigation/i }));
+    expect(screen.getByRole("link", { name: "Traces" })).toBeInTheDocument();
+
+    setViewport(false); // widen past the breakpoint
+    rerender(buildTree());
+
+    setViewport(true); // and back to narrow
+    rerender(buildTree());
+
+    // The drawer must be closed again, not popped open by stale state.
+    expect(screen.queryByRole("link", { name: "Traces" })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /open navigation/i })).toBeInTheDocument();
   });
 });

@@ -1,4 +1,4 @@
-import { ReactNode, useState } from "react";
+import { ReactNode, useEffect, useState } from "react";
 import {
   Box, Drawer, IconButton, List, ListItemButton, ListItemText, MenuItem,
   Select, Typography, useMediaQuery,
@@ -37,6 +37,14 @@ export function AppShell({ children }: { children: ReactNode }) {
   const projects = useProjects();
   const isNarrow = useMediaQuery(NARROW);
   const [open, setOpen] = useState(false);
+
+  // The permanent branch ignores `open`, so a drawer left open on a narrow
+  // viewport would still be open in state when the layout later returns to
+  // narrow -- popping the overlay back up with no user interaction. Close it
+  // on the way out.
+  useEffect(() => {
+    if (!isNarrow) setOpen(false);
+  }, [isNarrow]);
 
   const railContent = (
     <>
