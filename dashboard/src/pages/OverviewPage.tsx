@@ -48,15 +48,15 @@ export function OverviewPage() {
           latest.refetch();
         }}
       >
-        {/*
-         * The spec's breakpoints (3 cols >=1024px, 2 >=768px, 1 below) don't
-         * line up with MUI's default sm/lg keys (600px/1200px) and this repo
-         * defines no custom breakpoints. Scoped media queries here express
-         * the spec exactly without a global `breakpoints` override — this
-         * page is the only breakpoint consumer in the codebase today, and a
-         * global change would be invisible action-at-a-distance the moment a
-         * second consumer appears.
-         */}
+        {/* The spec's breakpoints (3 cols >=1024px, 2 >=768px, 1 below) don't
+          * line up with MUI's default sm/lg keys (600px/1200px) and this repo
+          * defines no custom breakpoints, so these scoped media queries express
+          * the spec exactly without a global override.
+          *
+          * Known inconsistency: SecurityPage folds at MUI's `md` (900px), so the
+          * app currently changes layout at 768, 900 and 1024. Reconciling the
+          * three onto one scale is tracked follow-up work.
+          */}
         <Box
           sx={{
             display: "grid",
