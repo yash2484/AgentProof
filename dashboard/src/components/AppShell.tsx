@@ -114,12 +114,16 @@ export function AppShell({ children }: { children: ReactNode }) {
       {isNarrow ? (
         <Drawer
           variant="temporary"
-          component="nav"
-          aria-label="Main navigation"
           open={open}
           onClose={() => setOpen(false)}
           ModalProps={{ keepMounted: true }}
-          sx={{ [`& .MuiDrawer-paper`]: paperSx }}
+          slotProps={{
+            paper: {
+              component: "nav",
+              "aria-label": "Main navigation",
+              sx: paperSx,
+            },
+          }}
         >
           {railContent}
         </Drawer>

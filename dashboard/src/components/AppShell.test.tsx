@@ -91,6 +91,27 @@ describe("AppShell responsive rail", () => {
     await waitFor(() => expect(api.listTraces).toHaveBeenCalled());
   });
 
+  it("exposes a navigation landmark at both viewport sizes", () => {
+    setViewport(false); // wide
+    const { unmount } = renderWithProviders(
+      <AppShell><div>content</div></AppShell>, { route: "/traces" },
+    );
+    expect(screen.getByRole("navigation", { name: "Main navigation" })).toBeInTheDocument();
+    unmount();
+
+    // Narrow: the drawer's paper carries the landmark, but while the drawer
+    // is closed the paper sits behind an aria-hidden Modal wrapper with
+    // visibility:hidden -- role queries correctly exclude it, same as the
+    // "hides the rail..." test below documents for links. That's accurate:
+    // there's nothing on screen to navigate yet. Open it first, which is
+    // the only way a user (or assistive tech) reaches the rail at this
+    // width, and assert the landmark is there once revealed.
+    setViewport(true); // narrow
+    renderWithProviders(<AppShell><div>content</div></AppShell>, { route: "/traces" });
+    fireEvent.click(screen.getByRole("button", { name: /open navigation/i }));
+    expect(screen.getByRole("navigation", { name: "Main navigation" })).toBeInTheDocument();
+  });
+
   it("hides the rail behind a menu button on a narrow viewport", () => {
     setViewport(true); // narrow
     renderWithProviders(<AppShell><div>content</div></AppShell>, { route: "/traces" });
