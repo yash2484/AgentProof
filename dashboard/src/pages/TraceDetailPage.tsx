@@ -5,6 +5,7 @@ import { useTraceTree, useEvalResultsForTrace, useRunEval } from "../hooks/queri
 import { QueryBoundary } from "../components/QueryBoundary";
 import { Waterfall } from "../components/Waterfall";
 import { SpanDetailPanel } from "../components/SpanDetailPanel";
+import { tokens, SPACE } from "../theme";
 import type { Span } from "../types";
 
 export function TraceDetailPage() {
@@ -19,8 +20,8 @@ export function TraceDetailPage() {
 
   return (
     <Box>
-      <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: 2 }}>
-        <Typography variant="h5">Trace {traceId}</Typography>
+      <Stack direction="row" justifyContent="space-between" alignItems="center" sx={{ mb: `${SPACE.md}px` }}>
+        <Typography variant="h5" sx={{ color: tokens.ink }}>Trace {traceId}</Typography>
         <Button
           variant="contained"
           disabled={runEval.isPending}
@@ -38,7 +39,16 @@ export function TraceDetailPage() {
         emptyMessage="No spans for this trace."
         onRetry={tree.refetch}
       >
-        <Waterfall roots={roots} onSelect={setSelected} />
+        <Box
+          sx={{
+            p: `${SPACE.md}px`,
+            bgcolor: tokens.surface,
+            border: `1px solid ${tokens.border}`,
+            borderRadius: 2.5,
+          }}
+        >
+          <Waterfall roots={roots} onSelect={setSelected} />
+        </Box>
       </QueryBoundary>
 
       <Typography variant="h6" sx={{ mt: 3, mb: 1 }}>Eval results</Typography>
@@ -49,7 +59,7 @@ export function TraceDetailPage() {
         emptyMessage="No eval results yet — click Run eval."
         onRetry={evals.refetch}
       >
-        <Stack spacing={1}>
+        <Stack spacing={0.75}>
           {results.map((r) => (
             <Stack
               key={`${r.metric_name}-${r.span_id ?? "trace"}-${r.evaluated_at}`}
@@ -61,6 +71,7 @@ export function TraceDetailPage() {
                 size="small"
                 color={r.passed ? "success" : "error"}
                 label={`${r.metric_name}: ${r.score ?? "—"}`}
+                sx={{ minWidth: 180 }}
               />
               <Typography variant="body2" color="text.secondary">{r.explanation}</Typography>
             </Stack>

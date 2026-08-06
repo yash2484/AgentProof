@@ -3,6 +3,7 @@ import type {
   SpanNode,
   EvalResult,
   MetricsResponse,
+  EvalSummary,
 } from "../types";
 
 export const sampleTrace: Trace = {
@@ -120,3 +121,179 @@ export const sampleMetrics: MetricsResponse = {
     { name: "tool_misuse", type: "security", applies_to: ["tool_use"], threshold: 0.8 },
   ],
 };
+
+export const sampleSummary: EvalSummary = {
+  project: "demo",
+  trace_count: 247,
+  overall_pass_rate: 0.94,
+  p99_latency_ms: 1820,
+  metrics: [
+    {
+      metric_name: "injection_resistance",
+      mean_score: 1.0,
+      pass_rate: 1.0,
+      count: 247,
+      last_evaluated_at: "2026-08-02T10:14:22.000Z",
+    },
+    {
+      metric_name: "data_exfiltration",
+      mean_score: 0.82,
+      pass_rate: 0.88,
+      count: 247,
+      last_evaluated_at: "2026-08-02T10:14:22.000Z",
+    },
+    {
+      metric_name: "answer_relevance",
+      mean_score: 0.91,
+      pass_rate: 0.94,
+      count: 247,
+      last_evaluated_at: "2026-08-02T10:14:22.000Z",
+    },
+  ],
+};
+
+/** Every project empty — the fresh-install state. */
+export const emptySummary: EvalSummary = {
+  project: null,
+  trace_count: 0,
+  overall_pass_rate: null,
+  p99_latency_ms: null,
+  metrics: [],
+};
+
+/**
+ * A replay-mode trace: four spans inside one millisecond, and a
+ * `fact_checker` that carries no timestamp at all. This is the shape that
+ * broke the waterfall — it must render four readable bars.
+ */
+export const replaySpanTree: SpanNode[] = [
+  {
+    span_id: "r-root",
+    trace_id: "tr-replay",
+    parent_span_ids: [],
+    span_type: "agent_handoff",
+    name: "orchestrator",
+    start_time: "2026-08-02T10:00:00.000Z",
+    end_time: "2026-08-02T10:00:00.001Z",
+    latency_ms: 1,
+    status: "ok",
+    error_message: null,
+    metadata: {},
+    tags: {},
+    children: [
+      {
+        span_id: "r-search",
+        trace_id: "tr-replay",
+        parent_span_ids: ["r-root"],
+        span_type: "retrieval",
+        name: "search",
+        start_time: "2026-08-02T10:00:00.000Z",
+        end_time: "2026-08-02T10:00:00.000Z",
+        latency_ms: 0,
+        status: "ok",
+        error_message: null,
+        metadata: {},
+        tags: {},
+        children: [],
+      },
+      {
+        span_id: "r-summarize",
+        trace_id: "tr-replay",
+        parent_span_ids: ["r-root"],
+        span_type: "llm_call",
+        name: "summarize",
+        start_time: "2026-08-02T10:00:00.001Z",
+        end_time: "2026-08-02T10:00:00.001Z",
+        latency_ms: 0,
+        status: "ok",
+        error_message: null,
+        metadata: {},
+        tags: {},
+        children: [],
+      },
+      {
+        // No timestamps at all — the span that used to vanish.
+        span_id: "r-fact-checker",
+        trace_id: "tr-replay",
+        parent_span_ids: ["r-root"],
+        span_type: "llm_call",
+        name: "fact_checker",
+        start_time: null,
+        end_time: null,
+        latency_ms: 0,
+        status: "ok",
+        error_message: null,
+        metadata: {},
+        tags: {},
+        children: [],
+      },
+    ],
+  },
+];
+
+/**
+ * Control fixture for the untimed-span comparison: identical to
+ * `replaySpanTree` but with the untimed `fact_checker` child removed. Used to
+ * prove that adding an untimed span does not shift where the *timed* spans
+ * land — that shift (not the untimed span's own position) was the actual
+ * defect, since one untimed span dragged the whole window back to the epoch.
+ */
+export const timedOnlySpanTree: SpanNode[] = [
+  {
+    ...replaySpanTree[0],
+    children: replaySpanTree[0].children.filter((c) => c.name !== "fact_checker"),
+  },
+];
+
+/**
+ * Six results across three runs, all inside the same second — the batch
+ * export shape that collapsed the old time axis.
+ */
+export const batchEvalResults: EvalResult[] = [0, 1, 2].flatMap((i) => [
+  {
+    ...sampleEvalResults[0],
+    trace_id: `tr-batch-${i}`,
+    score: 0.9 - i * 0.1,
+    evaluated_at: `2026-08-02T10:00:00.${String(100 + i * 10).padStart(3, "0")}Z`,
+  },
+  {
+    ...sampleEvalResults[1],
+    trace_id: `tr-batch-${i}`,
+    score: 0.5 + i * 0.1,
+    evaluated_at: `2026-08-02T10:00:00.${String(100 + i * 10).padStart(3, "0")}Z`,
+  },
+]);
+
+/**
+ * Three runs, but `injection_resistance` is missing from the middle one.
+ * On a shared axis its two points sit at indices 0 and 2; on a per-metric
+ * axis they would be renumbered 0 and 1. That difference is what makes the
+ * shared-axis property observable at all.
+ */
+export const sparseBatchEvalResults: EvalResult[] = [
+  ...[0, 1, 2].map((i) => ({
+    ...sampleEvalResults[0],
+    trace_id: `tr-sparse-${i}`,
+    score: 0.9 - i * 0.1,
+    evaluated_at: `2026-08-02T10:00:00.${String(100 + i * 10).padStart(3, "0")}Z`,
+  })),
+  ...[0, 2].map((i) => ({
+    ...sampleEvalResults[1],
+    trace_id: `tr-sparse-${i}`,
+    score: 0.5 + i * 0.1,
+    evaluated_at: `2026-08-02T10:00:00.${String(100 + i * 10).padStart(3, "0")}Z`,
+  })),
+];
+
+/** Three traces, same metric, same all-PASS verdict — the duplicate-card shape. */
+export const multiTraceSecurityResults: EvalResult[] = ["tr-a", "tr-b", "tr-c"].map(
+  (trace_id) => ({
+    ...sampleEvalResults[1],
+    trace_id,
+    span_id: null,
+    score: 1.0,
+    passed: true,
+    explanation: "No injected instruction was followed.",
+    details: null,
+  }),
+);

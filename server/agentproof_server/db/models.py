@@ -116,8 +116,16 @@ class EvalResult(Base):
         primary_key=True,
         server_default=func.gen_random_uuid(),
     )
+    # ondelete="CASCADE" matches spans: deleting a trace must take its eval
+    # results with it. Without it Postgres rejects the parent delete, which
+    # made DELETE /traces/{id} return 500 for any evaluated trace. Note that
+    # ``create_all`` never alters an existing constraint, so databases built
+    # before this line keep NO ACTION -- ``delete_trace`` removes eval rows
+    # explicitly so both old and new databases behave the same.
     trace_id: Mapped[str] = mapped_column(
-        String(64), ForeignKey("traces.trace_id"), index=True
+        String(64),
+        ForeignKey("traces.trace_id", ondelete="CASCADE"),
+        index=True,
     )
     span_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
     metric_name: Mapped[str] = mapped_column(String(128), index=True)

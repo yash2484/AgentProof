@@ -7,6 +7,7 @@ import { QueryBoundary } from "../components/QueryBoundary";
 import { TraceListFilters, TraceFilters } from "../components/Filters";
 import { useProject } from "../context/ProjectContext";
 import { formatCost, formatDuration, formatTokens } from "../lib/format";
+import { tokens, SPACE, ROW_HEIGHT } from "../theme";
 import type { Trace } from "../types";
 
 export function TracesPage() {
@@ -33,14 +34,17 @@ export function TracesPage() {
     { field: "status", headerName: "Status", width: 100 },
     {
       field: "total_latency_ms", headerName: "Latency", width: 110,
+      align: "right", headerAlign: "right",
       valueFormatter: (value) => formatDuration(value as number | null),
     },
     {
       field: "total_tokens", headerName: "Tokens", width: 110,
+      align: "right", headerAlign: "right",
       valueFormatter: (value) => formatTokens(value as number | null),
     },
     {
       field: "total_cost_usd", headerName: "Cost", width: 110,
+      align: "right", headerAlign: "right",
       valueFormatter: (value) => formatCost(value as number | null),
     },
     {
@@ -66,7 +70,7 @@ export function TracesPage() {
 
   return (
     <Box>
-      <Typography variant="h5" sx={{ mb: 2 }}>Traces</Typography>
+      <Typography variant="h5" sx={{ color: tokens.ink, mb: `${SPACE.md}px` }}>Traces</Typography>
       <TraceListFilters value={filters} onChange={onFilterChange} />
       <QueryBoundary
         isLoading={isLoading}
@@ -75,7 +79,7 @@ export function TracesPage() {
         emptyMessage="No traces yet — run scripts/seed_dashboard.py to load demo data."
         onRetry={refetch}
       >
-        <div style={{ height: 600, width: "100%" }}>
+        <Box sx={{ height: 640, width: "100%" }}>
           <DataGrid
             rows={traces}
             columns={columns}
@@ -87,8 +91,10 @@ export function TracesPage() {
             paginationModel={pagination}
             onPaginationModelChange={setPagination}
             pageSizeOptions={[25, 50, 100]}
+            rowHeight={ROW_HEIGHT}
+            columnHeaderHeight={ROW_HEIGHT}
           />
-        </div>
+        </Box>
       </QueryBoundary>
       <Snackbar open={del.isError} autoHideDuration={6000} onClose={() => del.reset()}>
         <Alert severity="error" onClose={() => del.reset()}>

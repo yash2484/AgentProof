@@ -16,15 +16,11 @@ export function formatTokens(n: number | null): string {
   return n.toLocaleString("en-US");
 }
 
-export const SPAN_TYPE_COLORS: Record<SpanType, string> = {
-  llm_call: "#3949ab",
-  tool_use: "#00897b",
-  retrieval: "#8e24aa",
-  agent_handoff: "#fb8c00",
-  human_decision: "#546e7a",
-};
+import { tokens } from "../theme";
 
-const FALLBACK_COLOR = "#9e9e9e";
+export const SPAN_TYPE_COLORS: Record<SpanType, string> = tokens.spanTypes;
+
+const FALLBACK_COLOR = tokens.muted;
 
 export function spanColor(type: string): string {
   return SPAN_TYPE_COLORS[type as SpanType] ?? FALLBACK_COLOR;

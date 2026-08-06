@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
-import { computeWaterfall, MIN_WIDTH_PCT } from "./waterfall";
+import { computeWaterfall, MIN_BAR_PX } from "./waterfall";
 import type { SpanNode } from "../types";
+import { replaySpanTree, timedOnlySpanTree } from "../test/fixtures";
 
 function span(partial: Partial<SpanNode> & { span_id: string }): SpanNode {
   return {
@@ -78,18 +79,80 @@ describe("computeWaterfall", () => {
     expect(sharedRows[0].depth).toBe(2);
   });
 
-  it("gives a zero-duration span the minimum width", () => {
+  it("reports a zero-duration span as zero width, leaving the floor to the renderer", () => {
     const roots = [
       span({ span_id: "a", start_time: "2026-06-22T10:00:00Z", end_time: "2026-06-22T10:00:02Z" }),
       span({ span_id: "z", start_time: "2026-06-22T10:00:01Z", end_time: "2026-06-22T10:00:01Z" }),
     ];
     const rows = computeWaterfall(roots);
-    expect(rows.find((r) => r.span.span_id === "z")!.widthPct).toBe(MIN_WIDTH_PCT);
+    // The axis stays linearly truthful; Waterfall.tsx applies MIN_BAR_PX.
+    expect(rows.find((r) => r.span.span_id === "z")!.widthPct).toBe(0);
   });
 
   it("falls back to full width when the window is degenerate", () => {
     const roots = [span({ span_id: "a" })]; // no times
     const rows = computeWaterfall(roots);
     expect(rows[0]).toMatchObject({ offsetPct: 0, widthPct: 100 });
+  });
+
+  it("exposes a pixel floor rather than a percentage floor", () => {
+    expect(MIN_BAR_PX).toBe(3);
+  });
+
+  describe("replay-mode rendering", () => {
+    it("renders every span, including one with no timestamps", () => {
+      const rows = computeWaterfall(replaySpanTree);
+      expect(rows).toHaveLength(4);
+      expect(rows.map((r) => r.span.name).sort()).toEqual([
+        "fact_checker",
+        "orchestrator",
+        "search",
+        "summarize",
+      ]);
+    });
+  });
+
+  describe("replay-mode traces (regression: defect 1)", () => {
+    it("keeps every bar inside the track", () => {
+      // The epoch-coercion bug pushed real spans to offset ~100%, off-screen.
+      for (const row of computeWaterfall(replaySpanTree)) {
+        expect(row.offsetPct).toBeGreaterThanOrEqual(0);
+        expect(row.offsetPct).toBeLessThanOrEqual(100);
+        expect(row.widthPct).toBeGreaterThanOrEqual(0);
+        expect(row.offsetPct + row.widthPct).toBeLessThanOrEqual(100.0001);
+      }
+    });
+
+    it("scales against the trace's own duration, not wall-clock epoch", () => {
+      const rows = computeWaterfall(replaySpanTree);
+      const root = rows.find((r) => r.span.name === "orchestrator")!;
+      // The root spans the whole 1ms trace, so it fills the track.
+      expect(root.offsetPct).toBe(0);
+      expect(root.widthPct).toBeCloseTo(100, 5);
+    });
+
+    it("spreads timed spans across the track by their real position", () => {
+      const rows = computeWaterfall(replaySpanTree);
+      // search at t=0, summarize at t=+1ms of a 1ms window.
+      expect(rows.find((r) => r.span.name === "search")!.offsetPct).toBeCloseTo(0, 5);
+      expect(rows.find((r) => r.span.name === "summarize")!.offsetPct).toBeCloseTo(100, 5);
+    });
+
+    it("does not let an untimed span shift the timed spans", () => {
+      // The defect: one untimed span dragged the window origin back to the
+      // Unix epoch, so every timed span's offset collapsed to ~100%. Adding an
+      // untimed span must leave the timed spans exactly where they were.
+      const control = computeWaterfall(timedOnlySpanTree);
+      const withUntimed = computeWaterfall(replaySpanTree);
+
+      for (const name of ["orchestrator", "search", "summarize"]) {
+        const before = control.find((r) => r.span.name === name)!;
+        const after = withUntimed.find((r) => r.span.name === name)!;
+        expect(after.offsetPct).toBeCloseTo(before.offsetPct, 5);
+        expect(after.widthPct).toBeCloseTo(before.widthPct, 5);
+      }
+      // And the untimed span itself anchors at the start, not the epoch.
+      expect(withUntimed.find((r) => r.span.name === "fact_checker")!.offsetPct).toBe(0);
+    });
   });
 });

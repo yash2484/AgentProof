@@ -79,3 +79,21 @@ export interface EvalResultsResponse {
   offset?: number;
   trace_id?: string;
 }
+
+export interface EvalSummaryMetric {
+  metric_name: string;
+  mean_score: number | null;
+  pass_rate: number | null;
+  count: number;
+  last_evaluated_at: string | null;
+}
+
+export interface EvalSummary {
+  /** Null when the summary spans every project. */
+  project: string | null;
+  trace_count: number;
+  /** Null when there is nothing to average — distinct from 0.0. */
+  overall_pass_rate: number | null;
+  p99_latency_ms: number | null;
+  metrics: EvalSummaryMetric[];
+}

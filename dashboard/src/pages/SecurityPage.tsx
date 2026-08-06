@@ -1,8 +1,9 @@
-import { Box, Stack, Typography } from "@mui/material";
+import { Box, Typography } from "@mui/material";
 import { useEvalResults, useMetrics } from "../hooks/queries";
 import { QueryBoundary } from "../components/QueryBoundary";
 import { SecurityReportCard } from "../components/SecurityReportCard";
 import { useProject } from "../context/ProjectContext";
+import { tokens, SPACE, TILE_GAP } from "../theme";
 import type { MetricDef } from "../types";
 
 export function securityMetricNames(metrics: MetricDef[]): string[] {
@@ -21,7 +22,7 @@ export function SecurityPage() {
 
   return (
     <Box>
-      <Typography variant="h5" sx={{ mb: 2 }}>Security report</Typography>
+      <Typography variant="h5" sx={{ color: tokens.ink, mb: `${SPACE.md}px` }}>Security report</Typography>
       <QueryBoundary
         isLoading={isLoading || metrics.isLoading}
         isError={isError || metrics.isError}
@@ -29,11 +30,20 @@ export function SecurityPage() {
         emptyMessage="No security findings yet — run security evals to populate this report."
         onRetry={refetch}
       >
-        <Stack spacing={2}>
+        <Box
+          sx={{
+            display: "grid",
+            gap: `${TILE_GAP}px`,
+            gridTemplateColumns: { xs: "1fr", md: "repeat(2, 1fr)" },
+          }}
+        >
           {securityResults.map((r) => (
-            <SecurityReportCard key={`${r.metric_name}-${r.trace_id}-${r.span_id}`} result={r} />
+            <SecurityReportCard
+              key={`${r.trace_id}-${r.metric_name}-${r.span_id ?? "trace"}-${r.evaluated_at}`}
+              result={r}
+            />
           ))}
-        </Stack>
+        </Box>
       </QueryBoundary>
     </Box>
   );

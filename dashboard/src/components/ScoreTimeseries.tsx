@@ -1,26 +1,55 @@
 import { Box, Typography } from "@mui/material";
 import { LineChart } from "@mui/x-charts/LineChart";
 import { ChartsReferenceLine } from "@mui/x-charts/ChartsReferenceLine";
+import { tokens } from "../theme";
 import type { EvalResult, MetricDef } from "../types";
+
+export interface SeriesPoint {
+  /** Position on the shared run axis. */
+  runIndex: number;
+  /** The real evaluation instant, for the tooltip. */
+  at: number;
+  y: number;
+}
 
 export interface Series {
   name: string;
-  points: { x: number; y: number }[];
+  points: SeriesPoint[];
+}
+
+/**
+ * Distinct evaluation instants, ascending. These are the run positions.
+ *
+ * Plotting raw timestamps compressed the whole history into about four
+ * seconds, because a batch export writes every trace's results at once. The
+ * axis is therefore ordinal — run 0, run 1, run 2 — and the timestamp moves
+ * to the tooltip, where it is still exact.
+ */
+export function runTimestamps(results: EvalResult[]): number[] {
+  const instants = results
+    .filter((r) => r.score !== null && r.evaluated_at !== null)
+    .map((r) => Date.parse(r.evaluated_at as string))
+    .filter((ms) => Number.isFinite(ms));
+  return [...new Set(instants)].sort((a, b) => a - b);
 }
 
 export function seriesFromResults(results: EvalResult[]): Series[] {
-  const byMetric = new Map<string, { x: number; y: number }[]>();
+  const runs = runTimestamps(results);
+  const indexOf = new Map(runs.map((at, i) => [at, i]));
+
+  const byMetric = new Map<string, SeriesPoint[]>();
   for (const r of results) {
     if (r.score === null || r.evaluated_at === null) continue;
-    const x = Date.parse(r.evaluated_at);
-    if (!Number.isFinite(x)) continue;
+    const at = Date.parse(r.evaluated_at);
+    const runIndex = indexOf.get(at);
+    if (runIndex === undefined) continue;
     const points = byMetric.get(r.metric_name) ?? [];
-    points.push({ x, y: r.score });
+    points.push({ runIndex, at, y: r.score });
     byMetric.set(r.metric_name, points);
   }
   return [...byMetric.entries()].map(([name, points]) => ({
     name,
-    points: points.sort((a, b) => a.x - b.x),
+    points: points.sort((a, b) => a.runIndex - b.runIndex),
   }));
 }
 
@@ -50,18 +79,28 @@ export function ScoreTimeseries({
     );
   }
 
-  // Shared, sorted x-axis across all metrics.
-  const xValues = [...new Set(series.flatMap((s) => s.points.map((p) => p.x)))].sort((a, b) => a - b);
+  const runs = runTimestamps(results);
+  const axis = runs.map((_at, i) => i);
   const thresholds = thresholdsFor(series, metrics);
 
   return (
     <Box data-testid="score-timeseries" sx={{ width: "100%" }}>
       <LineChart
         height={360}
-        xAxis={[{ data: xValues, scaleType: "time", valueFormatter: (v) => new Date(v).toLocaleString() }]}
+        xAxis={[
+          {
+            data: axis,
+            scaleType: "point",
+            // Ticks stay short; the tooltip carries the exact instant.
+            valueFormatter: (i: number, ctx) =>
+              ctx?.location === "tick"
+                ? `#${i + 1}`
+                : new Date(runs[i]).toLocaleString(),
+          },
+        ]}
         series={series.map((s) => ({
           label: s.name,
-          data: xValues.map((x) => s.points.find((p) => p.x === x)?.y ?? null),
+          data: axis.map((i) => s.points.find((p) => p.runIndex === i)?.y ?? null),
           connectNulls: true,
         }))}
       >
@@ -70,7 +109,10 @@ export function ScoreTimeseries({
             key={t}
             y={t}
             label={`threshold ${t}`}
-            lineStyle={{ stroke: "#d32f2f", strokeDasharray: "4 4" }}
+            lineStyle={{
+              stroke: tokens.status.fail.solid,
+              strokeDasharray: "4 4",
+            }}
           />
         ))}
       </LineChart>
