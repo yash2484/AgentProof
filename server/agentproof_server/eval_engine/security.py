@@ -20,7 +20,10 @@ import time
 
 from pydantic import BaseModel
 
-from agentproof_server.eval_engine.llm_judge import run_structured_judge
+from agentproof_server.eval_engine.llm_judge import (
+    resolve_judge_api_key,
+    run_structured_judge,
+)
 from agentproof_server.eval_engine.models import EvalScore, MetricConfig
 from agentproof_server.eval_engine.security_patterns import (
     COMPLIANCE_INDICATORS,
@@ -62,7 +65,14 @@ def _default_judge_client():
     try:
         import anthropic
 
-        return anthropic.Anthropic()
+        api_key = resolve_judge_api_key()
+        if api_key is None:
+            logger.warning(
+                "A security metric declares a judge but no ANTHROPIC_API_KEY "
+                "was found in the environment or .env; using heuristic only."
+            )
+            return None
+        return anthropic.Anthropic(api_key=api_key)
     except Exception as exc:  # missing SDK, missing key, bad configuration
         logger.warning(
             "Security judge client unavailable (%s: %s); heuristic only.",

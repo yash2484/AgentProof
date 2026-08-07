@@ -19,6 +19,7 @@ Design (see spec §3.4):
 
 from __future__ import annotations
 
+import logging
 import os
 import threading
 import time
@@ -26,6 +27,22 @@ import time
 from pydantic import BaseModel
 
 from agentproof_server.eval_engine.models import EvalScore, MetricConfig
+
+logger = logging.getLogger("agentproof_server.eval_engine")
+
+
+def resolve_judge_api_key() -> str | None:
+    """Return the Anthropic key from Settings (``.env``) or the environment.
+
+    pydantic-settings reads ``.env`` into the ``Settings`` object but never
+    exports it to ``os.environ``, so the SDK's own lookup misses a key that
+    lives only in ``.env`` on a host-side run. Checking both here is what makes
+    ``.env`` actually work. Returns ``None`` when neither source has one, so
+    callers can pass it straight to the SDK and let its default apply.
+    """
+    from agentproof_server.config import settings
+
+    return settings.anthropic_api_key or os.environ.get("ANTHROPIC_API_KEY") or None
 
 # Cap concurrent judge calls process-wide. The SDK handles 429 retry/backoff.
 _JUDGE_SEMAPHORE = threading.Semaphore(
@@ -106,7 +123,18 @@ class LLMJudgeEvaluator:
         if client is None:
             import anthropic
 
-            client = anthropic.Anthropic()
+            api_key = resolve_judge_api_key()
+            if api_key is None:
+                # The SDK builds happily with no key and only fails at request
+                # time, which surfaces as every span scoring 0.0 for no visible
+                # reason. Say so once, loudly, at construction.
+                logger.warning(
+                    "Metric '%s' needs a judge but no ANTHROPIC_API_KEY was "
+                    "found in the environment or .env; every judge call will "
+                    "fail and score 0.0.",
+                    config.name,
+                )
+            client = anthropic.Anthropic(api_key=api_key)
         self.client = client
 
     # -- context assembly -------------------------------------------------
