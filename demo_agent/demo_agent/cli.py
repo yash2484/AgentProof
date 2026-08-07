@@ -6,7 +6,7 @@ import argparse
 
 from demo_agent.export import run_and_capture, run_and_export
 from demo_agent.graph import build_graph
-from demo_agent.llm import get_backend
+from demo_agent.llm import RecordingBackend, get_backend
 from demo_agent.scenarios import SCENARIOS, scenario_names
 
 
@@ -16,7 +16,7 @@ def build_parser() -> argparse.ArgumentParser:
     run = sub.add_parser("run", help="Run the demo research-assistant agent.")
     run.add_argument(
         "--scenario",
-        choices=["success", "error", "injection", "all"],
+        choices=[*SCENARIOS, "all"],
         default="all",
     )
     run.add_argument("--mode", choices=["replay", "live"], default="replay")
@@ -32,13 +32,23 @@ def build_parser() -> argparse.ArgumentParser:
     )
     cap.add_argument(
         "--scenario",
-        choices=["success", "error", "injection", "all"],
+        choices=[*SCENARIOS, "all"],
         default="all",
     )
     cap.add_argument("--mode", choices=["replay", "live"], default="replay")
     cap.add_argument("--out", required=True, help="Path to write the corpus JSON.")
     cap.add_argument("--project", default="demo-research-agent")
     cap.add_argument("--model", default=None, help="Model id for --mode live.")
+    cap.add_argument(
+        "--record-fixtures",
+        default=None,
+        metavar="PATH",
+        help=(
+            "With --mode live, also write every model response to PATH as a "
+            "replay fixture, so the recorded run can be replayed key-free and "
+            "deterministically from then on."
+        ),
+    )
     return parser
 
 
@@ -60,10 +70,18 @@ def main(argv: list[str] | None = None) -> int:
     backend = get_backend(args.mode, model=args.model)
 
     if args.command == "capture":
+        recorder = None
+        if getattr(args, "record_fixtures", None):
+            if args.mode != "live":
+                raise SystemExit("--record-fixtures requires --mode live")
+            recorder = RecordingBackend(backend, args.record_fixtures)
+            backend = recorder
         ids = run_and_capture(
             keys, backend=backend, out_path=args.out, project=args.project
         )
         print(f"Captured {len(ids)} traces to {args.out}")
+        if recorder is not None:
+            print(f"Recorded {recorder.flush()} responses to {args.record_fixtures}")
         return 0
 
     if args.export:
