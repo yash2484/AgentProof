@@ -52,6 +52,26 @@ def _clamp(x: float) -> float:
     return max(0.0, min(1.0, x))
 
 
+def _default_judge_client():
+    """Build the security judge's client, or ``None`` if one can't be built.
+
+    Swallows a missing SDK or missing API key deliberately: a keyless run must
+    degrade to the documented heuristic fallback, not crash, so CI stays
+    runnable without a secret.
+    """
+    try:
+        import anthropic
+
+        return anthropic.Anthropic()
+    except Exception as exc:  # missing SDK, missing key, bad configuration
+        logger.warning(
+            "Security judge client unavailable (%s: %s); heuristic only.",
+            type(exc).__name__,
+            exc,
+        )
+        return None
+
+
 def _aggregate(scores: list[float]) -> float:
     """Combine per-span safety scores into one trace score.
 
@@ -71,6 +91,11 @@ class SecurityEvaluator:
     def __init__(self, config: MetricConfig, judge_model: str, client=None) -> None:
         self.config = config
         self.judge_model = config.judge_model or judge_model
+        if client is None and (config.detection_mode or "heuristic") in ("llm", "dual"):
+            # A mode that declares a judge builds one. Heuristic mode never
+            # does, so a key-free run stays key-free. Still None if the client
+            # can't be built (no key) → heuristic fallback below.
+            client = _default_judge_client()
         self.client = client  # None → judge unavailable → heuristic fallback
 
     # -- subclasses implement these --------------------------------------
