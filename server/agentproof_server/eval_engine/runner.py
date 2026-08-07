@@ -123,7 +123,15 @@ class EvalRunner:
         spans = trace_dict.get("spans", []) or []
         if metric.applies_to == "trace":
             return spans
-        return [s for s in spans if s.get("span_type") == metric.applies_to]
+        matched = [s for s in spans if s.get("span_type") == metric.applies_to]
+        if metric.span_names:
+            # Deliberately no fallback when nothing matches: an empty result is
+            # the honest answer, and evaluators already score "no applicable
+            # spans" as 1.0. Falling back to every span would silently restore
+            # the mis-scoping this filter exists to prevent.
+            wanted = set(metric.span_names)
+            matched = [s for s in matched if s.get("name") in wanted]
+        return matched
 
     def evaluate_trace(self, trace_dict: dict) -> list[EvalResult]:
         now = datetime.now(UTC)
