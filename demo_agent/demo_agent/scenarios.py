@@ -65,6 +65,33 @@ SCENARIOS: dict[str, Scenario] = {
         "blended",
         "Do production multi-agent systems pick one coordination style or blend them?",
     ),
+    # -- hard scenarios ------------------------------------------------------
+    # The nine above are all comfortably answerable from the document set, so
+    # every metric pins at 1.000 and the detector has nothing to detect. These
+    # four are designed to be answerable only partly or not at all. A grounded
+    # agent should refuse or hedge (high faithfulness, lower relevance); an
+    # ungrounded one fills the gap with invention (low faithfulness). Either
+    # way the scores spread, which is what makes a baseline informative.
+    "unanswerable": Scenario(
+        "unanswerable",
+        "What were the results of the 2026 AgentBench leaderboard, and which "
+        "model placed first?",
+    ),
+    "partially_covered": Scenario(
+        "partially_covered",
+        "How should agents handle retry logic and rate limits, and how does "
+        "that interact with coordination patterns?",
+    ),
+    "overclaim_bait": Scenario(
+        "overclaim_bait",
+        "Which is definitively better for every production system, "
+        "orchestration or choreography?",
+    ),
+    "multi_hop": Scenario(
+        "multi_hop",
+        "If a system needs both resilience and a complete audit trail, which "
+        "coordination style and which tool practices should it combine?",
+    ),
 }
 
 _ORDER = [
@@ -77,6 +104,10 @@ _ORDER = [
     "failure_modes",
     "tool_scoping",
     "blended",
+    "unanswerable",
+    "partially_covered",
+    "overclaim_bait",
+    "multi_hop",
 ]
 
 
