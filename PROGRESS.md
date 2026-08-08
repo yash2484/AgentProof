@@ -1,192 +1,153 @@
 # AgentProof — Progress
 
-**Current phase:** Application hardening (Cekura, applying Monday 2026-08-10)
-**Branch:** `application-hardening` (off `main` at `488b9bd`)
-**Last updated:** 2026-08-07
-
-## What this phase is
-
-An external audit of the application draft found several claims the code does
-not support. The goal this weekend is to make the strongest claims **true**,
-not to trim them — except where building is the wrong answer (see "Reword, do
-not build" below). The application gets rewritten Monday against whatever is
-actually real by then.
-
-The audience is a technical founder at an eval/observability company who will
-open the repo and read the code before reading anything else.
+**Current phase:** Application hardening — complete, awaiting merge
+**Branch:** `application-hardening` (PR #9, six CI jobs green)
+**Last updated:** 2026-08-08
 
 ## Last verified working
 
-Full test sweep run on the host 2026-08-07. All green.
+Full sweep on the host, 2026-08-08. All green.
 
 | Suite | Result | How verified |
 |---|---|---|
-| server | 139 passed, 13 skipped (39.9s) | `python -m pytest -q` from `server/` |
-| sdk | 43 passed (1.1s) | `python -m pytest -q` from `sdk/` |
-| demo_agent | 37 passed, 1 skipped (13.1s) | `python -m pytest -q` from `demo_agent/` |
-| dashboard | 140 passed, 22 files (103.6s) | `npx vitest run --reporter=basic` |
-| **Total** | **359 passed, 14 skipped** | |
+| server | 169 passed, 13 skipped | `python -m pytest -q` from `server/` |
+| sdk | 43 passed | `python -m pytest -q` from `sdk/` |
+| demo_agent | 37 passed, 1 skipped | `python -m pytest -q` from `demo_agent/` |
+| dashboard | 140 passed, 22 files | `npx vitest run --reporter=basic` |
+| lint | All checks passed | `ruff check server/ sdk/ demo_agent/ scripts/` |
+| CI (PR #9) | 6/6 jobs pass | agent-gate, fixture-gate, lint, test-dashboard, test-sdk, test-server |
+| regression gate 1 | PASS, exit 0 | fixture corpus vs `demo-research-agent.json` |
+| regression gate 2 | PASS, exit 0 | 13-trace replay corpus vs `demo-agent-replay.json` |
 
-Skips are DB-backed and key-gated integration tests, not failures. The README
-undercounts: it claims 125 server and 41 dashboard tests.
+Skips are DB-backed integration tests (port 5432 conflict, see Known issues) and
+one key-gated demo test.
 
-**Repo state:** public at `github.com/yash2484/AgentProof`, 1 star, 0 forks.
-Tags stop at `phase-6`; no `phase-7`, `phase-8` or `v1.0.0`. All four packages
-are `0.1.0`. Not published to PyPI.
+**Repo:** public, `github.com/yash2484/AgentProof`. Tags now continuous
+`phase-1` … `phase-8`. Remote branches: `main`, `application-hardening` only.
 
-## Ground truth on the audited claims
+## Built & verified this phase
 
-Verified by reading code on 2026-08-07, not from the README.
+- [x] **Dual-mode security detection actually runs its judge.** `SecurityEvaluator`
+  stored an injected client but never built one, and `runner.py` passes `None`
+  outside tests, so `detection_mode: dual` had always been heuristic-only in
+  production. *Verified: new tests fail against the un-fixed `__init__`
+  (`assert None is <object>`), pass after.*
+- [x] **The API key in `.env` reaches the SDK.** Two independent bugs, either of
+  which silently scored every judge metric 0.0: pydantic-settings loads `.env`
+  into `Settings` but never into `os.environ`, and `.env` was resolved relative
+  to the working directory while the eval CLI runs from `server/`. *Verified: key
+  masked-checked as visible from both repo root and `server/`, then a live judge
+  call returned a real score.*
+- [x] **Judge metrics are scoped to the span their rubric describes.** New
+  `MetricConfig.span_names`. Previously `applies_to: llm_call` graded the
+  planner's search-query list and the fact-checker's verdict line against a
+  groundedness rubric, and `aggregation: min` let the worst of those decide.
+  *Verified: faithfulness 0.200 → 0.833, relevance 0.267 → 0.900 on the same
+  corpus.*
+- [x] **The corpus is a recording of a real run, not authored fiction.** 13
+  scenarios (was 3), fixtures captured live from claude-haiku-4-5 and replayed
+  byte-for-byte. *Verified: live and replay corpora produce identical llm_call
+  content; `sample_size` 13 clears `min_sample_size` so Welch's t-test engages.*
+- [x] **Fault injection proves the gate fires and fires specifically.** Four
+  faults — obeyed injection, PII disclosure, `shell` + `rm -rf`, blown latency —
+  each asserting non-zero exit *and* the right metric named, plus a control and a
+  specificity assertion. *Verified to discriminate: with `min_mean_drop` and
+  `min_effect_size` neutered, all five fault assertions fail and the control
+  still passes.*
+- [x] **Detector sensitivity measured, both kinds.** Heuristic metric fires at
+  4/12 (33%); judge metric at 6/13 (46%). *Verified: sweep tables in
+  `docs/detector-sensitivity.md`; the heuristic figure is pinned as an assertion.*
+- [x] **Judge fault injection.** Grounded answer 1.00, same answer plus a
+  fabricated statistic and an invented ISO standard 0.35 — below the 0.7
+  threshold, gap 0.65, enough to trip the real detector. *Verified: 4 tests pass
+  against live API calls; skipped without a key.*
+- [x] **Instrumentation overhead measured.** enqueue 1.4 µs p50 / 4.8 µs p99;
+  full 4-span trace 35.3 µs p50 / 112.3 µs p99. *Verified: `sdk/benchmarks/`,
+  10,000 iterations, results committed in `RESULTS.md`.*
 
-| Claim in the draft | Reality |
+## The finding worth leading with
+
+The `partially_covered` scenario asks about retry logic and rate limits, which
+the document set does not cover. The agent opened with *"Based on the provided
+context, retry logic and rate limiting interact..."* and then produced a
+detailed, confidently formatted answer that appears nowhere in the sources — a
+fabrication wearing a citation phrase. **Faithfulness 0.20.**
+
+Not an injected fault. The agent did it unprompted and the harness caught it.
+
+By contrast `unanswerable` scored faithfulness 1.00 / relevance 0.40: the agent
+correctly refused. The two metrics diverging is evidence they measure different
+things.
+
+## Claims status
+
+| Claim | State |
 |---|---|
-| "G-Eval LLM-as-judge calibrated to Cohen's kappa > 0.6" | **Does not exist.** Zero occurrences of `kappa`, `calibrat`, `gold set`, `inter-rater` or `human label` in project code. The only "Cohen" is Cohen's *d*, the effect-size guard in the regression detector — a different statistic for a different purpose. No gold set, no labels, no agreement measurement. |
-| "Sub-millisecond async trace exporter" | **Assumed, never measured.** No benchmark, no p50/p99, no timing code anywhere. The exporter is architecturally non-blocking (`queue.Queue` enqueue, background daemon thread), so "does not block the agent" is defensible; the number is not. |
-| "Dual-layer prompt-injection detector" | **The second layer has never run.** `SecurityEvaluator.__init__` stores an injected client but never constructs one, and `runner.py:89` passes `None` outside tests. `detection_mode: dual` silently falls back to heuristic-only in production. |
-| "50+ adversarial cases across 5 attack categories" | **3 categories, 40 patterns.** Categories: `injection_resistance`, `data_exfiltration`, `tool_misuse`. Patterns: 10 injection signatures, 5 compliance indicators, 6 sensitive-data patterns, 12 dangerous tools, 7 dangerous arg patterns — 5 rule *libraries*, which is likely where "5 categories" came from. Plus 28 security unit tests and 1 adversarial demo scenario. |
-| "Framework-agnostic" | **One adapter.** `sdk/agentproof/adapters/langgraph.py` is the only one. `autogen` appears solely as an optional-dependency string in `sdk/pyproject.toml` with no module behind it. |
-| Claude-as-judge wired | Code path is real and tested, but **no committed artifact in this repo shows a non-zero judge score.** Neither pinned baseline contains `faithfulness` or `relevance`, and both CI gates run `fixtures/regression_config.yaml`, which excludes `llm_judge` metrics by design. The judge has never been baselined and has never gated anything. |
+| Dual-layer detector | True — second layer builds and runs |
+| Judge produces real scores | True — 0.911 mean, n=13, committed baseline |
+| Sub-millisecond exporter | True and measured — 1.4 µs p50 |
+| Detector catches regressions | Measured — 4/12 heuristic, 6/13 judge |
+| Judge catches fabrication | Measured — 1.00 vs 0.35 |
+| Harness catches real failures | Demonstrated — faithfulness 0.20, unprompted |
+| **Cohen's kappa** | **Does not exist. Do not claim it.** |
+| **"Framework-agnostic"** | **One adapter (LangGraph). Reword, do not build.** |
+| "50+ adversarial cases, 5 categories" | Actual: 3 categories, 40 patterns, 28 tests |
 
-## Weekend priority order
+## Known gaps, stated not fixed
 
-Ranked by application leverage per hour. **P1 and P2 are the two that matter
-most if only two get done.**
+1. **6 of 8 metrics still sit flat at 1.000** on the demo corpus — the
+   deterministic and security checks have no scenario that stresses them. Only
+   `faithfulness` (σ 0.218) and `relevance` (σ 0.180) have spread.
+2. **Judge scores drift between runs.** `partially_covered` scored 0.20 when the
+   baseline was pinned and 0.40 on the sensitivity sweep — same trace, same
+   fixture, same model. ±0.2 per-trace swing. This is the argument for the
+   effect-size guard, and the reason the judge sweep is a script rather than a
+   pinned test.
+3. **One trace carries no faithfulness signal.** The `error` scenario's retriever
+   fails before the writer runs, so there is no writer span and the metric scores
+   1.0 for "no applicable spans" — clean and fabricated alike.
+4. **The exporter logs once per dropped trace** under sustained backpressure,
+   which is most of the full-buffer path's extra cost. Rate-limit or count-and-
+   summarise.
+5. **Alembic `versions/` is empty**, so the `ondelete="CASCADE"` declared on
+   `eval_results.trace_id` is not in the deployed schema.
 
-| # | Task | Effort | Key? | State |
-|---|---|---|---|---|
-| P1 | Judge live end-to-end: committed baseline with real non-zero scores + nightly CI gate | 2-4h | **Yes** | Not started |
-| P2 | Dual-layer fix: `SecurityEvaluator` constructs its own judge client | 1-2h | No (live check rides on P1) | Not started |
-| P3 | Exporter latency benchmark, p50/p99, committed script + results | 1-2h | No | Not started |
-| P4 | README pass: badges, dashboard GIF, corrected numbers, the nondeterminism paragraph | 1-2h | No | Not started |
-| P5 | Regression-catch demo: deliberately degrade the agent, gate goes red, report names metric + p-value + effect size | 2-3h | Only for the judge-driven variant | Not started |
-| P6 | Cohen's kappa, done properly: blind-labeled gold set, judge run, kappa + bootstrap CI | 5-8h | Yes | Sunday stretch |
-| P7 | Adversarial corpus: 50+ labeled attack cases with expected outcomes | 2-3h | No | Optional |
-| P8 | Alembic migration gap | 2-4h | No | Skip this weekend |
-| P9 | Tag `phase-7`/`phase-8`, merge branches | 15min | No | End of weekend |
+## Next up
 
-**Rationale for P1 first:** everything else is decoration on a dead core. A
-founder opens `llm_judge.py`, sees a competent G-Eval implementation, looks for
-evidence it has ever produced a score, and finds none. That is the worst moment
-in the current repo.
-
-**Rationale for P2 second:** it is a claim the code actively contradicts, and it
-costs ~90 minutes. Fixing a false claim beats adding a true one — the damage
-from shipping "dual-layer" and having a founder grep `security.py` is not a
-missing feature, it is credibility on every other claim.
-
-### Do NOT spend the weekend on
-
-- **The phase-9 OpenAI/multi-provider abstraction.** Its entire premise was
-  "Anthropic billing is broken, route around it". A working key removes the
-  premise. What remains is an engineering-standards refactor with zero
-  application leverage and no observable behaviour change. Shelved — see below.
-- **Alembic (P8).** A real gap, but invisible in a 30-second read and expensive
-  to fix properly.
-
-### Reword, do not build
-
-- **"Framework-agnostic"** cannot be made true this weekend; a second adapter is
-  a day minimum. Reword to "framework-neutral core with a LangGraph adapter".
-  Accurate, still strong, zero hours.
-- **"50+ adversarial cases"** — padding a regex list to hit a number is exactly
-  what looks bad under inspection. Either state the real shape or build a
-  genuine labeled attack corpus (P7). Do not inflate the existing list.
-
-### What the audit missed
-
-- **Nothing in the repo shows the harness ever catching anything.** No failing
-  build, no red gate, no report of a caught regression. For a company selling
-  "catch agent regressions before production", a documented run where a
-  deliberately degraded agent turned the gate red — naming the metric, p-value
-  and effect size — is the most persuasive artifact available. That is P5, and
-  it may outrank kappa.
-- **Instrumentation overhead is a buying objection** for observability tooling.
-  P3 answers it directly; frame it that way, not as a vanity number.
-- **How you gate on a nondeterministic judge without flake** is already solved
-  here (`min_sample_size=9`, effect-size guard, absolute-drop floor) and the
-  README never says so. Best-engineered idea in the repo, currently invisible.
-  ~20 minutes to write.
-- **Judge cost per eval.** `input_tokens`/`output_tokens` are already recorded
-  per judge call. Surfacing cost-per-trace-evaluated is nearly free and speaks
-  to anyone running evals at scale.
-
-## Where the API key is required
-
-The first spend is one command, inside P1:
-
-```
-python -m agentproof_server.eval_engine.cli baseline \
-  --traces <corpus> --project demo-research-agent \
-  --out ../baselines/... --config ../agentproof.yaml
-```
-
-`agentproof.yaml` includes `faithfulness` and `relevance`; everything before
-this point uses `fixtures/regression_config.yaml`, which is judge-free by
-design. Corpus capture in replay mode, the P2 code and tests, the P3 benchmark
-and the P4 README all run key-free.
-
-Cost is small: roughly (judgeable spans x 2 metrics) calls, with `faithfulness`
-already tiered to `claude-haiku-4-5`. A ~12-span corpus is ~24 calls. The kappa
-gold set is 50-100 calls. Cents, not dollars — but non-zero.
-
-`ANTHROPIC_API_KEY` goes in `.env` at the repo root (gitignored, never
-committed). The key serves two consumers: the judge, and the demo agent in
-`--mode live`.
-
-## Shelved
-
-- **Phase 9 — judge provider abstraction.** Design spec and a 9-task
-  implementation plan are committed on the local branch
-  `phase-9-judge-provider-abstraction` (`02f7a14`, `e4685e0`), unpushed, working
-  tree clean. **Zero implementation code.** The design work is what surfaced the
-  dual-layer bug, which is worth more than the branch. Pick it up after the
-  application if the provider abstraction is still wanted.
+1. Merge PR #9 — nothing on `main` reflects any of this yet.
+2. Cohen's kappa, done properly: a blind-labelled gold set, judge run against it,
+   kappa with a bootstrap CI. A rushed one is worse than none.
+3. Scenarios that stress the deterministic and security metrics, so more than two
+   metrics have variance.
+4. Nightly/manual judge workflow (`ANTHROPIC_API_KEY` as a repo secret) so the
+   key-gated judge tests and the sensitivity sweep run somewhere other than a
+   laptop.
+5. Instrument a second real project — the strongest authenticity move, and the
+   honest answer to "has this run against anything but its own demo?"
 
 ## Known issues
 
 1. **Docker image staleness after a dashboard dependency change.**
    `docker-compose.yml` masks `node_modules` with an anonymous volume that
-   survives `docker compose up --build`. After adding a dashboard dependency run
-   `docker compose rm -sfv dashboard` before `up -d`, or Vite fails to resolve
-   the import and serves a blank page. **Never use `docker compose down -v`** —
-   it destroys the `pgdata` volume.
-2. **Port 5432 is shared** between Docker's Postgres and a native
-   `postgres.exe`. Host-side `pytest` reaches the wrong database, so DB-backed
-   tests skip there. Run them inside the `server` container with
-   `-o asyncio_mode=auto` (the container has only `server/pyproject.toml`, not
-   the repo-root file that sets `asyncio_mode`).
+   survives `docker compose up --build`. Run `docker compose rm -sfv dashboard`
+   before `up -d`. **Never `docker compose down -v`** — it destroys `pgdata`.
+2. **Port 5432 is shared** between Docker's Postgres and a native `postgres.exe`,
+   so host-side DB tests skip. Run them inside the `server` container with
+   `-o asyncio_mode=auto`.
 3. **The full server suite cannot run inside the container** — the SDK is not
-   installed there, so `test_trace_pipeline.py` fails to collect. Host for the
-   full suite, container for the DB tests.
+   installed there.
 4. **The span panel is invisible to screen readers' navigation.** MUI's Modal
-   sets `aria-hidden="true"` on `#root` while the panel is open, so the nav rail
-   is unreachable in the accessibility tree even though it is fully clickable.
-   Inherent to `variant="temporary"`.
+   sets `aria-hidden="true"` on `#root` while the panel is open.
 5. **`sdk/tests` and `demo_agent/tests` cannot be collected in one pytest run** —
-   both name their test package `tests`. Run them separately.
-6. **Replay-mode screenshots stay weak** because span durations really are
-   near-zero. Shooting the demo in `--mode live` needs the API key.
-7. **PowerShell 5.1 has no `&&`.** Use `;` with `if ($?)`, or Git Bash.
-8. **Alembic `versions/` is empty** and there is no `alembic_version` table, so
-   the `ondelete="CASCADE"` declared on `eval_results.trace_id` is not in the
-   deployed schema. `delete_trace` removes eval rows explicitly to cover older
-   databases, but CI's fresh Postgres builds the constraint *with* cascade, so
-   that explicit delete is never actually the thing under test.
+   both name their test package `tests`.
+6. **PowerShell 5.1 has no `&&`.** Use `;` with `if ($?)`, or Git Bash.
+7. **`ruff check` must be run from the repo root** with explicit paths; running it
+   from `server/` silently checks nothing and still reports errors.
 
-## Open decisions
+## Shelved
 
-- **P5 vs P6 if Sunday only fits one.** Kappa is the more senior claim and
-  speaks to the hard problem in LLM-as-judge. The catch-demo is more persuasive
-  in 30 seconds and far more likely to land. Leaning catch-demo.
-- **Dead key settings.** `openai_api_key` in `server/config.py` and
-  `OPENAI_API_KEY` in `docker-compose.yml` have zero readers. `anthropic_api_key`
-  likewise — the SDK reads the environment directly. Wire or delete; leaving
-  them implies support that does not exist.
-
-## Next up
-
-1. Count judgeable `llm_call` spans in the replay corpus (key-free) — decides
-   whether the P1 baseline is statistically meaningful before any spend.
-2. P2 dual-layer fix: code and unit tests, key-free.
-3. Stop for the API key, then the single live pass that produces the P1 baseline
-   and confirms P2 at the same time.
+- **Phase 9 — judge provider abstraction.** Design spec and a 9-task plan on the
+  local branch `phase-9-judge-provider-abstraction`, unpushed, zero
+  implementation code. Its premise was "Anthropic billing is broken, route
+  around it"; a working key removed the premise. The design work is what
+  surfaced the dual-mode bug, which was worth more than the branch.
