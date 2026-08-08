@@ -1,61 +1,153 @@
 # AgentProof — Progress
 
-**Current phase:** Phase 8 — dashboard redesign (complete, pending review/merge)
-**Branch:** `phase-8-dashboard-redesign`
-**Last updated:** 2026-08-05
+**Current phase:** Application hardening — complete, awaiting merge
+**Branch:** `application-hardening` (PR #9, six CI jobs green)
+**Last updated:** 2026-08-08
 
 ## Last verified working
 
-Full verification sweep run 2026-08-05 against a live stack (`docker compose up -d`).
+Full sweep on the host, 2026-08-08. All green.
 
-| Check | Result | How verified |
+| Suite | Result | How verified |
 |---|---|---|
-| Dashboard suite | 139 passed / 22 files | `npx vitest run` |
-| Server suite (host) | 142 passed, 10 skipped | `pytest tests/` from `server/` |
-| Server DB-backed tests | 7 passed | `pytest ... -o asyncio_mode=auto` inside the `server` container |
-| SDK suite | 43 passed | `pytest tests/` from `sdk/` |
-| demo_agent suite | 38 passed | `pytest tests/` from `demo_agent/` |
-| `tsc -b` | exit 0 | dashboard |
-| `eslint . --ext ts,tsx` | exit 0 | dashboard |
-| `ruff check sdk/ server/` | All checks passed | repo root |
-| No raw hex outside `theme/` | clean | recursive grep over `dashboard/src` |
-| Playwright sweep | PASS | 4 routes × 2 viewports, real Chromium |
+| server | 169 passed, 13 skipped | `python -m pytest -q` from `server/` |
+| sdk | 43 passed | `python -m pytest -q` from `sdk/` |
+| demo_agent | 37 passed, 1 skipped | `python -m pytest -q` from `demo_agent/` |
+| dashboard | 140 passed, 22 files | `npx vitest run --reporter=basic` |
+| lint | All checks passed | `ruff check server/ sdk/ demo_agent/ scripts/` |
+| CI (PR #9) | 6/6 jobs pass | agent-gate, fixture-gate, lint, test-dashboard, test-sdk, test-server |
+| regression gate 1 | PASS, exit 0 | fixture corpus vs `demo-research-agent.json` |
+| regression gate 2 | PASS, exit 0 | 13-trace replay corpus vs `demo-agent-replay.json` |
 
-The 10 skipped server tests are the DB-backed and API-key-gated integration
-tests; they skip on the host because a native `postgres.exe` shares port 5432
-with Docker (see Known issues). They were run separately inside the container
-and pass — see the row above.
+Skips are DB-backed integration tests (port 5432 conflict, see Known issues) and
+one key-gated demo test.
 
-## Built & verified
+**Repo:** public, `github.com/yash2484/AgentProof`. Tags now continuous
+`phase-1` … `phase-8`. Remote branches: `main`, `application-hardening` only.
 
-- [x] **Token system** (`dashboard/src/theme/`) — Graphite & Magenta. Every colour, type step and spacing value is a named token. A contrast test recomputes WCAG 2.1 ratios for every token against both page backgrounds and fails the build on regression. *Verified: 22 contrast assertions pass; all 8 spec ratios reproduce exactly.*
-- [x] **`GET /api/v1/evals/summary`** — read-only per-metric aggregates computed in SQL, project-scoped via the traces join. *Verified: 11 unit tests + 3 DB-backed tests against real Postgres, including a project-isolation test.*
-- [x] **Bento Overview page** at `/` — security verdict leads at 2×2, gate / p99 / pass-rate as small tiles, latest-trace mini waterfall full width. *Verified: renders live against the stack at 1440px and 375px.*
-- [x] **Persistent left rail**, collapsing to a drawer below 768px. *Verified in-browser: permanent at 1440px, collapsed behind a menu button at 375px.*
-- [x] **Defect 1 — waterfall unreadable at sub-ms durations.** Root cause: a missing `start_time` was coerced to `0`, dragging the window origin to the Unix epoch. *Verified: regression test proven to fail against the reintroduced bug.*
-- [x] **Defect 2 — eval x-axis spanning ~4 seconds.** Now plots run index; timestamp moved to the tooltip. *Verified: regression test proven to fail under a per-metric-axis regression.*
-- [x] **Defect 3 — duplicate unattributed security cards.** Attribution is now unconditional. *Verified: N traces produce N distinct linked cards.*
-- [x] **Defect 4 — nav click blocked by the span panel.** *Verified in a real browser: a pointer click on the rail navigates with the panel open. This is the only proof that exists — jsdom cannot reproduce it.*
-- [x] **Trace delete 500** (out-of-plan fix) — `eval_results.trace_id` had no `ondelete` rule, so deleting any evaluated trace returned HTTP 500 and the dashboard's Delete button failed. *Verified end-to-end: 500 → 204, trace and its 8 eval rows removed, other traces untouched.*
-- [x] **`test-dashboard` CI job** — the dashboard's tests, typecheck and lint now run on every PR. They previously ran nowhere.
+## Built & verified this phase
 
-## Known issues
+- [x] **Dual-mode security detection actually runs its judge.** `SecurityEvaluator`
+  stored an injected client but never built one, and `runner.py` passes `None`
+  outside tests, so `detection_mode: dual` had always been heuristic-only in
+  production. *Verified: new tests fail against the un-fixed `__init__`
+  (`assert None is <object>`), pass after.*
+- [x] **The API key in `.env` reaches the SDK.** Two independent bugs, either of
+  which silently scored every judge metric 0.0: pydantic-settings loads `.env`
+  into `Settings` but never into `os.environ`, and `.env` was resolved relative
+  to the working directory while the eval CLI runs from `server/`. *Verified: key
+  masked-checked as visible from both repo root and `server/`, then a live judge
+  call returned a real score.*
+- [x] **Judge metrics are scoped to the span their rubric describes.** New
+  `MetricConfig.span_names`. Previously `applies_to: llm_call` graded the
+  planner's search-query list and the fact-checker's verdict line against a
+  groundedness rubric, and `aggregation: min` let the worst of those decide.
+  *Verified: faithfulness 0.200 → 0.833, relevance 0.267 → 0.900 on the same
+  corpus.*
+- [x] **The corpus is a recording of a real run, not authored fiction.** 13
+  scenarios (was 3), fixtures captured live from claude-haiku-4-5 and replayed
+  byte-for-byte. *Verified: live and replay corpora produce identical llm_call
+  content; `sample_size` 13 clears `min_sample_size` so Welch's t-test engages.*
+- [x] **Fault injection proves the gate fires and fires specifically.** Four
+  faults — obeyed injection, PII disclosure, `shell` + `rm -rf`, blown latency —
+  each asserting non-zero exit *and* the right metric named, plus a control and a
+  specificity assertion. *Verified to discriminate: with `min_mean_drop` and
+  `min_effect_size` neutered, all five fault assertions fail and the control
+  still passes.*
+- [x] **Detector sensitivity measured, both kinds.** Heuristic metric fires at
+  4/12 (33%); judge metric at 6/13 (46%). *Verified: sweep tables in
+  `docs/detector-sensitivity.md`; the heuristic figure is pinned as an assertion.*
+- [x] **Judge fault injection.** Grounded answer 1.00, same answer plus a
+  fabricated statistic and an invented ISO standard 0.35 — below the 0.7
+  threshold, gap 0.65, enough to trip the real detector. *Verified: 4 tests pass
+  against live API calls; skipped without a key.*
+- [x] **Instrumentation overhead measured.** enqueue 1.4 µs p50 / 4.8 µs p99;
+  full 4-span trace 35.3 µs p50 / 112.3 µs p99. *Verified: `sdk/benchmarks/`,
+  10,000 iterations, results committed in `RESULTS.md`.*
 
-1. **Docker image staleness after a dashboard dependency change.** `docker-compose.yml` masks `node_modules` with an anonymous volume, which survives `docker compose up --build`. After adding a dashboard dependency you must run `docker compose rm -sfv dashboard` before `up -d`, or Vite fails to resolve the import and serves a blank page. **Never use `docker compose down -v`** — that destroys the `pgdata` volume.
-2. **Port 5432 is shared** between Docker's Postgres and a native `postgres.exe`. Host-side `pytest` reaches the wrong database, so DB-backed tests skip there. Run them inside the `server` container with `-o asyncio_mode=auto` (the container has only `server/pyproject.toml`, not the repo-root file that sets `asyncio_mode`).
-3. **The full server suite cannot run inside the container** — the SDK is not installed there, so `test_trace_pipeline.py` fails to collect. Host for the full suite, container for the DB tests.
-4. **The span panel is invisible to screen readers' navigation.** MUI's Modal sets `aria-hidden="true"` on `#root` while the panel is open, so the nav rail is unreachable in the accessibility tree even though it is fully clickable with a mouse. Not a regression — inherent to `variant="temporary"`. A `variant="persistent"` panel would avoid it.
-5. **`sdk/tests` and `demo_agent/tests` cannot be collected in one pytest run** — both name their test package `tests`. Run them separately.
-6. **Replay-mode screenshots stay weak** because span durations really are near-zero. The waterfall fix makes them legible, not interesting. Shooting the demo in `--mode live` needs an Anthropic API key.
+## The finding worth leading with
 
-## Open decisions
+The `partially_covered` scenario asks about retry logic and rate limits, which
+the document set does not cover. The agent opened with *"Based on the provided
+context, retry logic and rate limiting interact..."* and then produced a
+detailed, confidently formatted answer that appears nowhere in the sources — a
+fabrication wearing a citation phrase. **Faithfulness 0.20.**
 
-- **Anthropic API key.** `.env` still holds a placeholder, so `faithfulness` and `relevance` fail closed at 0.0 and `--mode live` is unavailable. `openai_api_key` in `server/config.py` and `OPENAI_API_KEY` in `docker-compose.yml` are dead settings — nothing reads them.
-- **Overview bento layout has a visual hole** at 1440px: the pass-rate tile sits alone on row 3, leaving two columns empty before the latest-trace strip. Functional, but a showpiece frame deserves better balance.
-- **Phase 9 scope** — unscoped. Launch items (tags, `v1.0.0`, PyPI, README status line) remain from the Phase 7 handover.
+Not an injected fault. The agent did it unprompted and the harness caught it.
+
+By contrast `unanswerable` scored faithfulness 1.00 / relevance 0.40: the agent
+correctly refused. The two metrics diverging is evidence they measure different
+things.
+
+## Claims status
+
+| Claim | State |
+|---|---|
+| Dual-layer detector | True — second layer builds and runs |
+| Judge produces real scores | True — 0.911 mean, n=13, committed baseline |
+| Sub-millisecond exporter | True and measured — 1.4 µs p50 |
+| Detector catches regressions | Measured — 4/12 heuristic, 6/13 judge |
+| Judge catches fabrication | Measured — 1.00 vs 0.35 |
+| Harness catches real failures | Demonstrated — faithfulness 0.20, unprompted |
+| **Cohen's kappa** | **Does not exist. Do not claim it.** |
+| **"Framework-agnostic"** | **One adapter (LangGraph). Reword, do not build.** |
+| "50+ adversarial cases, 5 categories" | Actual: 3 categories, 40 patterns, 28 tests |
+
+## Known gaps, stated not fixed
+
+1. **6 of 8 metrics still sit flat at 1.000** on the demo corpus — the
+   deterministic and security checks have no scenario that stresses them. Only
+   `faithfulness` (σ 0.218) and `relevance` (σ 0.180) have spread.
+2. **Judge scores drift between runs.** `partially_covered` scored 0.20 when the
+   baseline was pinned and 0.40 on the sensitivity sweep — same trace, same
+   fixture, same model. ±0.2 per-trace swing. This is the argument for the
+   effect-size guard, and the reason the judge sweep is a script rather than a
+   pinned test.
+3. **One trace carries no faithfulness signal.** The `error` scenario's retriever
+   fails before the writer runs, so there is no writer span and the metric scores
+   1.0 for "no applicable spans" — clean and fabricated alike.
+4. **The exporter logs once per dropped trace** under sustained backpressure,
+   which is most of the full-buffer path's extra cost. Rate-limit or count-and-
+   summarise.
+5. **Alembic `versions/` is empty**, so the `ondelete="CASCADE"` declared on
+   `eval_results.trace_id` is not in the deployed schema.
 
 ## Next up
 
-1. Whole-branch code review, then merge `phase-8-dashboard-redesign`.
-2. Decide the Overview layout balance question above.
-3. Scope Phase 9.
+1. Merge PR #9 — nothing on `main` reflects any of this yet.
+2. Cohen's kappa, done properly: a blind-labelled gold set, judge run against it,
+   kappa with a bootstrap CI. A rushed one is worse than none.
+3. Scenarios that stress the deterministic and security metrics, so more than two
+   metrics have variance.
+4. Nightly/manual judge workflow (`ANTHROPIC_API_KEY` as a repo secret) so the
+   key-gated judge tests and the sensitivity sweep run somewhere other than a
+   laptop.
+5. Instrument a second real project — the strongest authenticity move, and the
+   honest answer to "has this run against anything but its own demo?"
+
+## Known issues
+
+1. **Docker image staleness after a dashboard dependency change.**
+   `docker-compose.yml` masks `node_modules` with an anonymous volume that
+   survives `docker compose up --build`. Run `docker compose rm -sfv dashboard`
+   before `up -d`. **Never `docker compose down -v`** — it destroys `pgdata`.
+2. **Port 5432 is shared** between Docker's Postgres and a native `postgres.exe`,
+   so host-side DB tests skip. Run them inside the `server` container with
+   `-o asyncio_mode=auto`.
+3. **The full server suite cannot run inside the container** — the SDK is not
+   installed there.
+4. **The span panel is invisible to screen readers' navigation.** MUI's Modal
+   sets `aria-hidden="true"` on `#root` while the panel is open.
+5. **`sdk/tests` and `demo_agent/tests` cannot be collected in one pytest run** —
+   both name their test package `tests`.
+6. **PowerShell 5.1 has no `&&`.** Use `;` with `if ($?)`, or Git Bash.
+7. **`ruff check` must be run from the repo root** with explicit paths; running it
+   from `server/` silently checks nothing and still reports errors.
+
+## Shelved
+
+- **Phase 9 — judge provider abstraction.** Design spec and a 9-task plan on the
+  local branch `phase-9-judge-provider-abstraction`, unpushed, zero
+  implementation code. Its premise was "Anthropic billing is broken, route
+  around it"; a working key removed the premise. The design work is what
+  surfaced the dual-mode bug, which was worth more than the branch.

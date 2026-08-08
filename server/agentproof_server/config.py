@@ -8,10 +8,17 @@ provided for convenient import throughout the server package.
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Annotated
 
 from pydantic import field_validator
 from pydantic_settings import BaseSettings, NoDecode
+
+# The repo-root ``.env``, resolved from this file rather than the working
+# directory. The eval CLI is run from ``server/`` (that is what CI does), and a
+# CWD-relative ``.env`` is simply not found from there -- which silently costs
+# you the API key and scores every judge metric 0.0 for no visible reason.
+_REPO_ROOT_ENV = Path(__file__).resolve().parents[2] / ".env"
 
 
 class Settings(BaseSettings):
@@ -33,7 +40,8 @@ class Settings(BaseSettings):
     cors_origins: Annotated[list[str], NoDecode] = ["http://localhost:5173"]
 
     model_config = {
-        "env_file": ".env",
+        # Repo root first, then a CWD-local .env so a local one still wins.
+        "env_file": (_REPO_ROOT_ENV, ".env"),
         "env_file_encoding": "utf-8",
         "extra": "ignore",
     }

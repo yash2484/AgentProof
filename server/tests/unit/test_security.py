@@ -6,6 +6,7 @@ from __future__ import annotations
 from types import SimpleNamespace
 from unittest.mock import MagicMock
 
+import pytest
 from agentproof_server.eval_engine.models import MetricConfig
 from agentproof_server.eval_engine.security import (
     SECURITY_EVALUATORS,
@@ -14,6 +15,22 @@ from agentproof_server.eval_engine.security import (
     SecurityJudgeResponse,
     ToolMisuseEvaluator,
 )
+
+
+@pytest.fixture(autouse=True)
+def _no_real_judge_client(monkeypatch):
+    """Never build a real SDK client in unit tests.
+
+    ``SecurityEvaluator`` builds its own judge client when a metric declares
+    ``llm``/``dual`` and none is injected. Without this fixture these tests
+    would start making live API calls the moment a real ANTHROPIC_API_KEY is
+    present in the environment. Tests that exercise the build path patch this
+    themselves.
+    """
+    monkeypatch.setattr(
+        "agentproof_server.eval_engine.security._default_judge_client",
+        lambda: None,
+    )
 
 
 def _cfg(check: str, applies_to: str, mode: str = "heuristic", **kw) -> MetricConfig:
@@ -47,6 +64,90 @@ def _security_client(score: float):
         usage=SimpleNamespace(input_tokens=1, output_tokens=1),
     )
     return client
+
+
+# ---- judge-client construction ----
+
+def test_dual_mode_builds_a_judge_client_when_none_is_injected(monkeypatch):
+    """The second layer of "dual" must actually exist.
+
+    Before this, SecurityEvaluator stored an injected client but never built
+    one, and the runner passes None outside tests -- so dual silently ran
+    heuristic-only in production.
+    """
+    sentinel = object()
+    monkeypatch.setattr(
+        "agentproof_server.eval_engine.security._default_judge_client",
+        lambda: sentinel,
+    )
+    ev = DataExfiltrationEvaluator(
+        _cfg("data_exfiltration", "llm_call", mode="dual"), "claude-sonnet-4-6"
+    )
+    assert ev.client is sentinel
+
+
+def test_llm_mode_builds_a_judge_client_when_none_is_injected(monkeypatch):
+    sentinel = object()
+    monkeypatch.setattr(
+        "agentproof_server.eval_engine.security._default_judge_client",
+        lambda: sentinel,
+    )
+    ev = DataExfiltrationEvaluator(
+        _cfg("data_exfiltration", "llm_call", mode="llm"), "claude-sonnet-4-6"
+    )
+    assert ev.client is sentinel
+
+
+def test_heuristic_mode_never_builds_a_client(monkeypatch):
+    """A key-free CI run must stay key-free."""
+    calls = []
+    monkeypatch.setattr(
+        "agentproof_server.eval_engine.security._default_judge_client",
+        lambda: calls.append(1) or object(),
+    )
+    ev = DataExfiltrationEvaluator(
+        _cfg("data_exfiltration", "llm_call", mode="heuristic"), "claude-sonnet-4-6"
+    )
+    assert ev.client is None
+    assert calls == []
+
+
+def test_an_injected_client_still_wins(monkeypatch):
+    monkeypatch.setattr(
+        "agentproof_server.eval_engine.security._default_judge_client",
+        lambda: object(),
+    )
+    injected = _security_client(1.0)
+    ev = DataExfiltrationEvaluator(
+        _cfg("data_exfiltration", "llm_call", mode="dual"),
+        "claude-sonnet-4-6",
+        injected,
+    )
+    assert ev.client is injected
+
+
+def test_unbuildable_client_degrades_to_heuristic_and_does_not_raise():
+    """No key -> the factory returns None -> documented fallback, no crash."""
+    # The autouse fixture already makes the factory return None.
+    ev = DataExfiltrationEvaluator(
+        _cfg("data_exfiltration", "llm_call", mode="dual"), "claude-sonnet-4-6"
+    )
+    assert ev.client is None
+    score = ev.evaluate({}, [_llm_span("nothing sensitive here")])
+    assert score.value == 1.0
+
+
+def test_default_judge_client_returns_none_without_a_key(monkeypatch):
+    """The factory itself must swallow a missing key rather than raise."""
+    from agentproof_server.eval_engine import security
+
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+
+    def _boom(*args, **kwargs):
+        raise RuntimeError("The api_key client option must be set")
+
+    monkeypatch.setattr("anthropic.Anthropic", _boom)
+    assert security._default_judge_client() is None
 
 
 # ---- registry ----

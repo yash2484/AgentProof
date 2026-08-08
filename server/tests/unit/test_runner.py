@@ -51,6 +51,81 @@ def _config() -> EvalConfig:
     )
 
 
+def _multi_span_trace() -> dict:
+    """A trace whose llm_call spans play three different roles."""
+    return {
+        "trace_id": "t2",
+        "total_latency_ms": 100,
+        "total_cost_usd": 0.01,
+        "spans": [
+            {"span_id": "s1", "span_type": "llm_call", "name": "planner",
+             "metadata": {"completion": "search query one\nsearch query two"}},
+            {"span_id": "s2", "span_type": "llm_call", "name": "writer",
+             "metadata": {"completion": "The grounded answer."}},
+            {"span_id": "s3", "span_type": "llm_call", "name": "fact_checker",
+             "metadata": {"completion": "VERDICT: grounded."}},
+        ],
+    }
+
+
+def test_span_names_scopes_a_metric_to_named_spans():
+    """A judge rubric only makes sense on the span it was written for.
+
+    Without scoping, `faithfulness` grades the planner's list of search
+    queries and the fact-checker's verdict line as if they were grounded
+    prose, and with aggregation=min the worst of those decides the trace.
+    """
+    metric = MetricConfig(
+        name="faithfulness", type="llm_judge", applies_to="llm_call",
+        rubric="r", threshold=0.7, span_names=["writer"],
+    )
+    spans = EvalRunner._applicable_spans(_multi_span_trace(), metric)
+
+    assert [s["span_id"] for s in spans] == ["s2"]
+
+
+def test_span_names_accepts_several_names():
+    metric = MetricConfig(
+        name="faithfulness", type="llm_judge", applies_to="llm_call",
+        rubric="r", threshold=0.7, span_names=["writer", "fact_checker"],
+    )
+    spans = EvalRunner._applicable_spans(_multi_span_trace(), metric)
+
+    assert [s["span_id"] for s in spans] == ["s2", "s3"]
+
+
+def test_no_span_names_keeps_every_span_of_the_type():
+    """Backwards compatible: omitting the filter changes nothing."""
+    metric = MetricConfig(
+        name="faithfulness", type="llm_judge", applies_to="llm_call",
+        rubric="r", threshold=0.7,
+    )
+    spans = EvalRunner._applicable_spans(_multi_span_trace(), metric)
+
+    assert [s["span_id"] for s in spans] == ["s1", "s2", "s3"]
+
+
+def test_span_names_that_match_nothing_yield_no_spans():
+    """An unmatched filter must not silently fall back to every span."""
+    metric = MetricConfig(
+        name="faithfulness", type="llm_judge", applies_to="llm_call",
+        rubric="r", threshold=0.7, span_names=["nonexistent"],
+    )
+    spans = EvalRunner._applicable_spans(_multi_span_trace(), metric)
+
+    assert spans == []
+
+
+def test_span_names_does_not_apply_to_trace_level_metrics():
+    metric = MetricConfig(
+        name="latency_budget", type="deterministic", applies_to="trace",
+        max_latency_ms=15000, threshold=1.0, span_names=["writer"],
+    )
+    spans = EvalRunner._applicable_spans(_multi_span_trace(), metric)
+
+    assert len(spans) == 3
+
+
 def test_evaluate_trace_produces_one_result_per_metric():
     runner = EvalRunner(_config(), judge_client=_judge_client(0.9))
     results = runner.evaluate_trace(_trace())

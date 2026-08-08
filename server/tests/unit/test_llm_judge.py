@@ -10,6 +10,67 @@ from agentproof_server.eval_engine.llm_judge import JudgeResponse, LLMJudgeEvalu
 from agentproof_server.eval_engine.models import MetricConfig
 
 
+def test_api_key_resolves_from_settings_when_env_is_empty(monkeypatch):
+    """A key in .env must reach the SDK.
+
+    pydantic-settings loads .env into Settings but never exports it to
+    os.environ, so the SDK's own lookup misses it on a host-side run.
+    """
+    from agentproof_server.eval_engine.llm_judge import resolve_judge_api_key
+
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    monkeypatch.setattr(
+        "agentproof_server.config.settings.anthropic_api_key", "from-dotenv"
+    )
+    assert resolve_judge_api_key() == "from-dotenv"
+
+
+def test_api_key_falls_back_to_the_environment(monkeypatch):
+    from agentproof_server.eval_engine.llm_judge import resolve_judge_api_key
+
+    monkeypatch.setattr("agentproof_server.config.settings.anthropic_api_key", "")
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "from-env")
+    assert resolve_judge_api_key() == "from-env"
+
+
+def test_api_key_is_none_when_neither_source_has_one(monkeypatch):
+    from agentproof_server.eval_engine.llm_judge import resolve_judge_api_key
+
+    monkeypatch.setattr("agentproof_server.config.settings.anthropic_api_key", "")
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    assert resolve_judge_api_key() is None
+
+
+def test_evaluator_passes_the_resolved_key_to_the_sdk(monkeypatch):
+    """Regression guard: a self-built client must carry the resolved key."""
+    import sys
+
+    import agentproof_server.eval_engine.llm_judge as mod
+
+    seen = {}
+
+    class FakeAnthropic:
+        def __init__(self, *, api_key=None):
+            seen["api_key"] = api_key
+
+    monkeypatch.setattr(mod, "resolve_judge_api_key", lambda: "resolved-key")
+    monkeypatch.setitem(
+        sys.modules, "anthropic", SimpleNamespace(Anthropic=FakeAnthropic)
+    )
+
+    mod.LLMJudgeEvaluator(
+        MetricConfig(
+            name="faithfulness",
+            type="llm_judge",
+            applies_to="llm_call",
+            rubric="r",
+            threshold=0.7,
+        ),
+        "claude-haiku-4-5",
+    )
+    assert seen["api_key"] == "resolved-key"
+
+
 def _mock_client(score: float, reasoning: str = "because", stop_reason: str = "end_turn"):
     """Return a client whose messages.parse yields a fixed JudgeResponse."""
     client = MagicMock()

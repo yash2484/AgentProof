@@ -57,6 +57,13 @@ class MetricConfig(BaseModel):
     name: str
     type: MetricType
     applies_to: str
+    # Optional second filter: restrict the metric to spans with these names.
+    # A rubric is written for a particular role in the graph -- a groundedness
+    # rubric is meaningless against a planner's list of search queries or a
+    # fact-checker's verdict line. Without this, aggregation=min means the
+    # least-groundable intermediate span decides the whole trace's score.
+    # None = every span of the applies_to type (the original behaviour).
+    span_names: list[str] | None = None
     threshold: float = 0.7
     regression_alert: bool = True
     ci_block: bool = True

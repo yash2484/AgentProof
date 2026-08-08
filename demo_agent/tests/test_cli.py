@@ -34,5 +34,7 @@ def test_export_path_invokes_run_and_export(monkeypatch, capsys):
     monkeypatch.setattr(cli, "run_and_export", fake_run_and_export)
     rc = cli.main(["run", "--scenario", "all", "--export"])
     assert rc == 0
-    assert called["keys"] == ["success", "error", "injection"]
+    from demo_agent.scenarios import SCENARIOS
+
+    assert called["keys"] == list(SCENARIOS)
     assert "3" in capsys.readouterr().out

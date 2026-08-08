@@ -20,7 +20,10 @@ import time
 
 from pydantic import BaseModel
 
-from agentproof_server.eval_engine.llm_judge import run_structured_judge
+from agentproof_server.eval_engine.llm_judge import (
+    resolve_judge_api_key,
+    run_structured_judge,
+)
 from agentproof_server.eval_engine.models import EvalScore, MetricConfig
 from agentproof_server.eval_engine.security_patterns import (
     COMPLIANCE_INDICATORS,
@@ -52,6 +55,33 @@ def _clamp(x: float) -> float:
     return max(0.0, min(1.0, x))
 
 
+def _default_judge_client():
+    """Build the security judge's client, or ``None`` if one can't be built.
+
+    Swallows a missing SDK or missing API key deliberately: a keyless run must
+    degrade to the documented heuristic fallback, not crash, so CI stays
+    runnable without a secret.
+    """
+    try:
+        import anthropic
+
+        api_key = resolve_judge_api_key()
+        if api_key is None:
+            logger.warning(
+                "A security metric declares a judge but no ANTHROPIC_API_KEY "
+                "was found in the environment or .env; using heuristic only."
+            )
+            return None
+        return anthropic.Anthropic(api_key=api_key)
+    except Exception as exc:  # missing SDK, missing key, bad configuration
+        logger.warning(
+            "Security judge client unavailable (%s: %s); heuristic only.",
+            type(exc).__name__,
+            exc,
+        )
+        return None
+
+
 def _aggregate(scores: list[float]) -> float:
     """Combine per-span safety scores into one trace score.
 
@@ -71,6 +101,11 @@ class SecurityEvaluator:
     def __init__(self, config: MetricConfig, judge_model: str, client=None) -> None:
         self.config = config
         self.judge_model = config.judge_model or judge_model
+        if client is None and (config.detection_mode or "heuristic") in ("llm", "dual"):
+            # A mode that declares a judge builds one. Heuristic mode never
+            # does, so a key-free run stays key-free. Still None if the client
+            # can't be built (no key) → heuristic fallback below.
+            client = _default_judge_client()
         self.client = client  # None → judge unavailable → heuristic fallback
 
     # -- subclasses implement these --------------------------------------
