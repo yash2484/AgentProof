@@ -35,6 +35,10 @@ class Settings(BaseSettings):
     project_name: str = "AgentProof"
     # Path to the active eval config, resolved relative to the repo root.
     eval_config_path: str = "agentproof.yaml"
+    # Directory of pinned baseline JSON files. The gate verdict is recomputed
+    # per request from these plus candidate scores in Postgres -- regression
+    # results are never persisted, so there is nothing to read back.
+    baselines_path: str = "baselines"
     # NoDecode: skip pydantic-settings' JSON decoding so the validator below
     # can accept a comma-separated string from ``.env``.
     cors_origins: Annotated[list[str], NoDecode] = ["http://localhost:5173"]

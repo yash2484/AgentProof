@@ -1,31 +1,81 @@
 # AgentProof — Progress
 
-**Current phase:** Application hardening — complete, awaiting merge
-**Branch:** `application-hardening` (PR #9, six CI jobs green)
+**Current phase:** Overview analytics — server side complete, dashboard next
+**Branch:** `overview-analytics`
 **Last updated:** 2026-08-08
 
 ## Last verified working
 
-Full sweep on the host, 2026-08-08. All green.
+Server sweep, 2026-08-08, after the analytics endpoint landed.
 
 | Suite | Result | How verified |
 |---|---|---|
-| server | 169 passed, 13 skipped | `python -m pytest -q` from `server/` |
-| sdk | 43 passed | `python -m pytest -q` from `sdk/` |
-| demo_agent | 37 passed, 1 skipped | `python -m pytest -q` from `demo_agent/` |
-| dashboard | 140 passed, 22 files | `npx vitest run --reporter=basic` |
-| lint | All checks passed | `ruff check server/ sdk/ demo_agent/ scripts/` |
-| CI (PR #9) | 6/6 jobs pass | agent-gate, fixture-gate, lint, test-dashboard, test-sdk, test-server |
-| regression gate 1 | PASS, exit 0 | fixture corpus vs `demo-research-agent.json` |
-| regression gate 2 | PASS, exit 0 | 13-trace replay corpus vs `demo-agent-replay.json` |
+| server (host) | 234 passed, 24 skipped | `python -m pytest tests -q` **from `server/`** |
+| server DB tests | 17 passed | `docker compose exec server python -m pytest tests/integration/test_evals_analytics_db.py tests/integration/test_evals_summary_db.py -q -o asyncio_mode=auto` |
+| lint | All checks passed | `ruff check server/agentproof_server server/tests` from repo root |
+| live endpoint | 200, real figures | `GET /api/v1/evals/analytics?project=demo-research-agent&days=0` against the running stack |
 
-Skips are DB-backed integration tests (port 5432 conflict, see Known issues) and
-one key-gated demo test.
+The 24 host skips are DB-backed integration tests (port 5432 conflict, see Known
+issues) plus key-gated judge tests.
 
-**Repo:** public, `github.com/yash2484/AgentProof`. Tags now continuous
-`phase-1` … `phase-8`. Remote branches: `main`, `application-hardening` only.
+Application-hardening figures, verified 2026-08-08 before that merge, unchanged
+since: sdk 43 passed; demo_agent 37 passed, 1 skipped; dashboard 140 passed;
+CI 6/6; both regression gates PASS exit 0.
 
-## Built & verified this phase
+**Repo:** public, `github.com/yash2484/AgentProof`. Tags continuous
+`phase-1` … `phase-8`. Remote branches: `main`, `overview-analytics`.
+
+## Built & verified this phase — Overview analytics (server)
+
+Design spec: `docs/superpowers/specs/2026-08-08-overview-analytics-design.md`.
+Handover: `docs/handover-overview-analytics.md`.
+
+- [x] **`GET /api/v1/evals/analytics`** — one endpoint, six SQL aggregates
+  (`server/agentproof_server/api/analytics.py`). Every figure computed in SQL;
+  the design spec's seven endpoints collapse to one. *Verified: 59 unit tests +
+  14 DB-backed tests against real Postgres.*
+- [x] **The misleading security verdict is gone.** The screen said
+  *"injection_resistance regressed — the agent gave ground under attack"* from
+  one row with no denominator. The endpoint now returns `1 of 35 flagged, mean
+  0.971` with the gate verdict `p=0.1634 >= alpha=0.05, d=0.239 < 0.5`.
+  *Verified: live call against the 25-trace demo project.*
+- [x] **`degraded` derived from `details`, no migration.** A judge error or
+  refusal is a failed *measurement*, not a finding. Degraded rows are excluded
+  from `mean_score`, `std`, `pass_rate` and the histogram, and counted
+  separately — the judge fails closed to 0.0, and folding a timed-out API call
+  into the mean is exactly how one bad call became a breach headline.
+  *Verified: DB tests for an `error` blob, a `refusal` blob, a NULL `details`,
+  and a deterministic 0.0 that must still read as a real failure.*
+- [x] **Eval runs gap-clustered, not grouped by timestamp.** `runner.py:137`
+  stamps `evaluated_at` per trace, so equality grouping reported 13 runs where
+  there were 2. Rows within 120s are one run. *Verified: DB test seeds 13
+  traces 4s apart and asserts one run; a companion test pins that zero
+  tolerance reproduces the 13-run miscount.*
+- [x] **Gate verdict computed on the fly.** Regression results are never
+  persisted, so the endpoint loads `baselines/*.json` (newest `created_at`
+  wins per metric), pulls candidate scores from Postgres and calls the existing
+  pure `detect_regression()`. No table, no migration. The candidate sample is
+  the *latest run*, not the whole window. *Verified: the restraint case
+  (d=0.607 clears, p=0.116 does not → not flagged, both numbers returned) and
+  the firing case, plus no-candidate-scores → `comparable: false`.*
+- [x] **`has_variance` keeps "never varied" out of the healthy bucket.** `std`
+  is `stddev_samp`, which is NULL at n=1 — "cannot tell", not "perfectly
+  stable". Both NULL and 0.0 report `has_variance: false`. *Verified: DB tests
+  at n=1 and with four identical scores.*
+- [x] **`ci_block` serialised** on eval-result rows and `/evals/metrics`. It
+  lives on `MetricConfig` (default `True`) and had never reached the client, so
+  nothing downstream could tell a blocking metric from an advisory one.
+  Unknown metrics fall back to `True`. *Verified: 3 unit tests; live call shows
+  `relevance` correctly `ci_block: false`.*
+
+**One bug the live check caught in this session's own code.** Summing
+per-timestamp trace counts reported `trace_count: 26` for a project holding 25
+traces — 13 traces evaluated twice inside one window, double-counted. Fixed by
+carrying trace ids through the fold and deduping per run (`array_agg` in SQL);
+now caps at 13. Regression test pins it, and a companion test pins that the
+same trace in *two* runs still counts in each.
+
+## Built & verified — application hardening (previous phase)
 
 - [x] **Dual-mode security detection actually runs its judge.** `SecurityEvaluator`
   stored an injected client but never built one, and `runner.py` passes `None`
@@ -106,6 +156,16 @@ things.
 3. **One trace carries no faithfulness signal.** The `error` scenario's retriever
    fails before the writer runs, so there is no writer span and the metric scores
    1.0 for "no applicable spans" — clean and fabricated alike.
+   **Same root cause, second instance, found 2026-08-08:**
+   `tests/integration/test_eval_pipeline.py::test_unfaithful_trace_scores_lower`
+   fails reproducibly with `assert 1.0 < 0.7`. `build_demo_traces()[1]` names its
+   `llm_call` span `synthesis`, but `agentproof.yaml` scopes faithfulness to
+   `span_names: [writer]`, so the fabricated "built by NASA" claim is never
+   judged. The test cannot pass with the current config. Fixing it means either
+   renaming the demo span or widening `span_names` — an eval-semantics decision,
+   deliberately not taken here. Live-data effect: on the demo project 5 metrics
+   sit on the ceiling strip and 3 vary (`injection_resistance` now varies because
+   of one failing row), not the 6/2 the design spec assumed.
 4. **The exporter logs once per dropped trace** under sustained backpressure,
    which is most of the full-buffer path's extra cost. Rate-limit or count-and-
    summarise.
@@ -114,15 +174,20 @@ things.
 
 ## Next up
 
-1. Merge PR #9 — nothing on `main` reflects any of this yet.
-2. Cohen's kappa, done properly: a blind-labelled gold set, judge run against it,
+1. Overview analytics, dashboard side: types + api client + query hooks;
+   severity tiers and register assignment as pure functions in `lib/` with
+   colocated tests; then Band 1 (gate verdict, volume, measurement health),
+   Band 2 (metric health, two registers), Band 3 (variance), Band 5 (findings).
+2. Decide the `span_names: [writer]` mismatch above — it is currently a failing
+   test and two traces with no faithfulness signal.
+3. Cohen's kappa, done properly: a blind-labelled gold set, judge run against it,
    kappa with a bootstrap CI. A rushed one is worse than none.
-3. Scenarios that stress the deterministic and security metrics, so more than two
+4. Scenarios that stress the deterministic and security metrics, so more than two
    metrics have variance.
-4. Nightly/manual judge workflow (`ANTHROPIC_API_KEY` as a repo secret) so the
+5. Nightly/manual judge workflow (`ANTHROPIC_API_KEY` as a repo secret) so the
    key-gated judge tests and the sensitivity sweep run somewhere other than a
    laptop.
-5. Instrument a second real project — the strongest authenticity move, and the
+6. Instrument a second real project — the strongest authenticity move, and the
    honest answer to "has this run against anything but its own demo?"
 
 ## Known issues
@@ -143,6 +208,20 @@ things.
 6. **PowerShell 5.1 has no `&&`.** Use `;` with `if ($?)`, or Git Bash.
 7. **`ruff check` must be run from the repo root** with explicit paths; running it
    from `server/` silently checks nothing and still reports errors.
+8. **The server suite must be run from `server/`, not the repo root** — the exact
+   opposite of `ruff`. Four tests in `test_regression_cli.py` and
+   `test_regression_fixtures.py` load `../fixtures/regression_config.yaml`, a
+   CWD-relative path. From the root they fail with `FileNotFoundError`, which
+   reads as four real failures that are not there.
+9. **`pytest` is not in the server image.** `server/Dockerfile` installs the
+   runtime deps only, not `[dev]`, so running DB tests in the container needs
+   `docker compose exec server pip install pytest pytest-asyncio` first. That
+   install does not survive a rebuild.
+10. **`baselines/` must be mounted into the server container.** Added to
+    `docker-compose.yml` alongside `agentproof.yaml`, for the same reason:
+    `settings.baselines_path` resolves against the process CWD (`/app`). Without
+    the mount the gate verdict silently reports "no baseline" for every metric
+    rather than erroring.
 
 ## Shelved
 
