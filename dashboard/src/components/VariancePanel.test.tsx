@@ -10,7 +10,13 @@ const runs = sampleAnalytics.eval_runs;
 const run = (
   at: string,
   group_means: AnalyticsEvalRun["group_means"],
-): AnalyticsEvalRun => ({ run_at: at, trace_count: 3, degraded: 0, group_means });
+): AnalyticsEvalRun => ({
+  run_at: at,
+  trace_count: 3,
+  degraded: 0,
+  group_means,
+  metric_means: {},
+});
 
 describe("VariancePanel", () => {
   it("holds the slot when nothing has run, so nothing shifts later", () => {

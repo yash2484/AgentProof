@@ -39,11 +39,21 @@ describe("FindingsFeed", () => {
     );
   });
 
-  it("links each finding to the rows behind it", () => {
+  it("links each finding straight to that metric's own page", () => {
+    // Not to a filtered list: the reader has already chosen what to look at.
     renderWithProviders(<FindingsFeed analytics={sampleAnalytics} project="demo" />);
     const link = screen.getByTestId("finding-faithfulness").querySelector("a");
-    expect(link?.getAttribute("href")).toContain("metric=faithfulness");
-    expect(link?.getAttribute("href")).toContain("project=demo");
+    expect(link?.getAttribute("href")).toBe(
+      "/evals/faithfulness?project=demo&days=30",
+    );
+  });
+
+  it("carries the window into the link so the two pages agree", () => {
+    renderWithProviders(
+      <FindingsFeed analytics={{ ...sampleAnalytics, days: 0 }} project="demo" />,
+    );
+    const link = screen.getByTestId("finding-faithfulness").querySelector("a");
+    expect(link?.getAttribute("href")).toContain("days=0");
   });
 
   it("does not call an empty feed a pass", () => {

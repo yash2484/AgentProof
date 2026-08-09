@@ -10,6 +10,8 @@ export const queryKeys = {
   evalSummary: (project: string | undefined) => ["evalSummary", project] as const,
   evalAnalytics: (project: string | undefined, days: number) =>
     ["evalAnalytics", project, days] as const,
+  metricDetail: (name: string, project: string | undefined, days: number) =>
+    ["metricDetail", name, project, days] as const,
 };
 
 export function useTraces(params: Parameters<typeof api.listTraces>[0] = {}) {
@@ -87,5 +89,17 @@ export function useEvalAnalytics(project?: string, days = 30) {
   return useQuery({
     queryKey: queryKeys.evalAnalytics(project, days),
     queryFn: () => api.getEvalAnalytics({ project, days }),
+  });
+}
+
+/** One metric in depth, behind `/evals/:metric`. */
+export function useMetricDetail(name: string, project?: string, days = 30) {
+  return useQuery({
+    queryKey: queryKeys.metricDetail(name, project, days),
+    queryFn: () => api.getMetricDetail(name, { project, days }),
+    enabled: !!name,
+    // A 404 here means the metric does not exist in this window. Retrying
+    // asks the same question three more times and delays the answer.
+    retry: false,
   });
 }

@@ -78,13 +78,61 @@ SCENARIOS = (
     "partially-covered",
 )
 
-_JUDGE_REASONS = (
-    "Every claim traces to a retrieved chunk.",
-    "Mostly grounded; one figure is not in the sources.",
-    "The answer restates the question without adding grounded detail.",
-    "Two claims appear nowhere in the retrieved context.",
-    "Correctly declines to answer beyond the provided sources.",
+# Reasoning banded by score, because the drill-down now displays these strings
+# next to the number they explain. A 0.6 labelled "every claim traces to a
+# retrieved chunk" is a corpus that contradicts itself on screen, which is
+# worse than no prose at all -- the corpus exists to stand in for real data,
+# and real judge prose agrees with the score it accompanies.
+_JUDGE_REASONS: tuple[tuple[float, tuple[str, ...]], ...] = (
+    (
+        0.9,
+        (
+            "Every claim traces to a retrieved chunk.",
+            "Correctly declines to answer beyond the provided sources.",
+            "Fully grounded; no assertion goes past the context.",
+        ),
+    ),
+    (
+        0.7,
+        (
+            "Mostly grounded; one figure is not in the sources.",
+            "Largely supported, though one inference goes past what the context states.",
+            "Grounded overall, with a minor extrapolation in the closing sentence.",
+        ),
+    ),
+    (
+        0.5,
+        (
+            "The answer restates the question without adding grounded detail.",
+            "Several claims are plausible inferences rather than direct support.",
+            "Reasonable but speculative: the context does not address the core question.",
+        ),
+    ),
+    (
+        0.0,
+        (
+            "Two claims appear nowhere in the retrieved context.",
+            "The answer asserts specifics the sources never mention.",
+            "Substantially unsupported — the context contradicts the main claim.",
+        ),
+    ),
 )
+
+
+def _reason_for(score: float) -> str:
+    """A reasoning string that agrees with the score it explains.
+
+    Chosen from the score itself rather than by drawing on the RNG. Prose is
+    cosmetic and must not move the numbers: ``random.choice`` consumes a
+    variable number of bits with the length of the sequence, so picking from a
+    3-option band instead of the old flat 5-tuple shifted the whole downstream
+    stream and quietly flattened the drift from 0.15 to 0.08 — the corpus's
+    entire reason for existing, weakened by a copy change.
+    """
+    for floor, options in _JUDGE_REASONS:
+        if score >= floor:
+            return options[int(score * 1000) % len(options)]
+    return _JUDGE_REASONS[-1][1][0]
 
 
 @dataclass
@@ -196,7 +244,7 @@ def _judge_eval(
                 {
                     "span_id": "s-writer",
                     "score": score,
-                    "reasoning": rng.choice(_JUDGE_REASONS),
+                    "reasoning": _reason_for(score),
                 }
             ],
             "aggregation": "min",

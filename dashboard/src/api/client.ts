@@ -5,6 +5,7 @@ import type {
   MetricsResponse,
   EvalSummary,
   EvalAnalytics,
+  MetricDetail,
 } from "../types";
 
 export class ApiError extends Error {
@@ -110,4 +111,18 @@ export function getEvalAnalytics(
   params: { project?: string; days?: number } = {},
 ): Promise<EvalAnalytics> {
   return request<EvalAnalytics>(`/evals/analytics${qs(params)}`);
+}
+
+/**
+ * One metric in depth. 404s when the metric has no rows in scope, which the
+ * page surfaces as "no such metric" rather than an empty state — a rotted
+ * link and a metric that passed are different things.
+ */
+export function getMetricDetail(
+  metricName: string,
+  params: { project?: string; days?: number; worst?: number } = {},
+): Promise<MetricDetail> {
+  return request<MetricDetail>(
+    `/evals/metric/${encodeURIComponent(metricName)}${qs(params)}`,
+  );
 }

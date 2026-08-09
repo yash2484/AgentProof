@@ -6,13 +6,13 @@
 
 ## Last verified working
 
-Full sweep, 2026-08-09, after the Phase A Overview corrections landed.
+Full sweep, 2026-08-09, after the Phase C Evals rebuild landed.
 
 | Suite | Result | How verified |
 |---|---|---|
-| server (host) | 262 passed, 29 skipped | `python -m pytest -q` **from `server/`** |
-| server DB tests | 19 passed | `docker compose exec -T server python -m pytest tests/integration/test_evals_analytics_db.py -q -o asyncio_mode=auto` |
-| dashboard | 218 passed, 26 files | `npx vitest run` |
+| server (host) | 289 passed, 36 skipped | `python -m pytest -q` **from `server/`** |
+| server DB tests | 26 passed | `docker compose exec -T server python -m pytest tests/integration/test_evals_analytics_db.py -q -o asyncio_mode=auto` |
+| dashboard | 275 passed, 30 files | `npx vitest run` |
 | lint | All checks passed | `ruff check .` from repo root |
 | types + lint (dashboard) | exit 0 | `npx tsc --noEmit` and `npx eslint src --max-warnings 0` |
 | live endpoint | 200, per-group means | `GET /api/v1/evals/analytics?project=synthetic-showcase&days=0` |
@@ -168,6 +168,50 @@ three of these four defects — at 25 traces and 4 runs they were invisible.
 `api/analytics.py` back to `HEAD` and re-running — all four failed, then passed
 against the new file. The unit tests went red first in the ordinary way.
 
+## Built & verified — analytics depth, Phase C (Evals rebuild)
+
+Design spec §6.1. The page it replaces drew eight metrics as eight lines on
+one 0–1 axis; three of those lines meant different things by "1.0".
+
+- [x] **Three group panels, three chart forms, three axes.** Quality is graded
+  → a distribution over runs with the ±0.2 band. Safety is 0/1 taken to the
+  trace by `min` → a prevalence **count**, never a rate, because "97% safe" is
+  not a sentence anyone should say about a security control. Budgets are
+  binary compliance → a rate that openly admits it hides the margin.
+- [x] **A metric strip that is also the navigation** — every metric as a tile
+  carrying its current value, its delta since the previous run *in words*, its
+  denominator, and its severity. Clustered by group rather than laid out as a
+  uniform eight-up grid, because the grouping is the information.
+- [x] **`/evals/:metric`** — what it measures, how it is computed, what it
+  catches, then current state, distribution, history, and the worst rows.
+- [x] **The judge's reasoning is on screen for the first time.** Those strings
+  have been written to `details.per_span` since the judge shipped and
+  displayed nowhere. The demo project's worst faithfulness row now shows the
+  judge's full argument for scoring it 0.350.
+- [x] **A metric explanation registry** (`lib/metricCopy.ts`) keyed by name
+  with a fallback by type, so a metric added to `agentproof.yaml` still
+  renders something sensible. "How it is computed" states the actual
+  mechanism — a reader who cannot reproduce the number cannot argue with it.
+
+**Three defects the live render found, none catchable by a passing suite.**
+
+1. **A deep link pooled the generated corpus into the real one.**
+   `ProjectContext` is in-memory, so `/evals/faithfulness` opened fresh fell
+   back to *all projects* — a tile reading `2 of 27` opened a page reading
+   `321`, silently mixing `synthetic-showcase` into `demo-research-agent`.
+   Scope now travels in the URL (`?project=…&days=…`), the detail page states
+   its scope, and the pooling case says so in words.
+2. **Sibling series were indistinguishable.** Two magenta lines stepped by
+   opacity read as one colour dimmed on a dark surface. Now stepped by
+   lightness, mixed toward white.
+3. **The synthetic corpus contradicted itself on screen** once reasoning was
+   displayed: a 0.616 labelled *"Every claim traces to a retrieved chunk"*.
+   Prose is now banded by score. Banding it initially *weakened the drift*
+   from 0.15 to 0.08 — `random.choice` consumes a variable number of bits with
+   sequence length, so a copy change shifted the whole RNG stream. The choice
+   is now a pure function of the score and touches no randomness. Drift
+   measured after reseeding: **0.938 → 0.771**.
+
 ## Built & verified — the nested judge record (found during Phase C scoping)
 
 - [x] **Degraded detection missed every `dual`-mode security row.** A security
@@ -304,11 +348,19 @@ things.
 
 ## Next up
 
-1. **Phase C — Evals rebuild** (spec §6.1): metric strip, three group panels
-   keyed on the `group` field Phase A added, metric explanation registry, and a
-   `/evals/:metric` route surfacing judge reasoning from `details.per_span`.
-   `lib/groups.ts` already carries the labels, questions and colours it needs.
-2. Phase D (Security, §6.2) then Phase E (Traces, §6.3).
+1. **Phase D — Security rebuild** (spec §6.2): posture strip with
+   attempted-vs-breached denominators from `details.injection_attempted`,
+   breach timeline, findings list, coverage note.
+2. **Phase E — Traces** (spec §6.3).
+3. **Then the Overview's visual design and theme**, deferred to last at the
+   user's instruction (2026-08-09): they cannot read the metric-health
+   distribution bars or tell what to take from them. Treat it as a redesign of
+   that panel's form, not a tweak — it packs histogram, threshold, mean marker
+   and judge band into one 0–1 track with no legend.
+4. **A budgets aggregate for the underlying quantity.** The Budgets panel
+   currently states that a compliance rate hides the margin and cannot yet
+   show it: `details` carries `latency_ms`, `cost_usd` and `violations` under
+   different keys per metric, and nothing aggregates them. Spec §7 lists it.
 3. Decide the `span_names: [writer]` mismatch above — it is currently a failing
    test and two traces with no faithfulness signal.
 3. Band 4 (latency and tokens as separate mini-charts) and span-role ranking

@@ -319,18 +319,22 @@ export const sampleAnalytics: EvalAnalytics = {
     {
       run_at: "2026-07-28T13:07:39.000Z", trace_count: 3, degraded: 6,
       group_means: { quality: 1.0, safety: 1.0, budgets: 1.0 },
+      metric_means: { faithfulness: 1.0, relevance: 1.0, injection_resistance: 1.0, cost_budget: 1.0 },
     },
     {
       run_at: "2026-07-28T13:15:32.000Z", trace_count: 3, degraded: 6,
       group_means: { quality: 1.0, safety: 1.0, budgets: 1.0 },
+      metric_means: { faithfulness: 1.0, relevance: 1.0, injection_resistance: 1.0, cost_budget: 1.0 },
     },
     {
       run_at: "2026-08-05T14:30:16.000Z", trace_count: 3, degraded: 6,
       group_means: { quality: 1.0, safety: 1.0, budgets: 1.0 },
+      metric_means: { faithfulness: 1.0, relevance: 1.0, injection_resistance: 1.0, cost_budget: 1.0 },
     },
     {
       run_at: "2026-08-08T07:15:25.000Z", trace_count: 13, degraded: 0,
       group_means: { quality: 0.922, safety: 0.971, budgets: 1.0 },
+      metric_means: { faithfulness: 0.922, relevance: 0.931, injection_resistance: 0.971, cost_budget: 1.0 },
     },
   ],
   metric_health: [

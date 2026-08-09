@@ -143,6 +143,14 @@ export interface AnalyticsEvalRun {
   /** Distinct traces in the run. */
   trace_count: number;
   /**
+   * Mean per metric in this run, degraded rows excluded.
+   *
+   * A metric absent from a run is absent from this map — the strip reads "no
+   * previous value" from the missing key, which a null could not be told
+   * apart from a genuinely null mean.
+   */
+  metric_means: Record<string, number | null>;
+  /**
    * Row-weighted mean per group, degraded rows excluded. Never pooled across
    * groups — a judge score and a breach flag do not share a unit.
    *
@@ -199,6 +207,50 @@ export interface GateVerdict {
   baseline_n: number;
   candidate_n: number;
   reason: string;
+}
+
+/** One span's judge output on a single eval row. */
+export interface SpanReasoning {
+  span_id: string | null;
+  /** Null when the judge call failed rather than scored. */
+  score: number | null;
+  /** The judge's own prose. Absent when the call errored. */
+  reasoning?: string;
+  /** Present instead of `reasoning` when the judge errored or refused. */
+  error?: string;
+}
+
+export interface WorstRow {
+  trace_id: string;
+  span_id: string | null;
+  score: number | null;
+  passed: boolean;
+  evaluated_at: string | null;
+  explanation: string | null;
+  reasoning: SpanReasoning[];
+}
+
+export interface MetricRunPoint {
+  run_at: string;
+  /** Null when every measurement in that run was degraded. */
+  mean_score: number | null;
+  count: number;
+  failed: number;
+}
+
+/** GET /evals/metric/{name} — the drill-down behind `/evals/:metric`. */
+export interface MetricDetail {
+  metric_name: string;
+  metric_type: MetricType | string;
+  group: MetricGroup | string;
+  ci_block: boolean;
+  project: string | null;
+  days: number;
+  health: Omit<MetricHealth, "metric_name" | "metric_type" | "group" | "ci_block">;
+  buckets: { bucket: number; count: number }[];
+  runs: MetricRunPoint[];
+  /** Lowest-scoring measurements, worst first. Degraded rows excluded. */
+  worst: WorstRow[];
 }
 
 export interface EvalAnalytics {

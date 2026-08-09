@@ -4,6 +4,7 @@ import { tokens, TILE_PADDING, TABULAR_NUMS } from "../theme";
 import { metricSeverity, severityCopy } from "../lib/analytics";
 import type { Severity } from "../lib/analytics";
 import { SeverityChip } from "./SeverityChip";
+import { metricHref } from "./MetricStrip";
 import type { EvalAnalytics, GateVerdict, MetricHealth } from "../types";
 
 const RANK: Record<Severity, number> = {
@@ -105,9 +106,9 @@ export function FindingsFeed({ analytics, project }: {
           </Box>
           <Box
             component={RouterLink}
-            to={`/evals?metric=${encodeURIComponent(f.metric.metric_name)}${
-              project ? `&project=${encodeURIComponent(project)}` : ""
-            }`}
+            // Straight to the metric's own page rather than a filtered list:
+            // the reader has already chosen what they want to look at.
+            to={metricHref(f.metric.metric_name, project, analytics?.days)}
             sx={{ color: tokens.brand.text, textDecoration: "none", fontSize: 14 }}
           >
             Inspect →

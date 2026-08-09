@@ -19,6 +19,7 @@ from itertools import pairwise
 
 from agentproof_server.scripts_pkg.synthetic_showcase import (
     PROJECT,
+    _reason_for,
     build_corpus,
     drifted_mean,
     run_schedule,
@@ -79,6 +80,41 @@ def test_the_drift_is_gradual_not_a_step():
 # ---------------------------------------------------------------------------
 # The corpus
 # ---------------------------------------------------------------------------
+
+
+def test_judge_reasoning_agrees_with_the_score_it_explains():
+    """The drill-down shows these strings next to the number they explain.
+
+    A 0.6 labelled "every claim traces to a retrieved chunk" is a corpus that
+    contradicts itself on screen — worse than no prose at all, since the
+    corpus exists to stand in for real data.
+    """
+    high = {_reason_for(s / 1000) for s in range(900, 1001)}
+    low = {_reason_for(s / 1000) for s in range(0, 500)}
+
+    assert high.isdisjoint(low)
+    assert all("nowhere" not in r for r in high)
+    assert all("Every claim traces" not in r for r in low)
+
+
+def test_every_score_band_has_reasoning_available():
+    for score in (0.0, 0.35, 0.55, 0.75, 0.95, 1.0):
+        assert _reason_for(score)
+
+
+def test_choosing_reasoning_never_touches_the_random_stream():
+    """Prose is cosmetic and must not move the numbers.
+
+    ``random.choice`` consumes a variable number of bits with the length of
+    the sequence it draws from, so banding the strings by score shifted the
+    whole downstream stream and flattened the drift from 0.15 to 0.08 — the
+    corpus's entire reason for existing, weakened by a copy change.
+    """
+    # A pure function of the score consumes no randomness by construction.
+    assert all(_reason_for(0.62) == _reason_for(0.62) for _ in range(50))
+    assert [_reason_for(s / 100) for s in range(101)] == [
+        _reason_for(s / 100) for s in range(101)
+    ]
 
 
 def test_the_corpus_regenerates_identically_from_its_seed():
