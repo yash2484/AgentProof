@@ -12,6 +12,7 @@ from agentproof_server.api.analytics import (
     _eval_timeline_stmt,
     _evaluated_traces_stmt,
     _metric_health_stmt,
+    _metric_runs_stmt,
     _score_buckets_stmt,
     _trace_totals_stmt,
     _trace_volume_stmt,
@@ -491,6 +492,35 @@ def test_evaluated_traces_counts_traces_not_eval_rows():
 
 
 # ---------------------------------------------------------------------------
+# Per-metric run history
+# ---------------------------------------------------------------------------
+#
+# Runs are gap-clusters of per-trace timestamps, which only Python knows. So
+# the boundaries computed by the fold are pushed back into SQL as a CASE,
+# keeping the aggregate at (runs x metrics) rows instead of returning one row
+# per eval row for the client to reduce.
+
+
+def test_metric_runs_buckets_rows_by_the_run_boundaries():
+    sql = _sql(_metric_runs_stmt("demo", SINCE, [T0, _tick(4000)]))
+    assert "case" in sql
+    assert "group by" in sql
+    assert "eval_results.metric_name" in sql
+
+
+def test_metric_runs_excludes_degraded_rows_from_the_mean():
+    sql = _sql(_metric_runs_stmt("demo", SINCE, [T0]))
+    assert "jsonb_path_exists" in sql
+    assert "avg(case when" in sql
+
+
+def test_metric_runs_needs_no_query_when_nothing_ran():
+    # No runs means no boundaries, and a CASE with no branches is not valid
+    # SQL -- the caller must be able to skip the round trip entirely.
+    assert _metric_runs_stmt("demo", SINCE, []) is None
+
+
+# ---------------------------------------------------------------------------
 # Payload assembly
 # ---------------------------------------------------------------------------
 
@@ -521,6 +551,7 @@ def _payload(**overrides):
         "bucket_rows": [("faithfulness", 0.2, 1)],
         "evaluated_row": (30, 1),
         "ci_block_by_metric": {"faithfulness": True},
+        "metric_run_rows": [],
     }
     kwargs.update(overrides)
     return _analytics_payload(**kwargs)
@@ -584,6 +615,37 @@ def test_metric_health_carries_the_group_so_the_client_re_derives_nothing():
         "safety",
         "budgets",
     ]
+
+
+def test_run_rows_carry_each_metric_that_ran_in_them():
+    # The strip's "delta vs the previous run" and the per-metric history both
+    # read this. Rows arrive as (run_index, metric_name, mean, count, failed).
+    payload = _payload(
+        timeline_rows=[_tl(0, ["a"]), _tl(4000, ["b"])],
+        metric_run_rows=[
+            (0, "faithfulness", 0.95, 8, 0),
+            (0, "cost_budget", 1.0, 8, 0),
+            (1, "faithfulness", 0.71, 8, 2),
+        ],
+    )
+
+    assert payload["eval_runs"][0]["metric_means"] == {
+        "faithfulness": 0.95,
+        "cost_budget": 1.0,
+    }
+    assert payload["eval_runs"][1]["metric_means"] == {"faithfulness": 0.71}
+
+
+def test_a_metric_absent_from_a_run_is_simply_not_there():
+    # Not zero, and not a null placeholder either: the strip reads "no
+    # previous value" from the key being missing, and a null would have to be
+    # distinguished from a real null mean anyway.
+    payload = _payload(
+        timeline_rows=[_tl(0, ["a"]), _tl(4000, ["b"])],
+        metric_run_rows=[(0, "faithfulness", 0.95, 8, 0)],
+    )
+
+    assert payload["eval_runs"][1]["metric_means"] == {}
 
 
 def test_run_rows_carry_per_group_means_and_no_pooled_one():

@@ -13,9 +13,10 @@ import logging
 from collections.abc import Iterator, Sequence
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from typing import Annotated
 
-from fastapi import APIRouter, Depends, Query
-from sqlalchemy import case, func, or_, select
+from fastapi import APIRouter, Depends, HTTPException, Query
+from sqlalchemy import case, func, literal, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from agentproof_server.config import settings
@@ -322,6 +323,54 @@ def _metric_health_stmt(project: str | None, since: datetime | None):
     ).order_by(EvalResultModel.metric_name.asc())
 
 
+def _metric_runs_stmt(
+    project: str | None,
+    since: datetime | None,
+    boundaries: Sequence[datetime],
+):
+    """Per-metric mean per run, bucketed in SQL by the run boundaries.
+
+    Runs are gap-clusters of per-trace timestamps, so only the Python fold
+    knows where they start. Rather than pull one row per eval row back and
+    reduce it client-side -- the thing this module exists to avoid -- the
+    boundaries are pushed back into SQL as a CASE, and the aggregate returns
+    ``runs x metrics`` rows. On the 300-trace corpus that is 72 rows instead
+    of 2400.
+
+    Returns ``None`` when nothing ran: a CASE with no branches is not valid
+    SQL, and the caller should skip the round trip rather than build one.
+    """
+    if not boundaries:
+        return None
+
+    # Row belongs to run i when it falls before run i+1 starts. The first
+    # boundary is the earliest timestamp in scope, so nothing precedes it.
+    branches = [
+        (EvalResultModel.evaluated_at < boundaries[i + 1], i)
+        for i in range(len(boundaries) - 1)
+    ]
+    run_index = (
+        case(*branches, else_=len(boundaries) - 1)
+        if branches
+        else literal(0)
+    ).label("run_index")
+
+    scored = ~_degraded_expr()
+    stmt = select(
+        run_index,
+        EvalResultModel.metric_name,
+        func.avg(case((scored, EvalResultModel.score))).label("mean_score"),
+        func.sum(case((scored, 1), else_=0)).label("count"),
+        func.sum(case((scored & ~EvalResultModel.passed, 1), else_=0)).label(
+            "failed"
+        ),
+    ).select_from(EvalResultModel)
+    stmt = _scope_evals(stmt, project, since)
+    return stmt.group_by(run_index, EvalResultModel.metric_name).order_by(
+        run_index.asc(), EvalResultModel.metric_name.asc()
+    )
+
+
 def _score_buckets_stmt(project: str | None, since: datetime | None):
     """Score histogram at 0.1 width, per metric, excluding degraded rows.
 
@@ -539,6 +588,7 @@ def _analytics_payload(
     bucket_rows: Sequence[tuple],
     evaluated_row: tuple,
     ci_block_by_metric: dict[str, bool],
+    metric_run_rows: Sequence[tuple] = (),
     gate: list[dict] | None = None,
 ) -> dict:
     """Assemble the analytics response from already-fetched aggregates.
@@ -554,6 +604,15 @@ def _analytics_payload(
 
     runs = cluster_eval_runs(timeline_rows)
     metrics = _metric_health_payload(metric_rows, ci_block_by_metric)
+
+    # A metric absent from a run stays absent rather than becoming a null:
+    # the client reads "no previous value" from a missing key, and a null
+    # would have to be told apart from a genuinely null mean anyway.
+    means_by_run: dict[int, dict[str, float | None]] = {}
+    for run_index, metric_name, mean_score, _count, _failed in metric_run_rows:
+        means_by_run.setdefault(int(run_index), {})[metric_name] = _optional_float(
+            mean_score
+        )
 
     # Outcome counts are mutually exclusive: a degraded row is a failed
     # measurement and is deliberately kept out of ``failed``.
@@ -593,9 +652,10 @@ def _analytics_payload(
                 "trace_count": run["trace_count"],
                 # Per group, never pooled: see cluster_eval_runs.
                 "group_means": run["group_means"],
+                "metric_means": means_by_run.get(index, {}),
                 "degraded": run["degraded"],
             }
-            for run in runs
+            for index, run in enumerate(runs)
         ],
         "metric_health": metrics,
         "score_buckets": [
@@ -616,6 +676,163 @@ def _analytics_payload(
             "error": sum(v["error"] for v in volume),
         },
         "gate": gate or [],
+    }
+
+
+# ---------------------------------------------------------------------------
+# Metric drill-down
+# ---------------------------------------------------------------------------
+
+
+def _reasoning_from(details: dict | None) -> list[dict]:
+    """Judge prose for one eval row, per span.
+
+    These strings have been written to ``details`` since the judge shipped and
+    displayed nowhere. A record with no ``reasoning`` and no ``error`` is a
+    heuristic check, which has a score and no prose -- it is skipped rather
+    than rendered as an empty quote, because a blank block reads as "the judge
+    said nothing" when in fact no judge ran.
+    """
+    rows: list[dict] = []
+    for record in _per_span_records(details):
+        span_id = record.get("span_id")
+        if record.get("error") or record.get("refusal"):
+            rows.append(
+                {
+                    "span_id": span_id,
+                    "score": None,
+                    "error": record.get("error") or "judge refused to answer",
+                }
+            )
+        elif record.get("reasoning"):
+            rows.append(
+                {
+                    "span_id": span_id,
+                    "score": _optional_float(record.get("score")),
+                    "reasoning": record["reasoning"],
+                }
+            )
+    return rows
+
+
+def _metric_health_one_stmt(
+    metric_name: str, project: str | None, since: datetime | None
+):
+    """:func:`_metric_health_stmt` narrowed to a single metric."""
+    return _metric_health_stmt(project, since).where(
+        EvalResultModel.metric_name == metric_name
+    )
+
+
+def _metric_buckets_one_stmt(
+    metric_name: str, project: str | None, since: datetime | None
+):
+    return _score_buckets_stmt(project, since).where(
+        EvalResultModel.metric_name == metric_name
+    )
+
+
+def _worst_rows_stmt(
+    metric_name: str,
+    project: str | None,
+    since: datetime | None,
+    limit: int,
+):
+    """The lowest-scoring measurements of one metric, worst first.
+
+    Degraded rows are excluded. The judge fails closed to 0.0, so they sort
+    straight to the bottom and would fill the list with broken measurements
+    instead of the lowest real scores -- the opposite of what a reader
+    clicking "worst traces" is looking for.
+    """
+    stmt = select(
+        EvalResultModel.trace_id,
+        EvalResultModel.span_id,
+        EvalResultModel.score,
+        EvalResultModel.passed,
+        EvalResultModel.evaluated_at,
+        EvalResultModel.explanation,
+        EvalResultModel.details,
+    ).select_from(EvalResultModel)
+    stmt = _scope_evals(stmt, project, since).where(
+        EvalResultModel.metric_name == metric_name, ~_degraded_expr()
+    )
+    return stmt.order_by(EvalResultModel.score.asc()).limit(limit)
+
+
+def _metric_detail_payload(
+    metric_name: str,
+    project: str | None,
+    days: int | None,
+    health_row: tuple | None,
+    bucket_rows: Sequence[tuple],
+    run_rows: Sequence[tuple],
+    worst_rows: Sequence[tuple],
+    ci_block: bool,
+) -> dict | None:
+    """Assemble the drill-down, or ``None`` when the metric has no rows.
+
+    Returning ``None`` rather than a payload of zeroes lets the route 404, so
+    a typo in the URL is distinguishable from a metric that ran and passed.
+    """
+    if health_row is None:
+        return None
+
+    health = _metric_health_payload([health_row], {metric_name: ci_block})[0]
+
+    return {
+        "metric_name": metric_name,
+        "metric_type": health["metric_type"],
+        "group": health["group"],
+        "ci_block": ci_block,
+        "project": project,
+        "days": days,
+        "health": {
+            key: health[key]
+            for key in (
+                "mean_score",
+                "std",
+                "pass_rate",
+                "threshold",
+                "count",
+                "failed",
+                "degraded",
+                "has_variance",
+            )
+        },
+        "buckets": [
+            {"bucket": float(bucket), "count": int(count)}
+            for bucket, count in bucket_rows
+        ],
+        "runs": [
+            {
+                "run_at": run_at.isoformat(),
+                "mean_score": _optional_float(mean_score),
+                "count": int(count or 0),
+                "failed": int(failed or 0),
+            }
+            for run_at, mean_score, count, failed in run_rows
+        ],
+        "worst": [
+            {
+                "trace_id": trace_id,
+                "span_id": span_id,
+                "score": _optional_float(score),
+                "passed": bool(passed),
+                "evaluated_at": evaluated_at.isoformat() if evaluated_at else None,
+                "explanation": explanation,
+                "reasoning": _reasoning_from(details),
+            }
+            for (
+                trace_id,
+                span_id,
+                score,
+                passed,
+                evaluated_at,
+                explanation,
+                details,
+            ) in worst_rows
+        ],
     }
 
 
@@ -645,11 +862,79 @@ def _ci_block_by_metric() -> dict[str, bool]:
     return {m.name: m.ci_block for m in config.metrics}
 
 
+@router.get("/evals/metric/{metric_name}")
+async def get_metric_detail(
+    metric_name: str,
+    db: AsyncSession = Depends(get_db),
+    project: str | None = None,
+    # Annotated rather than `= Query(...)`: the tests call these functions
+    # directly, and a bare Query default arrives as a Query object instead of
+    # an int the moment an argument is omitted.
+    days: Annotated[int, Query(ge=0, le=3650)] = 30,
+    worst: Annotated[int, Query(ge=1, le=100)] = 10,
+) -> dict:
+    """One metric in depth: distribution, run history, worst rows, judge prose.
+
+    404s when the metric has no rows in scope. An unknown *project* returns
+    zeroes elsewhere in this module because the dashboard's switcher can point
+    at one legitimately; an unknown *metric* is a URL the reader typed or a
+    link that rotted, and silently rendering an empty page hides that.
+    """
+    now = datetime.now(UTC)
+    since = _window_start(days, now)
+
+    health_row = (
+        await db.execute(_metric_health_one_stmt(metric_name, project, since))
+    ).first()
+    if health_row is None:
+        raise HTTPException(
+            status_code=404,
+            detail=f"No eval results for metric '{metric_name}' in this window.",
+        )
+
+    bucket_rows = (
+        await db.execute(_metric_buckets_one_stmt(metric_name, project, since))
+    ).all()
+    worst_rows = (
+        await db.execute(_worst_rows_stmt(metric_name, project, since, worst))
+    ).all()
+
+    # Run history reuses the analytics fold so a run means the same thing on
+    # both pages -- gap-clustered, not one per evaluated_at.
+    timeline_rows = (await db.execute(_eval_timeline_stmt(project, since))).all()
+    runs = cluster_eval_runs(timeline_rows)
+    run_stmt = _metric_runs_stmt(project, since, [r["run_at"] for r in runs])
+    run_rows: list[tuple] = []
+    if run_stmt is not None:
+        for index, name, mean_score, count, failed in (
+            await db.execute(run_stmt)
+        ).all():
+            if name == metric_name:
+                run_rows.append(
+                    (runs[int(index)]["run_at"], mean_score, count, failed)
+                )
+
+    payload = _metric_detail_payload(
+        metric_name=metric_name,
+        project=project,
+        days=days,
+        health_row=tuple(health_row),
+        # The shared bucket statement carries the metric name it was filtered
+        # by; the detail payload already knows which metric it is.
+        bucket_rows=[(bucket, count) for _name, bucket, count in bucket_rows],
+        run_rows=run_rows,
+        worst_rows=worst_rows,
+        ci_block=_ci_block_by_metric().get(metric_name, True),
+    )
+    assert payload is not None  # health_row is not None by the guard above
+    return payload
+
+
 @router.get("/evals/analytics")
 async def get_evals_analytics(
     db: AsyncSession = Depends(get_db),
     project: str | None = None,
-    days: int = Query(default=30, ge=0, le=3650),
+    days: Annotated[int, Query(ge=0, le=3650)] = 30,
 ) -> dict:
     """Everything the Overview page needs, aggregated in SQL, in one call.
 
@@ -675,6 +960,15 @@ async def get_evals_analytics(
     # asks "did this run regress against the pinned baseline", and pooling
     # several runs would blur exactly the change it is looking for.
     runs = cluster_eval_runs(timeline_rows)
+
+    # Per-metric run history, bucketed by the boundaries the fold just found.
+    metric_run_stmt = _metric_runs_stmt(
+        project, since, [run["run_at"] for run in runs]
+    )
+    metric_run_rows = (
+        (await db.execute(metric_run_stmt)).all() if metric_run_stmt is not None else []
+    )
+
     gate: list[dict] = []
     baselines = _load_baselines(project, Path(settings.baselines_path))
     if baselines:
@@ -701,5 +995,6 @@ async def get_evals_analytics(
         bucket_rows=bucket_rows,
         evaluated_row=tuple(evaluated_row),
         ci_block_by_metric=_ci_block_by_metric(),
+        metric_run_rows=metric_run_rows,
         gate=gate,
     )

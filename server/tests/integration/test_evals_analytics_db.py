@@ -19,11 +19,12 @@ from collections.abc import AsyncGenerator
 from datetime import UTC, datetime, timedelta
 
 import pytest
-from agentproof_server.api.analytics import get_evals_analytics
+from agentproof_server.api.analytics import get_evals_analytics, get_metric_detail
 from agentproof_server.config import settings
 from agentproof_server.db.models import Base
 from agentproof_server.db.models import EvalResult as EvalResultModel
 from agentproof_server.db.models import Trace as TraceModel
+from fastapi import HTTPException
 from sqlalchemy import delete, select, text
 from sqlalchemy.ext.asyncio import (
     AsyncSession,
@@ -268,6 +269,143 @@ async def test_a_clean_dual_mode_row_is_not_degraded(session: AsyncSession):
 
         assert _metric(payload, "injection_resistance")["degraded"] == 0
         assert _metric(payload, "injection_resistance")["count"] == 1
+    finally:
+        await _cleanup(session, project)
+
+
+# ---------------------------------------------------------------------------
+# Metric drill-down — GET /evals/metric/{name}
+# ---------------------------------------------------------------------------
+
+
+async def test_the_drill_down_surfaces_judge_reasoning(session: AsyncSession):
+    """The strings have been in the database since the judge shipped."""
+    project = f"an-detail-{uuid.uuid4().hex[:8]}"
+    now = datetime.now(UTC)
+    judged = {
+        "per_span": [
+            {"span_id": "sp-1", "score": 0.35, "reasoning": "Claim absent from context."}
+        ],
+        "aggregation": "min",
+    }
+    try:
+        await _seed_trace(
+            session, project, 0, [("faithfulness", 0.35, False, judged)], now
+        )
+
+        payload = await get_metric_detail(
+            metric_name="faithfulness", db=session, project=project, days=30
+        )
+
+        assert payload["group"] == "quality"
+        assert payload["health"]["failed"] == 1
+        worst = payload["worst"][0]
+        assert worst["score"] == 0.35
+        assert worst["reasoning"][0]["reasoning"] == "Claim absent from context."
+    finally:
+        await _cleanup(session, project)
+
+
+async def test_the_drill_down_reads_reasoning_nested_by_dual_mode(
+    session: AsyncSession,
+):
+    project = f"an-detail2-{uuid.uuid4().hex[:8]}"
+    now = datetime.now(UTC)
+    dual = {
+        "heuristic": {"per_span": [{"span_id": "sp-1", "score": 1.0}]},
+        "llm": {
+            "per_span": [
+                {"span_id": "sp-1", "score": 1.0, "reasoning": "No injection obeyed."}
+            ]
+        },
+        "combine": "min",
+    }
+    try:
+        await _seed_trace(
+            session, project, 0,
+            [("injection_resistance", 1.0, True, dual)], now,
+            types={"injection_resistance": "security"},
+        )
+
+        payload = await get_metric_detail(
+            metric_name="injection_resistance", db=session, project=project, days=30
+        )
+
+        assert payload["group"] == "safety"
+        assert payload["worst"][0]["reasoning"][0]["reasoning"] == "No injection obeyed."
+    finally:
+        await _cleanup(session, project)
+
+
+async def test_the_drill_down_excludes_degraded_rows_from_the_worst_list(
+    session: AsyncSession,
+):
+    """A failed-closed 0.0 sorts to the bottom and would fill the list."""
+    project = f"an-detail3-{uuid.uuid4().hex[:8]}"
+    now = datetime.now(UTC)
+    try:
+        await _seed_trace(
+            session, project, 0,
+            [("faithfulness", 0.0, False, JUDGE_ERROR)], now,
+        )
+        await _seed_trace(
+            session, project, 1,
+            [("faithfulness", 0.4, False, JUDGE_OK)], now + timedelta(seconds=4),
+        )
+
+        payload = await get_metric_detail(
+            metric_name="faithfulness", db=session, project=project, days=30
+        )
+
+        assert [w["score"] for w in payload["worst"]] == [0.4]
+        assert payload["health"]["degraded"] == 1
+    finally:
+        await _cleanup(session, project)
+
+
+async def test_the_drill_down_404s_on_a_metric_with_no_rows(session: AsyncSession):
+    project = f"an-detail4-{uuid.uuid4().hex[:8]}"
+    now = datetime.now(UTC)
+    try:
+        await _seed_trace(
+            session, project, 0, [("faithfulness", 1.0, True, JUDGE_OK)], now
+        )
+
+        with pytest.raises(HTTPException) as caught:
+            await get_metric_detail(
+                metric_name="not_a_metric", db=session, project=project, days=30
+            )
+
+        assert caught.value.status_code == 404
+    finally:
+        await _cleanup(session, project)
+
+
+async def test_the_drill_down_run_history_uses_the_same_run_boundaries(
+    session: AsyncSession,
+):
+    """A run must mean the same thing here as on the Overview."""
+    project = f"an-detail5-{uuid.uuid4().hex[:8]}"
+    now = datetime.now(UTC)
+    try:
+        for i in range(3):
+            await _seed_trace(
+                session, project, i,
+                [("faithfulness", 1.0, True, JUDGE_OK)],
+                now + timedelta(seconds=i * 4),
+            )
+        await _seed_trace(
+            session, project, 9,
+            [("faithfulness", 0.5, False, JUDGE_OK)], now + timedelta(hours=1),
+        )
+
+        payload = await get_metric_detail(
+            metric_name="faithfulness", db=session, project=project, days=30
+        )
+        overview = await get_evals_analytics(db=session, project=project, days=30)
+
+        assert len(payload["runs"]) == overview["totals"]["eval_runs"] == 2
+        assert [r["mean_score"] for r in payload["runs"]] == [1.0, 0.5]
     finally:
         await _cleanup(session, project)
 
