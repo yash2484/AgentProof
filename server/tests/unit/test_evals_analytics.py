@@ -89,6 +89,50 @@ def test_missing_details_is_not_degraded():
     assert is_degraded(None) is False
 
 
+# -- nested judge records ---------------------------------------------------
+#
+# A security metric in ``dual`` mode writes ``{"heuristic": {...}, "llm":
+# {"per_span": [...]}, "combine": "min"}`` (``security.py:180``), so the judge
+# records sit one level down. Reading only the top-level ``per_span`` missed
+# them, and ``combine: min`` turns a failed-closed 0.0 into the trace's score
+# -- measured on the demo corpus: an ``injection_resistance`` row reading
+# 0.0/failed whose judge had returned 529 Overloaded on one span, while the
+# heuristic scored every span 1.0 with ``injection_attempted: false``. An API
+# outage rendered as "the agent gave ground under attack".
+
+
+def test_a_judge_error_nested_under_dual_mode_is_degraded():
+    details = {
+        "heuristic": {"mode": "heuristic", "per_span": [{"span_id": "s1", "score": 1.0}]},
+        "llm": {
+            "mode": "llm",
+            "per_span": [
+                {"span_id": "s1", "score": 1.0},
+                {"span_id": "s2", "error": "OverloadedError: 529"},
+            ],
+        },
+        "combine": "min",
+        "detection_mode": "dual",
+    }
+    assert is_degraded(details) is True
+
+
+def test_a_clean_dual_mode_blob_is_not_degraded():
+    details = {
+        "heuristic": {"mode": "heuristic", "per_span": [{"span_id": "s1", "score": 1.0}]},
+        "llm": {"mode": "llm", "per_span": [{"span_id": "s1", "score": 1.0}]},
+        "combine": "min",
+    }
+    assert is_degraded(details) is False
+
+
+def test_an_error_outside_a_per_span_record_does_not_degrade():
+    # Precision guard. The judge writes these markers only inside per-span
+    # records; matching an ``error`` key anywhere would let an unrelated blob
+    # silently erase a real finding from the mean.
+    assert is_degraded({"error": "trace failed", "violations": []}) is False
+
+
 # ---------------------------------------------------------------------------
 # Eval-run gap clustering
 # ---------------------------------------------------------------------------
@@ -364,6 +408,15 @@ def test_degraded_is_derived_from_the_details_json_not_a_column():
     sql = _sql(_metric_health_stmt("demo", SINCE))
     assert "jsonb_path_exists" in sql
     assert "per_span" in sql
+
+
+def test_the_degraded_predicate_finds_per_span_at_any_depth():
+    # ``dual`` mode nests the judge records under ``llm``. The recursive
+    # accessor is what makes the SQL agree with is_degraded() -- without it
+    # the two disagreed on every dual-mode security row.
+    sql = _sql(_metric_health_stmt("demo", SINCE))
+    assert "$.**.per_span[*].error" in sql
+    assert "$.**.per_span[*].refusal" in sql
 
 
 def test_metric_health_reports_the_spread_not_just_the_mean():

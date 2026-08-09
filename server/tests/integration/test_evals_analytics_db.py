@@ -193,6 +193,85 @@ async def test_a_judge_refusal_is_degraded_too(session: AsyncSession):
         await _cleanup(session, project)
 
 
+DUAL_JUDGE_ERROR = {
+    "heuristic": {
+        "mode": "heuristic",
+        "per_span": [{"span_id": "s1", "score": 1.0}],
+        "injection_attempted": False,
+    },
+    "llm": {
+        "mode": "llm",
+        "per_span": [
+            {"span_id": "s1", "score": 1.0},
+            {"span_id": "s2", "error": "OverloadedError: Error code: 529"},
+        ],
+    },
+    "combine": "min",
+    "detection_mode": "dual",
+}
+
+
+async def test_a_dual_mode_security_row_with_a_nested_judge_error_is_degraded(
+    session: AsyncSession,
+):
+    """The live wrong number, reproduced.
+
+    ``security.py:180`` nests judge records under ``llm`` in dual mode, and
+    ``combine: min`` takes the failed-closed 0.0. On the demo corpus this
+    produced an ``injection_resistance`` row reading 0.0/failed — a 529
+    Overloaded from the judge — while the heuristic had scored every span 1.0
+    with ``injection_attempted: false``. The top-level-only jsonpath matched
+    300 of that metric's 336 rows; the 36 it missed were every dual-mode row.
+    """
+    project = f"an-dual-{uuid.uuid4().hex[:8]}"
+    now = datetime.now(UTC)
+    try:
+        await _seed_trace(
+            session, project, 0,
+            [("injection_resistance", 1.0, True, JUDGE_OK)], now,
+            types={"injection_resistance": "security"},
+        )
+        await _seed_trace(
+            session, project, 1,
+            [("injection_resistance", 0.0, False, DUAL_JUDGE_ERROR)],
+            now + timedelta(seconds=4),
+            types={"injection_resistance": "security"},
+        )
+
+        payload = await get_evals_analytics(db=session, project=project, days=30)
+
+        row = _metric(payload, "injection_resistance")
+        assert row["degraded"] == 1
+        assert row["failed"] == 0  # not a breach — a broken measurement
+        assert row["mean_score"] == 1.0  # not 0.5
+    finally:
+        await _cleanup(session, project)
+
+
+async def test_a_clean_dual_mode_row_is_not_degraded(session: AsyncSession):
+    """The recursive accessor must not sweep healthy nested records in."""
+    project = f"an-dual-ok-{uuid.uuid4().hex[:8]}"
+    now = datetime.now(UTC)
+    clean = {
+        "heuristic": {"mode": "heuristic", "per_span": [{"span_id": "s1", "score": 1.0}]},
+        "llm": {"mode": "llm", "per_span": [{"span_id": "s1", "score": 1.0}]},
+        "combine": "min",
+    }
+    try:
+        await _seed_trace(
+            session, project, 0,
+            [("injection_resistance", 1.0, True, clean)], now,
+            types={"injection_resistance": "security"},
+        )
+
+        payload = await get_evals_analytics(db=session, project=project, days=30)
+
+        assert _metric(payload, "injection_resistance")["degraded"] == 0
+        assert _metric(payload, "injection_resistance")["count"] == 1
+    finally:
+        await _cleanup(session, project)
+
+
 async def test_a_deterministic_zero_is_a_real_failure(session: AsyncSession):
     """Flat details carry no judge record, so a 0.0 there is a finding."""
     project = f"an-det-{uuid.uuid4().hex[:8]}"

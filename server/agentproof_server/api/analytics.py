@@ -10,7 +10,7 @@ sample while implying full history.
 from __future__ import annotations
 
 import logging
-from collections.abc import Sequence
+from collections.abc import Iterator, Sequence
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
@@ -38,6 +38,26 @@ router = APIRouter()
 RUN_GAP_SECONDS = 120
 
 
+def _per_span_records(details: object) -> Iterator[dict]:
+    """Yield judge records from every ``per_span`` list in the details tree.
+
+    Judged metrics write ``{"per_span": [...]}`` at the top level, but a
+    security metric in ``dual`` mode writes ``{"heuristic": {...}, "llm":
+    {"per_span": [...]}, "combine": "min"}`` (``security.py:180``) -- the
+    judge records are a level down. Reading only the top level missed them on
+    every dual-mode row.
+    """
+    if not isinstance(details, dict):
+        return
+    for key, value in details.items():
+        if key == "per_span" and isinstance(value, list):
+            for record in value:
+                if isinstance(record, dict):
+                    yield record
+        elif isinstance(value, dict):
+            yield from _per_span_records(value)
+
+
 def is_degraded(details: dict | None) -> bool:
     """True when a judge call behind this row errored or refused.
 
@@ -45,15 +65,19 @@ def is_degraded(details: dict | None) -> bool:
     closed to 0.0, so without this a timed-out API call renders as a security
     verdict. There is no column for it -- the markers live in the per-span
     records inside ``details``, written by ``run_structured_judge``.
+
+    Measured on the demo corpus before this searched nested records: an
+    ``injection_resistance`` row read 0.0/failed because the judge returned
+    529 Overloaded on one span and ``combine: min`` took it, while the
+    heuristic had scored every span 1.0 with ``injection_attempted: false``.
+    An API outage was rendering as "the agent gave ground under attack".
     """
     if not details:
         return False
-    for record in details.get("per_span") or []:
-        if isinstance(record, dict) and (
-            record.get("error") or record.get("refusal")
-        ):
-            return True
-    return False
+    return any(
+        record.get("error") or record.get("refusal")
+        for record in _per_span_records(details)
+    )
 
 
 # Metric type -> the group whose panel and units it shares.
@@ -159,17 +183,25 @@ def _degraded_expr():
     -- a contract pinned by ``test_the_judge_only_writes_these_keys_on_failure``.
     ``details`` is nullable, hence the coalesce: a NULL here would poison every
     CASE it feeds.
+
+    ``$.**`` is the recursive member accessor: judged metrics put ``per_span``
+    at the top level, ``dual``-mode security metrics nest it under ``llm``.
+    Against the live corpus the top-level-only path matched 300 of
+    ``injection_resistance``'s 336 rows -- the missing 36 were every real
+    dual-mode row, exempt from degraded detection entirely. It stays scoped to
+    ``per_span`` rather than matching ``error`` anywhere, so an unrelated key
+    cannot erase a real finding from the mean.
     """
     from sqlalchemy import false, literal_column
 
     return func.coalesce(
         or_(
             func.jsonb_path_exists(
-                EvalResultModel.details, literal_column("'$.per_span[*].error'")
+                EvalResultModel.details, literal_column("'$.**.per_span[*].error'")
             ),
             func.jsonb_path_exists(
                 EvalResultModel.details,
-                literal_column("'$.per_span[*].refusal'"),
+                literal_column("'$.**.per_span[*].refusal'"),
             ),
         ),
         false(),

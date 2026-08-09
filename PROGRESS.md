@@ -47,9 +47,10 @@ Handover: `docs/handover-overview-analytics.md`.
   14 DB-backed tests against real Postgres.*
 - [x] **The misleading security verdict is gone.** The screen said
   *"injection_resistance regressed — the agent gave ground under attack"* from
-  one row with no denominator. The endpoint now returns `1 of 35 flagged, mean
-  0.971` with the gate verdict `p=0.1634 >= alpha=0.05, d=0.239 < 0.5`.
-  *Verified: live call against the 25-trace demo project.*
+  one row with no denominator. Giving it a denominator made it
+  `1 of 35 flagged, mean 0.971`; finding the nested judge record (below)
+  showed the 1 was never a finding. It now reads **`0 of 35 flagged, mean
+  1.000, 1 degraded`**. *Verified: live call against the demo project.*
 - [x] **`degraded` derived from `details`, no migration.** A judge error or
   refusal is a failed *measurement*, not a finding. Degraded rows are excluded
   from `mean_score`, `std`, `pass_rate` and the histogram, and counted
@@ -167,6 +168,36 @@ three of these four defects — at 25 traces and 4 runs they were invisible.
 `api/analytics.py` back to `HEAD` and re-running — all four failed, then passed
 against the new file. The unit tests went red first in the ordinary way.
 
+## Built & verified — the nested judge record (found during Phase C scoping)
+
+- [x] **Degraded detection missed every `dual`-mode security row.** A security
+  metric in `dual` mode writes `{"heuristic": {…}, "llm": {"per_span": […]},
+  "combine": "min"}` (`security.py:180`), so the judge's `error`/`refusal`
+  markers sit one level below where both `is_degraded()` and the SQL jsonpath
+  were looking. Measured against the live corpus: the top-level-only path
+  matched **300 of `injection_resistance`'s 336 rows** — the missing 36 were
+  every real dual-mode row, exempt from degraded detection entirely.
+- [x] **One number on screen was actually wrong because of it.** An
+  `injection_resistance` row read `0.0 / failed`: the judge returned
+  `529 Overloaded` on one span, failed closed to 0.0, and `combine: min` took
+  it — while the heuristic leg had scored every span 1.0 with
+  `injection_attempted: false`. An API outage was rendering as *"the agent
+  gave ground under attack"*, on the real demo project, on the most damaging
+  metric there is. *Verified: the row is quoted in full in the DB test;
+  post-fix the metric reads `mean 1.000 · 0 of 35 flagged · 1 degraded`.*
+- [x] **Both predicates now search `per_span` at any depth** — Python walks
+  nested dicts, SQL uses the `$.**` recursive accessor. Still scoped to
+  `per_span` rather than matching `error` anywhere, so an unrelated key cannot
+  erase a real finding from the mean. *Verified: 5 unit tests (nested dual,
+  clean dual, flat regression, precision guard, SQL shape) + 2 DB tests, red
+  before the change.*
+
+**Left for the user to decide, not changed here.** `combine: "min"` takes a
+failed-closed 0.0 from a broken judge leg even when the heuristic leg scored
+1.0. Arguably a degraded LLM leg should fall back to the heuristic rather than
+poison the combination. That changes *stored scores*, not display, so it is an
+eval-semantics call — logged as gap #6 below.
+
 ## Built & verified — application hardening (previous phase)
 
 - [x] **Dual-mode security detection actually runs its judge.** `SecurityEvaluator`
@@ -256,13 +287,20 @@ things.
    judged. The test cannot pass with the current config. Fixing it means either
    renaming the demo span or widening `span_names` — an eval-semantics decision,
    deliberately not taken here. Live-data effect: on the demo project 5 metrics
-   sit on the ceiling strip and 3 vary (`injection_resistance` now varies because
-   of one failing row), not the 6/2 the design spec assumed.
+   sit on the ceiling strip and 3 vary, not the 6/2 the design spec assumed.
+   (`injection_resistance` returned to the ceiling strip once its one "failure"
+   was correctly identified as a degraded measurement.)
 4. **The exporter logs once per dropped trace** under sustained backpressure,
    which is most of the full-buffer path's extra cost. Rate-limit or count-and-
    summarise.
 5. **Alembic `versions/` is empty**, so the `ondelete="CASCADE"` declared on
    `eval_results.trace_id` is not in the deployed schema.
+6. **`dual` mode's `combine: "min"` takes a failed-closed 0.0 from a broken
+   judge leg**, even when the heuristic leg scored 1.0 — the stored score for
+   that row is a measurement failure wearing a breach's clothes. Analytics now
+   labels it degraded, but the *score in the database* is still 0.0. Fixing it
+   means falling back to the heuristic leg when the LLM leg is degraded, which
+   changes stored scores and needs a decision.
 
 ## Next up
 
