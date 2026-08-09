@@ -10,7 +10,7 @@ sample while implying full history.
 from __future__ import annotations
 
 import logging
-from collections.abc import Iterator, Sequence
+from collections.abc import Sequence
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Annotated
@@ -23,6 +23,7 @@ from agentproof_server.config import settings
 from agentproof_server.db.models import EvalResult as EvalResultModel
 from agentproof_server.db.models import Trace as TraceModel
 from agentproof_server.db.session import get_db
+from agentproof_server.eval_engine import details as details_shape
 from agentproof_server.eval_engine.baseline import baselines_from_json
 from agentproof_server.eval_engine.config_parser import load_config
 from agentproof_server.eval_engine.models import Baseline, RegressionConfig
@@ -39,46 +40,11 @@ router = APIRouter()
 RUN_GAP_SECONDS = 120
 
 
-def _per_span_records(details: object) -> Iterator[dict]:
-    """Yield judge records from every ``per_span`` list in the details tree.
-
-    Judged metrics write ``{"per_span": [...]}`` at the top level, but a
-    security metric in ``dual`` mode writes ``{"heuristic": {...}, "llm":
-    {"per_span": [...]}, "combine": "min"}`` (``security.py:180``) -- the
-    judge records are a level down. Reading only the top level missed them on
-    every dual-mode row.
-    """
-    if not isinstance(details, dict):
-        return
-    for key, value in details.items():
-        if key == "per_span" and isinstance(value, list):
-            for record in value:
-                if isinstance(record, dict):
-                    yield record
-        elif isinstance(value, dict):
-            yield from _per_span_records(value)
-
-
-def is_degraded(details: dict | None) -> bool:
-    """True when a judge call behind this row errored or refused.
-
-    A degraded row is a failed *measurement*, not a finding. The judge fails
-    closed to 0.0, so without this a timed-out API call renders as a security
-    verdict. There is no column for it -- the markers live in the per-span
-    records inside ``details``, written by ``run_structured_judge``.
-
-    Measured on the demo corpus before this searched nested records: an
-    ``injection_resistance`` row read 0.0/failed because the judge returned
-    529 Overloaded on one span and ``combine: min`` took it, while the
-    heuristic had scored every span 1.0 with ``injection_attempted: false``.
-    An API outage was rendering as "the agent gave ground under attack".
-    """
-    if not details:
-        return False
-    return any(
-        record.get("error") or record.get("refusal")
-        for record in _per_span_records(details)
-    )
+# ``is_degraded`` and the prose extraction live in ``eval_engine.details``,
+# the one module that knows the shape of the blob. Re-exported here because
+# this module's SQL predicate below must mirror it exactly, and the two want
+# to be read together.
+is_degraded = details_shape.is_degraded
 
 
 # Metric type -> the group whose panel and units it shares.
@@ -684,35 +650,10 @@ def _analytics_payload(
 # ---------------------------------------------------------------------------
 
 
-def _reasoning_from(details: dict | None) -> list[dict]:
-    """Judge prose for one eval row, per span.
-
-    These strings have been written to ``details`` since the judge shipped and
-    displayed nowhere. A record with no ``reasoning`` and no ``error`` is a
-    heuristic check, which has a score and no prose -- it is skipped rather
-    than rendered as an empty quote, because a blank block reads as "the judge
-    said nothing" when in fact no judge ran.
-    """
-    rows: list[dict] = []
-    for record in _per_span_records(details):
-        span_id = record.get("span_id")
-        if record.get("error") or record.get("refusal"):
-            rows.append(
-                {
-                    "span_id": span_id,
-                    "score": None,
-                    "error": record.get("error") or "judge refused to answer",
-                }
-            )
-        elif record.get("reasoning"):
-            rows.append(
-                {
-                    "span_id": span_id,
-                    "score": _optional_float(record.get("score")),
-                    "reasoning": record["reasoning"],
-                }
-            )
-    return rows
+# Judge prose, from the shape module. These strings have been written to
+# ``details`` since the judge shipped and displayed nowhere until the
+# drill-down surfaced them.
+_reasoning_from = details_shape.reasoning_records
 
 
 def _metric_health_one_stmt(

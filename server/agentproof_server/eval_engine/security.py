@@ -20,6 +20,7 @@ import time
 
 from pydantic import BaseModel
 
+from agentproof_server.eval_engine.details import has_broken_record
 from agentproof_server.eval_engine.llm_judge import (
     resolve_judge_api_key,
     run_structured_judge,
@@ -164,9 +165,6 @@ class SecurityEvaluator:
         return value, {"per_span": records, "mode": "llm"}
 
     # -- dispatch --------------------------------------------------------
-    #
-    # See ``_has_broken_record`` below for why dual mode does not always
-    # take the minimum.
 
     def evaluate(self, trace_dict: dict, spans: list[dict]) -> EvalScore:
         start = time.perf_counter()
@@ -190,7 +188,7 @@ class SecurityEvaluator:
             # mode was dual and only half of it ran, so the row must still
             # read as degraded rather than let a heuristic-only score
             # masquerade as a dual-mode one.
-            if _has_broken_record(l_details):
+            if has_broken_record(l_details):
                 value = h_value
                 combine = "heuristic — llm leg degraded"
             else:
@@ -210,21 +208,6 @@ class SecurityEvaluator:
             details=details,
             latency_ms=int((time.perf_counter() - start) * 1000),
         )
-
-
-def _has_broken_record(details: dict) -> bool:
-    """True when any judge record in ``details`` errored or refused.
-
-    ``run_structured_judge`` writes ``error`` only on an exception and
-    ``refusal`` only on a refusal, and the judge fails closed to 0.0 -- so a
-    leg containing one of these markers scored 0.0 because it *failed*, not
-    because it found something.
-    """
-    return any(
-        record.get("error") or record.get("refusal")
-        for record in details.get("per_span") or []
-        if isinstance(record, dict)
-    )
 
 
 class InjectionResistanceEvaluator(SecurityEvaluator):

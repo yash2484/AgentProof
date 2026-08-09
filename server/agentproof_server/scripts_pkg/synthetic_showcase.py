@@ -311,15 +311,26 @@ def _deterministic_eval(
     how close the other 3% ran — the panel needs the underlying number, not
     just the verdict.
     """
+    # Both spellings, mirroring the real evaluators exactly. Guessing the
+    # obvious names instead matched LatencyBudgetEvaluator's stable alias and
+    # missed CostBudgetEvaluator's `total_cost_usd`, so the same quantity
+    # arrived under different keys in the two projects — and a reader written
+    # against one shape would have returned data for the fabricated corpus and
+    # silently nothing for the real one. The corpus only works as a stand-in
+    # while its shapes are the real shapes.
     if metric == "latency_budget":
         limit = 4000
         value = trace.total_latency_ms
-        details = {"latency_ms": value, "limit": limit}
+        details = {
+            "total_latency_ms": value,
+            "latency_ms": value,
+            "limit": limit,
+        }
         within = value <= limit
     elif metric == "cost_budget":
         limit = 0.05
         value = trace.total_cost_usd
-        details = {"cost_usd": value, "limit": limit}
+        details = {"total_cost_usd": value, "cost_usd": value, "limit": limit}
         within = value <= limit
     else:
         within = rng.random() > 0.01

@@ -10,8 +10,8 @@ Full sweep, 2026-08-09, after the Phase C Evals rebuild landed.
 
 | Suite | Result | How verified |
 |---|---|---|
-| server (host) | 289 passed, 36 skipped | `python -m pytest -q` **from `server/`** |
-| server DB tests | 26 passed | `docker compose exec -T server python -m pytest tests/integration/test_evals_analytics_db.py -q -o asyncio_mode=auto` |
+| server (host) | 312 passed, 36 skipped | `python -m pytest -q` **from `server/`** |
+| server DB + pipeline | 29 passed | `docker compose exec -T server python -m pytest tests/integration/test_evals_analytics_db.py tests/integration/test_eval_pipeline.py -q -o asyncio_mode=auto` |
 | dashboard | 275 passed, 30 files | `npx vitest run` |
 | lint | All checks passed | `ruff check .` from repo root |
 | types + lint (dashboard) | exit 0 | `npx tsc --noEmit` and `npx eslint src --max-warnings 0` |
@@ -21,13 +21,10 @@ Full sweep, 2026-08-09, after the Phase C Evals rebuild landed.
 The host skips are DB-backed integration tests (port 5432 conflict, see Known
 issues) plus key-gated judge tests.
 
-Two container integration tests fail and are **not** from this work:
-`test_eval_pipeline.py::test_unfaithful_trace_scores_lower` (known gap #3, the
-`span_names: [writer]` mismatch) and `test_eval_pipeline_end_to_end` (404 on a
-seeded trace). Both fail identically with `api/analytics.py` reverted to `HEAD`,
-checked by swapping the file and re-running. `test_trace_pipeline.py` cannot be
-collected in the container at all — it imports the `agentproof` SDK, which the
-server image does not install.
+`test_eval_pipeline.py` now passes 3/3 against real judge calls; the two
+failures logged earlier were both fixed by the `span_names` widening (gap #3).
+`test_trace_pipeline.py` still cannot be collected in the container — it
+imports the `agentproof` SDK, which the server image does not install.
 
 Application-hardening figures, verified 2026-08-08 before that merge, unchanged
 since: sdk 43 passed; demo_agent 37 passed, 1 skipped; dashboard 140 passed;
@@ -212,6 +209,40 @@ one 0–1 axis; three of those lines meant different things by "1.0".
    is now a pure function of the score and touches no randomness. Drift
    measured after reseeding: **0.938 → 0.771**.
 
+## Built & verified — `eval_engine/details.py`, one home for shape knowledge
+
+Three separate defects this session came from code assuming one shape of the
+`details` JSON blob while a second shape existed: degraded detection missing
+`$.llm.per_span`, the drill-down needing prose from both places, and the same
+budget quantity arriving under different keys per project. Rather than fix the
+class a fourth time, shape knowledge now lives in one tested module and
+readers never index `details` directly.
+
+- [x] **`per_span_records` / `is_degraded` / `has_broken_record`** — the
+  recursive walk plus a deliberately *non*-recursive single-leg variant, since
+  the security evaluator asks about the llm leg alone when deciding whether to
+  fall back and must not see the other leg.
+- [x] **`reasoning_records`** — judge prose with the score it explains, or the
+  error when the call failed. Heuristic records contribute nothing rather than
+  an empty quote, because a blank block reads as "the judge said nothing" when
+  no judge ran.
+- [x] **`measured_quantity`** — the real number behind a budget check with its
+  limit, read under either spelling. This is what will let the Budgets panel
+  show the margin it currently only admits to hiding.
+- [x] **The asymmetry that caused it is fixed at source.**
+  `LatencyBudgetEvaluator` had always surfaced a stable `latency_ms` alias
+  alongside its budget field; `CostBudgetEvaluator` never did. It does now, and
+  the synthetic generator writes both spellings for both metrics — the corpus
+  only works as a stand-in while its shapes are the real shapes.
+- [x] **`api/analytics.py` and `eval_engine/security.py` now import it** rather
+  than carrying their own copies.
+
+*Verified against every stored row, not fixtures: the accessor read a budget
+quantity for **all 674** deterministic rows across both projects with zero
+misses, and returned prose for the demo project's 28 nested dual-mode
+`injection_resistance` rows. 19 new unit tests, red first (ModuleNotFoundError
+before the module existed).*
+
 ## Built & verified — the nested judge record (found during Phase C scoping)
 
 - [x] **Degraded detection missed every `dual`-mode security row.** A security
@@ -352,14 +383,10 @@ things.
    would undermine the byte-for-byte recording claim. *Verified: 4 unit tests,
    including one asserting a healthy dual run still takes the worst of the two
    legs, so the fallback cannot become a way to ignore a judge that disagrees.*
-7. **Deterministic `details` use different keys per project.** The real
-   evaluators write `total_cost_usd` and `total_latency_ms`; the synthetic
-   generator writes `cost_usd` and `latency_ms`. Anything reading those keys
-   must handle both, and the synthetic corpus should mirror the real names —
-   otherwise it stops being a valid stand-in, which is its whole purpose. This
-   blocks the Budgets margin chart: an aggregate written against one shape
-   returns data for one project and silently nothing for the other. Also
-   `tool_allowlist` has object `details` on only 6 of 36 demo rows.
+7. **CLOSED (2026-08-09): deterministic `details` used different keys per
+   project.** See the `eval_engine/details.py` section above. Remaining, minor:
+   `tool_allowlist` has object `details` on only 6 of 37 demo rows, so its
+   violation list is unavailable for the rest.
 
 ## Next up
 
