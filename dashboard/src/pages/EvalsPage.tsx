@@ -35,7 +35,12 @@ export function EvalsPage() {
         Evals
       </Typography>
 
-      <ScopeBar project={project} days={days} onDaysChange={setDays} analytics={data} />
+      <ScopeBar
+        project={project}
+        days={days}
+        onDaysChange={setDays}
+        runs={data?.eval_runs}
+      />
 
       <QueryBoundary
         isLoading={analytics.isLoading}

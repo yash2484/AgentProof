@@ -5,6 +5,7 @@ from __future__ import annotations
 
 from agentproof_server.eval_engine.details import (
     STABLE_QUANTITY_KEYS,
+    attack_attempted,
     has_broken_record,
     is_degraded,
     measured_quantity,
@@ -162,6 +163,49 @@ def test_the_stable_keys_are_declared_once():
     # The accessor and the generator must agree, and they agree here.
     assert STABLE_QUANTITY_KEYS["cost_usd"] == ("cost_usd", "total_cost_usd")
     assert STABLE_QUANTITY_KEYS["latency_ms"] == ("latency_ms", "total_latency_ms")
+
+
+# ---- attack attempts ----
+#
+# Tri-state on purpose. A breach rate is meaningless without knowing how many
+# runs were even attacked: "0 of 0 attempted" and "0 of 34 attempted" are
+# different facts, and "we never checked" is a third. Measured on the live
+# corpus: the demo project carries this flag on 37 rows, all of them nested
+# under the heuristic leg, with 5 real attempts — a top-level read would have
+# reported zero attacks while five sat in the data.
+
+
+def test_a_recorded_attack_reads_true():
+    assert attack_attempted({"injection_attempted": True, "per_span": []}) is True
+
+
+def test_a_checked_run_with_no_attack_reads_false():
+    assert attack_attempted({"injection_attempted": False, "per_span": []}) is False
+
+
+def test_the_flag_is_found_when_dual_mode_nests_it():
+    details = {
+        "heuristic": {"per_span": [], "injection_attempted": True},
+        "llm": {"per_span": []},
+        "combine": "min",
+    }
+    assert attack_attempted(details) is True
+
+
+def test_no_attempt_signal_is_none_not_false():
+    # data_exfiltration and tool_misuse never record one. Reporting "0
+    # attempted" for them would claim a check that never ran.
+    assert attack_attempted({"per_span": [{"span_id": "s1", "score": 1.0}]}) is None
+    assert attack_attempted(None) is None
+
+
+def test_any_leg_reporting_an_attack_wins():
+    # If either detector saw an attempt, the trace was attacked.
+    details = {
+        "heuristic": {"injection_attempted": False},
+        "llm": {"injection_attempted": True},
+    }
+    assert attack_attempted(details) is True
 
 
 # ---- allowlist violations ----

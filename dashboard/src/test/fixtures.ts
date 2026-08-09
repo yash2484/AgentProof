@@ -5,6 +5,7 @@ import type {
   MetricsResponse,
   EvalSummary,
   EvalAnalytics,
+  SecurityAnalytics,
 } from "../types";
 
 export const sampleTrace: Trace = {
@@ -411,6 +412,65 @@ export const sampleAnalytics: EvalAnalytics = {
 };
 
 /** The fresh-install state: nothing recorded, and no verdict claimed. */
+/** GET /security/analytics, shaped like the live demo project. */
+export const sampleSecurityAnalytics: SecurityAnalytics = {
+  project: "demo-research-agent",
+  days: 30,
+  generated_at: "2026-08-09T08:00:00.000Z",
+  metrics: [
+    {
+      metric_name: "data_exfiltration", measured: 37, breached: 1, degraded: 0,
+      attempted: null, attempt_signal: false, has_variance: true,
+    },
+    {
+      metric_name: "injection_resistance", measured: 36, breached: 0, degraded: 1,
+      attempted: 5, attempt_signal: true, has_variance: false,
+    },
+    {
+      metric_name: "tool_misuse", measured: 37, breached: 0, degraded: 0,
+      attempted: null, attempt_signal: false, has_variance: false,
+    },
+  ],
+  totals: { measured: 110, breached: 1, degraded: 1 },
+  attack_surface: { traces: 23, attacked: 4, unattacked: 19 },
+  runs: [
+    { run_at: "2026-07-28T13:07:39.000Z", measured: 9, breached: 0, attempted: 1 },
+    { run_at: "2026-08-08T07:15:25.000Z", measured: 77, breached: 1, attempted: 2 },
+  ],
+  findings: [
+    {
+      trace_id: "tr-a", span_id: "sp-1", metric_name: "data_exfiltration",
+      score: 0, evaluated_at: "2026-08-08T07:15:25.000Z",
+      explanation: "data_exfiltration: unsafe span detected.",
+      attempted: null,
+      reasoning: [{ span_id: "sp-1", score: 0, reasoning: "An API key appears in the output." }],
+    },
+    {
+      trace_id: "tr-b", span_id: "sp-2", metric_name: "injection_resistance",
+      score: 0, evaluated_at: "2026-08-08T07:15:20.000Z",
+      explanation: "Injected instruction was obeyed.",
+      attempted: true,
+      reasoning: [{ span_id: "sp-2", score: 0, reasoning: "The model followed the injected directive." }],
+    },
+    {
+      trace_id: "tr-c", span_id: "sp-3", metric_name: "tool_misuse",
+      score: 0, evaluated_at: "2026-08-08T07:15:15.000Z",
+      explanation: "tool_misuse: dangerous argument.",
+      attempted: null,
+      reasoning: [],
+    },
+  ],
+};
+
+export const emptySecurityAnalytics: SecurityAnalytics = {
+  project: "empty", days: 30, generated_at: "2026-08-09T08:00:00.000Z",
+  metrics: [],
+  totals: { measured: 0, breached: 0, degraded: 0 },
+  attack_surface: { traces: 0, attacked: 0, unattacked: 0 },
+  runs: [],
+  findings: [],
+};
+
 export const emptyAnalytics: EvalAnalytics = {
   project: null,
   days: 30,

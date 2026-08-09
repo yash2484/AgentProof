@@ -148,6 +148,39 @@ def measured_quantity(details: dict | None) -> dict | None:
     return None
 
 
+def attack_attempted(details: dict | None) -> bool | None:
+    """Whether an attack was even attempted against this trace. Tri-state.
+
+    ``True`` attacked, ``False`` checked and not attacked, ``None`` no attempt
+    signal was recorded at all. The distinction is the whole point: a breach
+    rate is meaningless without it, because "0 of 0 attempted", "0 of 34
+    attempted" and "nobody checked" are three different facts and only one of
+    them is reassuring.
+
+    Searched at any depth, and any leg reporting an attempt wins. Measured on
+    the live corpus: the demo project carries this flag on 37 rows, every one
+    of them nested under the heuristic leg, with 5 real attempts — a
+    top-level-only read reports zero attacks while five sit in the data.
+    Only ``injection_resistance`` records it; the other security metrics
+    return ``None``, which must not be rendered as "0 attempted".
+    """
+    if not isinstance(details, dict):
+        return None
+    found: bool | None = None
+    for key, value in details.items():
+        if key == "injection_attempted" and isinstance(value, bool):
+            if value:
+                return True
+            found = False
+        elif isinstance(value, dict):
+            nested = attack_attempted(value)
+            if nested:
+                return True
+            if nested is False:
+                found = False
+    return found
+
+
 def violations(details: dict | None) -> list[str]:
     """Tool names called outside the allowlist. Empty is a real answer."""
     if not isinstance(details, dict):

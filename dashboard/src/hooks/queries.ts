@@ -12,6 +12,8 @@ export const queryKeys = {
     ["evalAnalytics", project, days] as const,
   metricDetail: (name: string, project: string | undefined, days: number) =>
     ["metricDetail", name, project, days] as const,
+  securityAnalytics: (project: string | undefined, days: number) =>
+    ["securityAnalytics", project, days] as const,
 };
 
 export function useTraces(params: Parameters<typeof api.listTraces>[0] = {}) {
@@ -89,6 +91,14 @@ export function useEvalAnalytics(project?: string, days = 30) {
   return useQuery({
     queryKey: queryKeys.evalAnalytics(project, days),
     queryFn: () => api.getEvalAnalytics({ project, days }),
+  });
+}
+
+/** The Security page's single data source. */
+export function useSecurityAnalytics(project?: string, days = 30) {
+  return useQuery({
+    queryKey: queryKeys.securityAnalytics(project, days),
+    queryFn: () => api.getSecurityAnalytics({ project, days }),
   });
 }
 

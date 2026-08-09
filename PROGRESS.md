@@ -10,9 +10,9 @@ Full sweep, 2026-08-09, after the Phase C Evals rebuild landed.
 
 | Suite | Result | How verified |
 |---|---|---|
-| server (host) | 312 passed, 36 skipped | `python -m pytest -q` **from `server/`** |
+| server (host) | 331 passed, 36 skipped | `python -m pytest -q` **from `server/`** |
 | server DB + pipeline | 29 passed | `docker compose exec -T server python -m pytest tests/integration/test_evals_analytics_db.py tests/integration/test_eval_pipeline.py -q -o asyncio_mode=auto` |
-| dashboard | 275 passed, 30 files | `npx vitest run` |
+| dashboard | 298 passed, 30 files | `npx vitest run` |
 | lint | All checks passed | `ruff check .` from repo root |
 | types + lint (dashboard) | exit 0 | `npx tsc --noEmit` and `npx eslint src --max-warnings 0` |
 | live endpoint | 200, per-group means | `GET /api/v1/evals/analytics?project=synthetic-showcase&days=0` |
@@ -209,6 +209,54 @@ one 0–1 axis; three of those lines meant different things by "1.0".
    is now a pure function of the score and touches no randomness. Drift
    measured after reseeding: **0.938 → 0.771**.
 
+## Built & verified — analytics depth, Phase D (Security rebuild)
+
+Design spec §6.2. Replaces a wall of one card per security eval row — a layout
+that grew linearly with traces, enumerated passes as loudly as failures, and
+carried no denominator anywhere on it.
+
+- [x] **`GET /api/v1/security/analytics`** — posture per metric, attack
+  surface, breaches per run, and findings, all aggregated in SQL.
+- [x] **The attempted denominator is on screen for the first time.**
+  `injection_attempted` has been stored since the security evaluator shipped
+  and displayed nowhere. A breach count means little without it: `0 of 0
+  attempted`, `0 of 34 attempted` and "nobody checked" are three different
+  facts and only one is reassuring, so the field is tri-state end to end.
+  *Live on the demo project: `injection_resistance — no breaches in 36
+  measurements · 5 of 36 measurements were under attack`.*
+- [x] **A fourth instance of the shape bug, caught by the accessor.** The flag
+  nests under the heuristic leg in `dual` mode. Measured before the fix: the
+  demo project had it on **0 of 37 rows at top level and 37 nested, with 5
+  real attempts** — a top-level read would have reported zero attacks while
+  five sat in the data. The `$.**` predicate and `attack_attempted()` find it.
+- [x] **Counts, never rates.** No percentage appears anywhere in the posture
+  strip, and a test enforces it: "97% safe" is not a sentence anyone should be
+  comfortable saying about a control.
+- [x] **Charts chosen by what the data is**, per the local chart guidance: a
+  donut for the attack surface (two categories, one dominant — the one place
+  a pie form is correct), columns for breaches by run (discrete buckets, so
+  nothing is drawn between them), counts everywhere else. Pie forms grade C
+  for accessibility because slices carry meaning in colour alone, so the raw
+  counts and the percentage sit in text beside the ring, never only inside it.
+- [x] **Empty is stated, not left blank.** "No breaches recorded across 9
+  runs" is the good outcome and says so; a blank frame reads as broken.
+- [x] **`SecurityReportCard` deleted, not orphaned** — same discipline as
+  `VerdictTile` in Phase A. Dead code that renders a denominator-free verdict
+  is code someone can wire back in.
+
+**Two defects the live render found.**
+
+1. **A control that was attacked and held was being called unexercised.** The
+   "never varied" copy was written for the Overview's ceiling strip, where a
+   flat score means nothing probed it. With five recorded attacks behind it, a
+   flat score means it *resisted* them. The honesty rule cuts both ways, and
+   understating real evidence is as wrong as overstating it. Now reads
+   `resisted every recorded attack (5)`.
+2. **The scope bar reported `0 runs · never evaluated`** above a page showing
+   nine runs, because it took a whole eval-analytics payload and the Security
+   page has its own shape. It now takes the run list itself; all three pages
+   report 9 runs, verified in the browser.
+
 ## Built & verified — `eval_engine/details.py`, one home for shape knowledge
 
 Three separate defects this session came from code assuming one shape of the
@@ -390,10 +438,8 @@ things.
 
 ## Next up
 
-1. **Phase D — Security rebuild** (spec §6.2): posture strip with
-   attempted-vs-breached denominators from `details.injection_attempted`,
-   breach timeline, findings list, coverage note.
-2. **Phase E — Traces** (spec §6.3).
+1. **Phase E — Traces** (spec §6.3): eval-outcome and worst-metric columns,
+   row expansion, outcome filter, delete moved out of the grid.
 3. **Then the Overview's visual design and theme**, deferred to last at the
    user's instruction (2026-08-09): they cannot read the metric-health
    distribution bars or tell what to take from them. Treat it as a redesign of

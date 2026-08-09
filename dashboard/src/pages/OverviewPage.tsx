@@ -42,7 +42,7 @@ export function OverviewPage() {
         project={project}
         days={days}
         onDaysChange={setDays}
-        analytics={data}
+        runs={data?.eval_runs}
       />
 
       <QueryBoundary

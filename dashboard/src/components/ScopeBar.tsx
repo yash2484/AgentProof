@@ -2,7 +2,6 @@ import { Box, Typography, ToggleButton, ToggleButtonGroup } from "@mui/material"
 import { tokens, SPACE, TABULAR_NUMS } from "../theme";
 import { isSyntheticProject } from "../lib/analytics";
 import { SyntheticBadge } from "./SeverityChip";
-import type { EvalAnalytics } from "../types";
 
 export const WINDOWS = [
   { days: 7, label: "7d" },
@@ -11,8 +10,12 @@ export const WINDOWS = [
   { days: 0, label: "All" },
 ] as const;
 
-function lastEvaluated(analytics: EvalAnalytics | undefined): string {
-  const runs = analytics?.eval_runs ?? [];
+/** Just enough of a run for the bar: every page's payload has this much. */
+export interface ScopeRun {
+  run_at: string;
+}
+
+function lastEvaluated(runs: ScopeRun[]): string {
   if (runs.length === 0) return "never evaluated";
   const at = new Date(runs[runs.length - 1].run_at);
   return `last evaluated ${at.toLocaleString()}`;
@@ -30,14 +33,21 @@ export function ScopeBar({
   project,
   days,
   onDaysChange,
-  analytics,
+  runs: runList,
 }: {
   project: string | null | undefined;
   days: number;
   onDaysChange: (days: number) => void;
-  analytics: EvalAnalytics | undefined;
+  /**
+   * The runs in scope. Taken as a plain list rather than a whole analytics
+   * payload so every page can supply it — the Security page has its own
+   * shape, and passing `undefined` made the bar report "0 runs · never
+   * evaluated" above a page showing nine runs of data.
+   */
+  runs: ScopeRun[] | undefined;
 }) {
-  const runs = analytics?.totals.eval_runs ?? 0;
+  const runList_ = runList ?? [];
+  const runs = runList_.length;
   return (
     <Box
       data-testid="scope-bar"
@@ -89,7 +99,7 @@ export function ScopeBar({
         data-testid="scope-runs"
         sx={{ color: tokens.muted, ...TABULAR_NUMS }}
       >
-        {runs} {runs === 1 ? "run" : "runs"} · {lastEvaluated(analytics)}
+        {runs} {runs === 1 ? "run" : "runs"} · {lastEvaluated(runList_)}
       </Typography>
     </Box>
   );

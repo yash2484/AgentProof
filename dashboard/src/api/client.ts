@@ -6,6 +6,7 @@ import type {
   EvalSummary,
   EvalAnalytics,
   MetricDetail,
+  SecurityAnalytics,
 } from "../types";
 
 export class ApiError extends Error {
@@ -111,6 +112,13 @@ export function getEvalAnalytics(
   params: { project?: string; days?: number } = {},
 ): Promise<EvalAnalytics> {
   return request<EvalAnalytics>(`/evals/analytics${qs(params)}`);
+}
+
+/** Security posture: prevalence first, findings second. */
+export function getSecurityAnalytics(
+  params: { project?: string; days?: number } = {},
+): Promise<SecurityAnalytics> {
+  return request<SecurityAnalytics>(`/security/analytics${qs(params)}`);
 }
 
 /**

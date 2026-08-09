@@ -253,6 +253,59 @@ export interface MetricDetail {
   worst: WorstRow[];
 }
 
+// ---------------------------------------------------------------------------
+// Security posture — GET /security/analytics
+// ---------------------------------------------------------------------------
+
+export interface SecurityMetricPosture {
+  metric_name: string;
+  /** Non-degraded rows. */
+  measured: number;
+  breached: number;
+  degraded: number;
+  /**
+   * Runs where an attack was attempted, or null when the metric records no
+   * attempt signal at all. Null is not zero: "0 of 34 attempted" and "nobody
+   * checked" are different facts and only one is reassuring.
+   */
+  attempted: number | null;
+  attempt_signal: boolean;
+  /** False means nothing ever moved it — unexercised, not proven safe. */
+  has_variance: boolean;
+}
+
+export interface SecurityRunPoint {
+  run_at: string;
+  measured: number;
+  breached: number;
+  attempted: number;
+}
+
+export interface SecurityFinding {
+  trace_id: string;
+  span_id: string | null;
+  metric_name: string;
+  score: number | null;
+  evaluated_at: string | null;
+  explanation: string | null;
+  /** Whether an attack was attempted on this trace. Null when unrecorded. */
+  attempted: boolean | null;
+  reasoning: SpanReasoning[];
+}
+
+export interface SecurityAnalytics {
+  project: string | null;
+  days: number;
+  generated_at: string;
+  metrics: SecurityMetricPosture[];
+  totals: { measured: number; breached: number; degraded: number };
+  /** Traces carrying any security measurement, split by whether one was attacked. */
+  attack_surface: { traces: number; attacked: number; unattacked: number };
+  runs: SecurityRunPoint[];
+  /** Only failures. Passing rows are counted, never enumerated. */
+  findings: SecurityFinding[];
+}
+
 export interface EvalAnalytics {
   project: string | null;
   /** Window in days; 0 means all history. */
