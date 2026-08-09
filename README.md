@@ -215,6 +215,27 @@ python -m demo_agent run --scenario all --mode replay --export
 - `--record-fixtures PATH` with `--mode live` freezes a live run as replay
   fixtures.
 
+### The `synthetic-showcase` project is generated, not measured
+
+Everything above is measured. One thing in the dashboard is not, and it is
+labelled everywhere it appears.
+
+The recorded corpus is 25 traces across 4 runs — enough to prove the harness
+works, too thin to evaluate a dashboard against, since most metrics never move
+and every trend is two points. `synthetic-showcase` is a fabricated corpus of
+300 traces over 180 days with a deliberate slow quality drift, seeded so it
+regenerates identically:
+
+```bash
+docker compose exec server python -m agentproof_server.scripts_pkg.synthetic_showcase
+```
+
+It lives under its own project name, is badged **generated data** in the
+project switcher and the scope bar, and is never baselined or fed to the
+regression gate. **No generated row ever enters `demo-research-agent`** — that
+corpus stays a byte-for-byte recording, which is the only reason the claim
+above is worth anything.
+
 Capture the agent's traces as an eval corpus and gate them — no database, no API
 key, this is what CI runs:
 

@@ -14,6 +14,20 @@ import type { GateVerdict, MetricHealth } from "../types";
  * turns red — and they need to be testable without rendering anything.
  */
 
+/**
+ * Projects whose data is generated rather than measured.
+ *
+ * `synthetic-showcase` exists because the real corpus is 25 traces and four
+ * runs — too thin to judge an analytics design against. It is fabricated on
+ * purpose, and the README's claim that the demo corpus is a byte-for-byte
+ * recording only survives if the two are never confused on screen.
+ */
+const SYNTHETIC_PROJECTS = new Set(["synthetic-showcase"]);
+
+export function isSyntheticProject(project: string | null | undefined): boolean {
+  return project ? SYNTHETIC_PROJECTS.has(project) : false;
+}
+
 export type Severity = "degraded" | "clear" | "watch" | "serious";
 
 /** Which of Band 2's two registers a metric belongs in. */

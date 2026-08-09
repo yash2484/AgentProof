@@ -1,5 +1,7 @@
 import { Box, Typography, ToggleButton, ToggleButtonGroup } from "@mui/material";
 import { tokens, SPACE, TABULAR_NUMS } from "../theme";
+import { isSyntheticProject } from "../lib/analytics";
+import { SyntheticBadge } from "./SeverityChip";
 import type { EvalAnalytics } from "../types";
 
 export const WINDOWS = [
@@ -56,6 +58,7 @@ export function ScopeBar({
       <Typography variant="subtitle1" sx={{ color: tokens.ink }}>
         {project ?? "All projects"}
       </Typography>
+      {isSyntheticProject(project) && <SyntheticBadge />}
 
       <ToggleButtonGroup
         size="small"

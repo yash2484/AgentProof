@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
   describeGate,
   effectSizeLabel,
+  isSyntheticProject,
   metricRegister,
   metricSeverity,
   severityCopy,
@@ -43,6 +44,31 @@ function gate(overrides: Partial<GateVerdict> = {}): GateVerdict {
     ...overrides,
   };
 }
+
+// ---------------------------------------------------------------------------
+// Generated-data labelling
+// ---------------------------------------------------------------------------
+//
+// The demo corpus is a byte-for-byte recording and the README makes that
+// claim load-bearing. The showcase corpus is fabricated. A reader must never
+// have to guess which one they are looking at.
+
+describe("isSyntheticProject", () => {
+  it("flags the fabricated showcase corpus", () => {
+    expect(isSyntheticProject("synthetic-showcase")).toBe(true);
+  });
+
+  it("does not flag the real recorded corpus", () => {
+    expect(isSyntheticProject("demo-research-agent")).toBe(false);
+  });
+
+  it("does not flag the all-projects view, which mixes both", () => {
+    // "All projects" spans real and generated data, so a badge there would
+    // claim more than it can. The scope bar says so in words instead.
+    expect(isSyntheticProject(undefined)).toBe(false);
+    expect(isSyntheticProject(null)).toBe(false);
+  });
+});
 
 // ---------------------------------------------------------------------------
 // Register assignment

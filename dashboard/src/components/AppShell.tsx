@@ -7,6 +7,8 @@ import MenuIcon from "@mui/icons-material/Menu";
 import { Link as RouterLink, useLocation } from "react-router-dom";
 import { useProjects } from "../hooks/queries";
 import { useProject } from "../context/ProjectContext";
+import { isSyntheticProject } from "../lib/analytics";
+import { SyntheticBadge } from "./SeverityChip";
 import { tokens, SPACE } from "../theme";
 
 const NAV = [
@@ -89,7 +91,12 @@ export function AppShell({ children }: { children: ReactNode }) {
         >
           <MenuItem value="">All projects</MenuItem>
           {(projects.data ?? []).map((p) => (
-            <MenuItem key={p} value={p}>{p}</MenuItem>
+            <MenuItem key={p} value={p} sx={{ gap: 1 }}>
+              {p}
+              {/* Marked at the point of selection, not only after: the choice
+                * between a recording and a fabrication is made here. */}
+              {isSyntheticProject(p) && <SyntheticBadge compact />}
+            </MenuItem>
           ))}
         </Select>
       </Box>
