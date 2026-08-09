@@ -8,6 +8,8 @@ export const queryKeys = {
   evalResults: (params: unknown) => ["evalResults", "list", params] as const,
   metrics: () => ["metrics"] as const,
   evalSummary: (project: string | undefined) => ["evalSummary", project] as const,
+  evalAnalytics: (project: string | undefined, days: number) =>
+    ["evalAnalytics", project, days] as const,
 };
 
 export function useTraces(params: Parameters<typeof api.listTraces>[0] = {}) {
@@ -72,5 +74,18 @@ export function useEvalSummary(project?: string) {
   return useQuery({
     queryKey: queryKeys.evalSummary(project),
     queryFn: () => api.getEvalSummary({ project }),
+  });
+}
+
+/**
+ * The Overview's single data source.
+ *
+ * `days` is part of the key: the scope bar shows the window above every figure
+ * it scopes, so changing it must refetch rather than re-label stale numbers.
+ */
+export function useEvalAnalytics(project?: string, days = 30) {
+  return useQuery({
+    queryKey: queryKeys.evalAnalytics(project, days),
+    queryFn: () => api.getEvalAnalytics({ project, days }),
   });
 }

@@ -300,6 +300,14 @@ def test_score_buckets_are_computed_in_sql_at_tenth_width():
     assert "group by" in sql
 
 
+def test_score_buckets_clamp_the_top_bin_so_a_perfect_score_is_visible():
+    # floor(1.0 * 10) / 10 opens a zero-width bin at 1.0, whose bar renders
+    # off the end of a 0->1 track.
+    sql = _sql(_score_buckets_stmt("demo", SINCE))
+    assert "least(" in sql
+    assert "0.9" in sql
+
+
 def test_the_judge_only_writes_these_keys_on_failure():
     """Pins the contract the SQL degraded predicate relies on.
 

@@ -4,6 +4,7 @@ import type {
   EvalResultsResponse,
   MetricsResponse,
   EvalSummary,
+  EvalAnalytics,
 } from "../types";
 
 export class ApiError extends Error {
@@ -96,4 +97,17 @@ export function getEvalSummary(
   params: { project?: string } = {},
 ): Promise<EvalSummary> {
   return request<EvalSummary>(`/evals/summary${qs(params)}`);
+}
+
+/**
+ * Everything the Overview needs, aggregated server-side.
+ *
+ * `days` defaults to 30 on the server; pass 0 for all history. One call, not
+ * seven: every figure is already reduced in SQL, so there is nothing left for
+ * the client to aggregate over a truncated page of rows.
+ */
+export function getEvalAnalytics(
+  params: { project?: string; days?: number } = {},
+): Promise<EvalAnalytics> {
+  return request<EvalAnalytics>(`/evals/analytics${qs(params)}`);
 }

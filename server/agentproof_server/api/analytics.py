@@ -245,8 +245,17 @@ def _metric_health_stmt(project: str | None, since: datetime | None):
 
 
 def _score_buckets_stmt(project: str | None, since: datetime | None):
-    """Score histogram at 0.1 width, per metric, excluding degraded rows."""
-    bucket = (func.floor(EvalResultModel.score * 10.0) / 10.0).label("bucket")
+    """Score histogram at 0.1 width, per metric, excluding degraded rows.
+
+    ``bucket`` is the lower edge of a 0.1-wide bin, so the last bin is
+    0.9-1.0 and a perfect 1.0 belongs in it. Without the clamp,
+    ``floor(1.0 * 10) / 10`` opens a zero-width bin at 1.0 whose bar renders
+    off the end of a 0->1 track -- on the demo data that hid 34 of 35
+    observations behind the clip.
+    """
+    bucket = func.least(
+        func.floor(EvalResultModel.score * 10.0) / 10.0, 0.9
+    ).label("bucket")
     stmt = select(
         EvalResultModel.metric_name,
         bucket,

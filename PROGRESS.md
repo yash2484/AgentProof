@@ -1,8 +1,8 @@
 # AgentProof — Progress
 
-**Current phase:** Overview analytics — server side complete, dashboard next
+**Current phase:** Overview analytics — complete, ready for review
 **Branch:** `overview-analytics`
-**Last updated:** 2026-08-08
+**Last updated:** 2026-08-09
 
 ## Last verified working
 
@@ -10,10 +10,13 @@ Server sweep, 2026-08-08, after the analytics endpoint landed.
 
 | Suite | Result | How verified |
 |---|---|---|
-| server (host) | 234 passed, 24 skipped | `python -m pytest tests -q` **from `server/`** |
-| server DB tests | 17 passed | `docker compose exec server python -m pytest tests/integration/test_evals_analytics_db.py tests/integration/test_evals_summary_db.py -q -o asyncio_mode=auto` |
+| server (host) | 235 passed, 25 skipped | `python -m pytest tests -q` **from `server/`** |
+| server DB tests | 15 passed | `docker compose exec server python -m pytest tests/integration/test_evals_analytics_db.py -q -o asyncio_mode=auto` |
+| dashboard | 194 passed, 25 files | `npx vitest run` |
 | lint | All checks passed | `ruff check server/agentproof_server server/tests` from repo root |
-| live endpoint | 200, real figures | `GET /api/v1/evals/analytics?project=demo-research-agent&days=0` against the running stack |
+| types + lint (dashboard) | exit 0 | `npx tsc -b` and `npx eslint . --ext ts,tsx` |
+| live endpoint | 200, real figures | `GET /api/v1/evals/analytics?project=demo-research-agent&days=0` |
+| page in a browser | renders, 0 console errors | Playwright at 1440px and 375px against the live stack; no horizontal overflow |
 
 The 24 host skips are DB-backed integration tests (port 5432 conflict, see Known
 issues) plus key-gated judge tests.
@@ -74,6 +77,40 @@ traces — 13 traces evaluated twice inside one window, double-counted. Fixed by
 carrying trace ids through the fold and deduping per run (`array_agg` in SQL);
 now caps at 13. Regression test pins it, and a companion test pins that the
 same trace in *two* runs still counts in each.
+
+## Built & verified this phase — Overview analytics (dashboard)
+
+- [x] **The Overview is an analytics surface, not four flat tiles.** Sticky
+  scope bar (project · window · last evaluated · run count), then Band 1
+  (gate verdict, volume, measurement health), Band 2 (metric health in two
+  registers), Band 3 (run-to-run variance), Band 5 (findings). *Verified: 194
+  dashboard tests; rendered in Chromium against the live stack at 1440px and
+  375px with zero console errors and no horizontal overflow.*
+- [x] **The misleading verdict is deleted, not just unused.** `VerdictTile`
+  and `lib/overview.ts` are gone — they were the only source of
+  *"injection_resistance regressed — the agent gave ground under attack"*,
+  and leaving them in the tree meant someone could wire them back in. Both
+  had become dead code once the page was rebuilt. *Verified: a test asserts
+  the rendered page contains neither "gave ground" nor "regressed".*
+- [x] **Severity and register assignment are pure functions** in
+  `lib/analytics.ts` with 31 colocated tests — the small-sample cap, the
+  100%-at-any-n rule, the `ci_block` distinction, and the rule that a metric
+  with `std = 0` can never render as healthy.
+- [x] **The restraint case reaches the screen.** Live, with the demo project
+  selected: *"Not flagged — injection_resistance · effect is small (d=0.24)
+  and not statistically significant at this sample size (p=0.163)"*, with
+  t-statistic, both sample sizes and the raw reason one click away.
+- [x] **Two copy bugs found by looking at the rendered page**, neither
+  catchable by a passing test suite: the statistics line said "small **but**
+  not significant", manufacturing a disagreement between two guards that
+  actually agreed (now "but" only when the effect cleared and significance
+  did not); and the footer read "in the last all time". Both now pinned by
+  tests.
+- [x] **A histogram bug the tests could not see.** `floor(1.0 * 10) / 10`
+  opened a zero-width bin at 1.0 whose bar rendered off the end of a 0→1
+  track — 34 of `injection_resistance`'s 35 observations were invisible.
+  Scores of exactly 1.0 now clamp into the 0.9–1.0 bin. *Verified: DB test
+  asserts no 1.0 bucket exists; confirmed by eye in the browser.*
 
 ## Built & verified — application hardening (previous phase)
 
@@ -174,12 +211,11 @@ things.
 
 ## Next up
 
-1. Overview analytics, dashboard side: types + api client + query hooks;
-   severity tiers and register assignment as pure functions in `lib/` with
-   colocated tests; then Band 1 (gate verdict, volume, measurement health),
-   Band 2 (metric health, two registers), Band 3 (variance), Band 5 (findings).
+1. Review and merge the Overview analytics branch.
 2. Decide the `span_names: [writer]` mismatch above — it is currently a failing
    test and two traces with no faithfulness signal.
+3. Band 4 (latency and tokens as separate mini-charts) and span-role ranking
+   are still deferred; see the design spec §7 for why.
 3. Cohen's kappa, done properly: a blind-labelled gold set, judge run against it,
    kappa with a bootstrap CI. A rushed one is worse than none.
 4. Scenarios that stress the deterministic and security metrics, so more than two
@@ -217,7 +253,12 @@ things.
    runtime deps only, not `[dev]`, so running DB tests in the container needs
    `docker compose exec server pip install pytest pytest-asyncio` first. That
    install does not survive a rebuild.
-10. **`baselines/` must be mounted into the server container.** Added to
+10. **Vite serves a stale module after an edit** in the mounted dashboard
+    container — the file is correct inside `/app`, HMR does not pick it up, and
+    the browser keeps rendering the old string. `docker compose restart
+    dashboard` clears it. Cost 20 minutes chasing a fix that was already
+    applied.
+11. **`baselines/` must be mounted into the server container.** Added to
     `docker-compose.yml` alongside `agentproof.yaml`, for the same reason:
     `settings.baselines_path` resolves against the process CWD (`/app`). Without
     the mount the gate verdict silently reports "no baseline" for every metric

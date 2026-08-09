@@ -1,145 +1,93 @@
+import { useState } from "react";
 import { Box, Typography } from "@mui/material";
-import { Link as RouterLink } from "react-router-dom";
-import { useEvalSummary, useTraces, useTraceTree } from "../hooks/queries";
+import { useEvalAnalytics } from "../hooks/queries";
 import { useProject } from "../context/ProjectContext";
 import { QueryBoundary } from "../components/QueryBoundary";
-import { VerdictTile } from "../components/VerdictTile";
-import { StatTile } from "../components/StatTile";
-import { MiniWaterfall } from "../components/MiniWaterfall";
-import { EmptyState } from "../components/EmptyState";
-import { gateStatus, formatPct } from "../lib/overview";
-import { formatDuration } from "../lib/format";
-import { tokens, TILE_GAP, TILE_PADDING, SPACE } from "../theme";
+import { ScopeBar } from "../components/ScopeBar";
+import { GateVerdictCard } from "../components/GateVerdictCard";
+import { VolumeCard } from "../components/VolumeCard";
+import { MeasurementHealth } from "../components/MeasurementHealth";
+import { MetricHealthPanel } from "../components/MetricHealthPanel";
+import { VariancePanel } from "../components/VariancePanel";
+import { FindingsFeed } from "../components/FindingsFeed";
+import { tokens, TILE_GAP, SPACE } from "../theme";
 
 /**
- * Bento overview. Tile size encodes importance: the security verdict gets
- * 2x2, latency and the gate get 1x1. The 2x2 goes full-width at the smallest
- * breakpoint rather than shrinking into illegibility.
+ * Overview, ordered by cost of being wrong.
+ *
+ * Band 1 is the 60-second read: the gate verdict, how much ran, and whether
+ * the measurements themselves held up. Band 2 is the hero — every metric
+ * visible, split into the ones that move and the ones that never have. Band 3
+ * is run-to-run variance, and Band 5 the findings.
+ *
+ * The governing principle throughout: every alarming statement carries a
+ * denominator and a time window, every judge number shows its ±0.2 noise, and
+ * the screen never launders untested or unmeasured into passing.
  */
 export function OverviewPage() {
   const { project } = useProject();
-  const summary = useEvalSummary(project);
-  const latest = useTraces({ project, limit: 1 });
-  const latestTrace = latest.data?.traces[0];
-  const tree = useTraceTree(latestTrace?.trace_id ?? "");
+  const [days, setDays] = useState(30);
+  const analytics = useEvalAnalytics(project, days);
 
-  const gate = gateStatus(summary.data);
-  const isEmpty =
-    !summary.isLoading &&
-    (summary.data?.trace_count ?? 0) === 0 &&
-    (latest.data?.traces.length ?? 0) === 0;
+  const data = analytics.data;
+  const isEmpty = !analytics.isLoading && (data?.totals.traces ?? 0) === 0;
 
   return (
     <Box>
       <Typography variant="h4" sx={{ color: tokens.ink, mb: "4px" }}>
         Overview
       </Typography>
-      <Typography variant="body1" sx={{ color: tokens.muted, mb: `${SPACE.lg}px` }}>
-        {project ?? "All projects"}
-      </Typography>
+
+      <ScopeBar
+        project={project}
+        days={days}
+        onDaysChange={setDays}
+        analytics={data}
+      />
 
       <QueryBoundary
-        isLoading={summary.isLoading || latest.isLoading}
-        isError={summary.isError || latest.isError}
+        isLoading={analytics.isLoading}
+        isError={analytics.isError}
         isEmpty={isEmpty}
-        emptyMessage="No traces yet — run the demo agent, or POST a trace to /api/v1/traces."
-        onRetry={() => {
-          summary.refetch();
-          latest.refetch();
-        }}
+        emptyMessage="No traces in this window — widen the range, run the demo agent, or POST a trace to /api/v1/traces."
+        onRetry={() => analytics.refetch()}
       >
-        {/* The spec's breakpoints (3 cols >=1024px, 2 >=768px, 1 below) don't
-          * line up with MUI's default sm/lg keys (600px/1200px) and this repo
-          * defines no custom breakpoints, so these scoped media queries express
-          * the spec exactly without a global override.
-          *
-          * Known inconsistency: SecurityPage folds at MUI's `md` (900px), so the
-          * app currently changes layout at 768, 900 and 1024. Reconciling the
-          * three onto one scale is tracked follow-up work.
-          */}
-        <Box
-          sx={{
-            display: "grid",
-            gap: `${TILE_GAP}px`,
-            gridTemplateColumns: "1fr",
-            "@media (min-width:768px)": { gridTemplateColumns: "repeat(2, 1fr)" },
-            "@media (min-width:1024px)": { gridTemplateColumns: "repeat(3, 1fr)" },
-          }}
-        >
+        <Box sx={{ display: "grid", gap: `${TILE_GAP}px` }}>
+          {/* Band 1 — the 60-second read. The gate takes two of three columns
+            * because it is the only card carrying a claim about change. */}
           <Box
             sx={{
-              gridColumn: "span 1",
-              gridRow: "auto",
-              "@media (min-width:768px)": {
-                gridColumn: "span 2",
-                gridRow: "span 2",
-                minHeight: 240,
-              },
+              display: "grid",
+              gap: `${TILE_GAP}px`,
+              gridTemplateColumns: "1fr",
+              "@media (min-width:768px)": { gridTemplateColumns: "repeat(2, 1fr)" },
+              "@media (min-width:1024px)": { gridTemplateColumns: "2fr 1fr 1fr" },
             }}
           >
-            <VerdictTile summary={summary.data} />
+            <Box sx={{ "@media (min-width:768px)": { gridColumn: "span 2" }, "@media (min-width:1024px)": { gridColumn: "span 1" } }}>
+              <GateVerdictCard gate={data?.gate ?? []} />
+            </Box>
+            <VolumeCard analytics={data} />
+            <MeasurementHealth totals={data?.totals} />
           </Box>
 
-          <StatTile
-            label="Gate"
-            value={gate.passed ? "PASS" : "FAIL"}
-            sublabel={gate.label}
-            tone={gate.passed ? "pass" : "fail"}
-          />
+          {/* Band 2 — hero, full width. */}
+          <MetricHealthPanel analytics={data} />
 
-          <StatTile
-            label="p99 latency"
-            value={formatDuration(summary.data?.p99_latency_ms ?? null)}
-            sublabel={`${summary.data?.trace_count ?? 0} traces`}
-          />
+          {/* Band 3 — variance. The slot is reserved at every n. */}
+          <VariancePanel runs={data?.eval_runs ?? []} />
 
-          <StatTile
-            label="Overall pass rate"
-            value={formatPct(summary.data?.overall_pass_rate ?? null)}
-            sublabel={`${summary.data?.metrics.length ?? 0} metrics`}
-          />
+          {/* Band 5 — findings. */}
+          <FindingsFeed analytics={data} project={project} />
 
-          <Box
-            sx={{
-              gridColumn: "1 / -1",
-              p: `${TILE_PADDING}px`,
-              bgcolor: tokens.surface,
-              border: `1px solid ${tokens.border}`,
-              borderRadius: 2.5,
-            }}
+          <Typography
+            variant="caption"
+            sx={{ color: tokens.muted, display: "block", mb: `${SPACE.md}px` }}
           >
-            <Typography
-              variant="caption"
-              sx={{
-                color: tokens.muted,
-                textTransform: "uppercase",
-                letterSpacing: "0.06em",
-                display: "block",
-                mb: 1,
-              }}
-            >
-              Latest trace
-            </Typography>
-            {latestTrace ? (
-              <>
-                <Typography variant="subtitle1" sx={{ mb: 1.5 }}>
-                  <Box
-                    component={RouterLink}
-                    to={`/traces/${latestTrace.trace_id}`}
-                    sx={{ color: tokens.brand.text, textDecoration: "none" }}
-                  >
-                    {latestTrace.name}
-                  </Box>
-                </Typography>
-                <MiniWaterfall roots={tree.data ?? []} />
-              </>
-            ) : (
-              <EmptyState
-                title="No traces yet"
-                body="Run the demo agent to populate this view."
-              />
-            )}
-          </Box>
+            {data
+              ? `${data.outcome_split.passed} passed · ${data.outcome_split.failed} failed · ${data.outcome_split.degraded} degraded measurements, across ${data.totals.eval_runs} ${data.totals.eval_runs === 1 ? "run" : "runs"} ${days === 0 ? "over all history" : `in the last ${days} days`}.`
+              : null}
+          </Typography>
         </Box>
       </QueryBoundary>
     </Box>

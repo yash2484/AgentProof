@@ -338,6 +338,35 @@ async def test_score_buckets_exclude_degraded_rows(session: AsyncSession):
         await _cleanup(session, project)
 
 
+async def test_a_perfect_score_lands_in_the_top_bin_not_its_own(
+    session: AsyncSession,
+):
+    """``floor(1.0 * 10) / 10`` is 1.0, which is a bin with no width.
+
+    Rendered on a 0->1 track that bar starts at the right edge and is clipped
+    away entirely — 34 of 35 observations became invisible on the real demo
+    data. Scores of exactly 1.0 belong in the 0.9-1.0 bin.
+    """
+    project = f"an-top-{uuid.uuid4().hex[:8]}"
+    now = datetime.now(UTC)
+    try:
+        for i, score in enumerate([1.0, 1.0, 0.95, 0.5]):
+            await _seed_trace(
+                session, project, i,
+                [("faithfulness", score, score >= 0.7, JUDGE_OK)],
+                now + timedelta(seconds=i * 4),
+            )
+
+        payload = await get_evals_analytics(db=session, project=project, days=30)
+
+        buckets = {b["bucket"]: b["count"] for b in payload["score_buckets"]}
+        assert 1.0 not in buckets
+        assert buckets[0.9] == 3  # two 1.0s plus the 0.95
+        assert buckets[0.5] == 1
+    finally:
+        await _cleanup(session, project)
+
+
 async def test_trace_volume_buckets_by_day_and_splits_status(
     session: AsyncSession,
 ):

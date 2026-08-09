@@ -4,6 +4,7 @@ import type {
   EvalResult,
   MetricsResponse,
   EvalSummary,
+  EvalAnalytics,
 } from "../types";
 
 export const sampleTrace: Trace = {
@@ -115,10 +116,10 @@ export const sampleMetrics: MetricsResponse = {
   project: "demo",
   judge_model: "claude-opus-4-8",
   metrics: [
-    { name: "answer_relevance", type: "llm_judge", applies_to: ["llm_call"], threshold: 0.7 },
-    { name: "injection_resistance", type: "security", applies_to: ["llm_call"], threshold: 0.8 },
-    { name: "data_exfiltration", type: "security", applies_to: ["tool_use"], threshold: 0.8 },
-    { name: "tool_misuse", type: "security", applies_to: ["tool_use"], threshold: 0.8 },
+    { name: "answer_relevance", type: "llm_judge", applies_to: ["llm_call"], threshold: 0.7, ci_block: true },
+    { name: "injection_resistance", type: "security", applies_to: ["llm_call"], threshold: 0.8, ci_block: true },
+    { name: "data_exfiltration", type: "security", applies_to: ["tool_use"], threshold: 0.8, ci_block: true },
+    { name: "tool_misuse", type: "security", applies_to: ["tool_use"], threshold: 0.8, ci_block: false },
   ],
 };
 
@@ -284,6 +285,129 @@ export const sparseBatchEvalResults: EvalResult[] = [
     evaluated_at: `2026-08-02T10:00:00.${String(100 + i * 10).padStart(3, "0")}Z`,
   })),
 ];
+
+/**
+ * Overview analytics, shaped from the real demo project.
+ *
+ * Deliberately keeps the awkward parts of the live data rather than a tidy
+ * invention: five metrics pinned with no variance, one judged metric with a
+ * genuine low-score tail, a single failing security row out of 35, nine
+ * degraded judge calls, and a gate that holds back rather than fires.
+ */
+export const sampleAnalytics: EvalAnalytics = {
+  project: "demo",
+  days: 30,
+  generated_at: "2026-08-08T07:20:00.000Z",
+  totals: {
+    traces: 25,
+    eval_runs: 4,
+    scored: 13,
+    degraded: 9,
+    pending: 3,
+    tokens: 20102,
+    cost_usd: 0.0785,
+  },
+  trace_volume: [
+    { day: "2026-07-28", total: 9, ok: 6, error: 3 },
+    { day: "2026-08-05", total: 3, ok: 2, error: 1 },
+    { day: "2026-08-08", total: 13, ok: 12, error: 1 },
+  ],
+  eval_runs: [
+    { run_at: "2026-07-28T13:07:39.000Z", trace_count: 3, mean_score: 0.75, degraded: 6 },
+    { run_at: "2026-07-28T13:15:32.000Z", trace_count: 3, mean_score: 0.75, degraded: 6 },
+    { run_at: "2026-08-05T14:30:16.000Z", trace_count: 3, mean_score: 0.75, degraded: 6 },
+    { run_at: "2026-08-08T07:15:25.000Z", trace_count: 13, mean_score: 0.977, degraded: 0 },
+  ],
+  metric_health: [
+    {
+      metric_name: "cost_budget", metric_type: "deterministic", ci_block: true,
+      mean_score: 1.0, std: 0, pass_rate: 1, threshold: 0.7,
+      count: 35, failed: 0, degraded: 0, has_variance: false,
+    },
+    {
+      metric_name: "data_exfiltration", metric_type: "security", ci_block: true,
+      mean_score: 1.0, std: 0, pass_rate: 1, threshold: 0.8,
+      count: 35, failed: 0, degraded: 0, has_variance: false,
+    },
+    {
+      metric_name: "faithfulness", metric_type: "llm_judge", ci_block: true,
+      mean_score: 0.922, std: 0.158, pass_rate: 0.923, threshold: 0.7,
+      count: 26, failed: 2, degraded: 9, has_variance: true,
+    },
+    {
+      metric_name: "injection_resistance", metric_type: "security", ci_block: true,
+      mean_score: 0.971, std: 0.169, pass_rate: 0.971, threshold: 0.8,
+      count: 35, failed: 1, degraded: 0, has_variance: true,
+    },
+    {
+      metric_name: "latency_budget", metric_type: "deterministic", ci_block: true,
+      mean_score: 1.0, std: 0, pass_rate: 1, threshold: 0.7,
+      count: 35, failed: 0, degraded: 0, has_variance: false,
+    },
+    {
+      metric_name: "relevance", metric_type: "llm_judge", ci_block: false,
+      mean_score: 0.931, std: 0.176, pass_rate: 0.923, threshold: 0.7,
+      count: 26, failed: 2, degraded: 9, has_variance: true,
+    },
+    {
+      metric_name: "tool_allowlist", metric_type: "deterministic", ci_block: true,
+      mean_score: 1.0, std: 0, pass_rate: 1, threshold: 0.7,
+      count: 35, failed: 0, degraded: 0, has_variance: false,
+    },
+    {
+      metric_name: "tool_misuse", metric_type: "security", ci_block: true,
+      mean_score: 1.0, std: 0, pass_rate: 1, threshold: 0.8,
+      count: 35, failed: 0, degraded: 0, has_variance: false,
+    },
+  ],
+  score_buckets: [
+    { metric_name: "faithfulness", bucket: 0.3, count: 1 },
+    { metric_name: "faithfulness", bucket: 0.4, count: 1 },
+    { metric_name: "faithfulness", bucket: 0.8, count: 1 },
+    // The top bin is 0.9-1.0: a perfect 1.0 lands here rather than in a
+    // zero-width bin at 1.0 that would render off the end of the track.
+    { metric_name: "faithfulness", bucket: 0.9, count: 23 },
+    { metric_name: "injection_resistance", bucket: 0.0, count: 1 },
+    { metric_name: "injection_resistance", bucket: 0.9, count: 34 },
+    { metric_name: "cost_budget", bucket: 0.9, count: 35 },
+  ],
+  outcome_split: { passed: 257, failed: 5, degraded: 18 },
+  status_split: { ok: 20, error: 5 },
+  gate: [
+    {
+      metric_name: "faithfulness", is_regression: false, comparable: true,
+      baseline_mean: 0.911, candidate_mean: 0.922, delta: 0.011,
+      p_value: null, cohens_d: null, t_statistic: null,
+      baseline_n: 13, candidate_n: 26,
+      reason: "No drop (candidate 0.922 >= baseline 0.911).",
+    },
+    {
+      metric_name: "injection_resistance", is_regression: false, comparable: true,
+      baseline_mean: 1.0, candidate_mean: 0.971, delta: -0.029,
+      p_value: 0.1634, cohens_d: 0.2386, t_statistic: -1.0,
+      baseline_n: 13, candidate_n: 26,
+      reason: "p=0.1634 >= alpha=0.05, d=0.239 < 0.5.",
+    },
+  ],
+};
+
+/** The fresh-install state: nothing recorded, and no verdict claimed. */
+export const emptyAnalytics: EvalAnalytics = {
+  project: null,
+  days: 30,
+  generated_at: "2026-08-08T07:20:00.000Z",
+  totals: {
+    traces: 0, eval_runs: 0, scored: 0, degraded: 0, pending: 0,
+    tokens: null, cost_usd: null,
+  },
+  trace_volume: [],
+  eval_runs: [],
+  metric_health: [],
+  score_buckets: [],
+  outcome_split: { passed: 0, failed: 0, degraded: 0 },
+  status_split: { ok: 0, error: 0 },
+  gate: [],
+};
 
 /** Three traces, same metric, same all-PASS verdict — the duplicate-card shape. */
 export const multiTraceSecurityResults: EvalResult[] = ["tr-a", "tr-b", "tr-c"].map(
