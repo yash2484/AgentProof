@@ -33,9 +33,9 @@ export type Severity = "degraded" | "clear" | "watch" | "serious";
 /** Which of Band 2's two registers a metric belongs in. */
 export type Register = "signal" | "ceiling";
 
-/** Below this many runs, a rate cannot carry an escalation on its own. */
+/** Below this many measurements, a rate cannot carry an escalation on its own. */
 const SMALL_SAMPLE = 10;
-/** A serious rate, when at least two runs are affected on a blocking metric. */
+/** A serious rate, when at least two measurements are affected on a blocking metric. */
 const SERIOUS_RATE = 0.1;
 const SERIOUS_AFFECTED = 2;
 /** Mirrors RegressionConfig.min_effect_size on the server. */
@@ -105,13 +105,18 @@ export function metricSeverity(
  * Word discipline: "regressed" is a claim about change over time and is only
  * permitted with a baseline comparison behind it. Everything else is
  * "flagged", and every line carries its denominator.
+ *
+ * The denominator is *measurements* — eval rows, not evaluation runs and not
+ * traces. The scope bar counts evaluation runs, and a trace measured twice
+ * contributes two rows, so on the synthetic corpus one screen said "9 runs"
+ * and "33 of 294 runs flagged": both true, two different nouns.
  */
 export function severityCopy(metric: MetricHealth, gate?: GateVerdict): string {
   if (metric.count === 0) {
     const n = metric.degraded;
     return `${n} measurement${n === 1 ? "" : "s"} failed — not a finding`;
   }
-  const fraction = `${metric.failed} of ${metric.count} runs flagged`;
+  const fraction = `${metric.failed} of ${metric.count} measurements flagged`;
   return gate?.is_regression
     ? `Regressed against baseline — ${fraction}`
     : fraction;

@@ -6,20 +6,28 @@
 
 ## Last verified working
 
-Server sweep, 2026-08-08, after the analytics endpoint landed.
+Full sweep, 2026-08-09, after the Phase A Overview corrections landed.
 
 | Suite | Result | How verified |
 |---|---|---|
-| server (host) | 235 passed, 25 skipped | `python -m pytest tests -q` **from `server/`** |
-| server DB tests | 15 passed | `docker compose exec server python -m pytest tests/integration/test_evals_analytics_db.py -q -o asyncio_mode=auto` |
-| dashboard | 194 passed, 25 files | `npx vitest run` |
-| lint | All checks passed | `ruff check server/agentproof_server server/tests` from repo root |
-| types + lint (dashboard) | exit 0 | `npx tsc -b` and `npx eslint . --ext ts,tsx` |
-| live endpoint | 200, real figures | `GET /api/v1/evals/analytics?project=demo-research-agent&days=0` |
-| page in a browser | renders, 0 console errors | Playwright at 1440px and 375px against the live stack; no horizontal overflow |
+| server (host) | 262 passed, 29 skipped | `python -m pytest -q` **from `server/`** |
+| server DB tests | 19 passed | `docker compose exec -T server python -m pytest tests/integration/test_evals_analytics_db.py -q -o asyncio_mode=auto` |
+| dashboard | 218 passed, 26 files | `npx vitest run` |
+| lint | All checks passed | `ruff check .` from repo root |
+| types + lint (dashboard) | exit 0 | `npx tsc --noEmit` and `npx eslint src --max-warnings 0` |
+| live endpoint | 200, per-group means | `GET /api/v1/evals/analytics?project=synthetic-showcase&days=0` |
+| page in a browser | renders, 0 console errors | Playwright at 1440px and 390px against the live stack; no horizontal overflow |
 
-The 24 host skips are DB-backed integration tests (port 5432 conflict, see Known
+The host skips are DB-backed integration tests (port 5432 conflict, see Known
 issues) plus key-gated judge tests.
+
+Two container integration tests fail and are **not** from this work:
+`test_eval_pipeline.py::test_unfaithful_trace_scores_lower` (known gap #3, the
+`span_names: [writer]` mismatch) and `test_eval_pipeline_end_to_end` (404 on a
+seeded trace). Both fail identically with `api/analytics.py` reverted to `HEAD`,
+checked by swapping the file and re-running. `test_trace_pipeline.py` cannot be
+collected in the container at all — it imports the `agentproof` SDK, which the
+server image does not install.
 
 Application-hardening figures, verified 2026-08-08 before that merge, unchanged
 since: sdk 43 passed; demo_agent 37 passed, 1 skipped; dashboard 140 passed;
@@ -111,6 +119,53 @@ same trace in *two* runs still counts in each.
   track — 34 of `injection_resistance`'s 35 observations were invisible.
   Scores of exactly 1.0 now clamp into the 0.9–1.0 bin. *Verified: DB test
   asserts no 1.0 bucket exists; confirmed by eye in the browser.*
+
+## Built & verified — analytics depth, Phase A (Overview corrections)
+
+Design spec: `docs/superpowers/specs/2026-08-09-analytics-depth-design.md` §6.4.
+Phase B (the `synthetic-showcase` corpus) shipped first and is what exposed
+three of these four defects — at 25 traces and 4 runs they were invisible.
+
+- [x] **The pooled run mean is gone; three per-group series replace it.**
+  Metric type now maps to a group server-side (`metric_group()`: `llm_judge →
+  quality`, `security → safety`, `deterministic → budgets`, anything else →
+  `other`), and `eval_runs` rows carry `group_means` instead of one
+  `mean_score`. A judge score, a 0/1 breach flag and a binary budget check do
+  not share a unit. *Verified, measured on the 300-trace corpus: quality reads
+  0.925 → 0.785 (−0.140) across nine runs where the pooled figure read 0.972 →
+  0.918 (−0.054) — a real drift rendered as noise, diluted by six metrics
+  pinned at 1.000.*
+- [x] **Degraded rows excluded from run means**, as `metric_health` already
+  excluded them. Runs 1–3 of the demo corpus read a flat `0.750` because each
+  held 24 eval rows of which 6 were broken judge calls scoring 0.0 — six failed
+  API calls rendered as a quality score. *Verified: DB test seeds two clean 1.0
+  rows against two degraded ones and asserts 1.0, not 0.5; a companion test
+  asserts a run of only broken calls scores `null`, not zero.*
+- [x] **The overloaded word "runs" is fixed.** The same screen said `9 runs`
+  (scope bar, evaluation runs) and `33 of 294 runs flagged` (findings feed,
+  eval rows). Both true, two different nouns. Severity copy and the count chip
+  now say **measurements**, which is what `metric_health.count` holds — not
+  runs, and not traces either, since 25 traces produced 35 rows for a
+  deterministic metric. *Verified: two tests assert the copy contains neither
+  "run" nor "trace"; confirmed in the browser.*
+- [x] **A fourth defect, found by rendering the fix.** With three honest series
+  the 0–1 axis flattened the drift to a hairline — the same invisibility the
+  pooled mean produced, arriving by a different route. The axis now drops to
+  the tenth below the lowest point (capped at 0.9 so a perfect run keeps
+  visible range) **and says so**: *"Axis starts at 0.70, not 0."* A truncated
+  axis exaggerates movement, and an undeclared one is a deception whether or
+  not it was meant as one. *Verified: 4 unit tests on `axisFloor`, plus tests
+  that the disclosure appears when truncated and is absent when it is not.*
+- [x] **One taxonomy, not two.** `hasJudgeNoise` now reads the server-assigned
+  group rather than re-deriving from `metric_type`, and the ±0.2 judge band is
+  scoped to the judged group only — a latency budget is measured, not judged,
+  so drawing an uncertainty band around it invented uncertainty that is not
+  there. *Verified: a test asserts the deterministic group's delta carries no
+  "judge swing" text.*
+
+**TDD note.** The four new DB tests were checked genuinely red by swapping
+`api/analytics.py` back to `HEAD` and re-running — all four failed, then passed
+against the new file. The unit tests went red first in the ordinary way.
 
 ## Built & verified — application hardening (previous phase)
 
@@ -211,8 +266,12 @@ things.
 
 ## Next up
 
-1. Review and merge the Overview analytics branch.
-2. Decide the `span_names: [writer]` mismatch above — it is currently a failing
+1. **Phase C — Evals rebuild** (spec §6.1): metric strip, three group panels
+   keyed on the `group` field Phase A added, metric explanation registry, and a
+   `/evals/:metric` route surfacing judge reasoning from `details.per_span`.
+   `lib/groups.ts` already carries the labels, questions and colours it needs.
+2. Phase D (Security, §6.2) then Phase E (Traces, §6.3).
+3. Decide the `span_names: [writer]` mismatch above — it is currently a failing
    test and two traces with no faithfulness signal.
 3. Band 4 (latency and tokens as separate mini-charts) and span-role ranking
    are still deferred; see the design spec §7 for why.

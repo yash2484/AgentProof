@@ -56,32 +56,61 @@ def is_degraded(details: dict | None) -> bool:
     return False
 
 
+# Metric type -> the group whose panel and units it shares.
+#
+# A judge score (graded 0-1, +/-0.2 noise), a security verdict (0/1 per span,
+# min to the trace) and a budget check (binary compliance) are three different
+# quantities. Averaging across them was measured on the synthetic corpus: a
+# 0.15 drift in the judged metrics rendered as a flat line because six metrics
+# pinned at 1.000 diluted it. The mapping lives server-side so the client is
+# not re-deriving the taxonomy.
+METRIC_GROUPS = {
+    "llm_judge": "quality",
+    "security": "safety",
+    "deterministic": "budgets",
+}
+
+# ``composite`` exists in the type system with no members and no chart form of
+# its own, so it lands here with anything else unrecognised rather than being
+# quietly folded into a group whose units it does not share.
+UNGROUPED = "other"
+
+
+def metric_group(metric_type: str | None) -> str:
+    """Which panel a metric belongs to, derived from its type."""
+    return METRIC_GROUPS.get(metric_type or "", UNGROUPED)
+
+
 def cluster_eval_runs(
-    rows: Sequence[tuple[datetime, Sequence[str], float, int, int]],
+    rows: Sequence[tuple[datetime, str, Sequence[str], float, int, int]],
     gap_seconds: int = RUN_GAP_SECONDS,
 ) -> list[dict]:
     """Fold per-timestamp eval aggregates into runs, splitting on time gaps.
 
-    ``rows`` are ``(evaluated_at, trace_ids, score_sum, score_count,
-    degraded)`` ordered oldest-first -- SQL has already reduced every eval row
-    down to one row per evaluation instant, so this fold sees at most one row
-    per evaluated trace.
+    ``rows`` are ``(evaluated_at, metric_type, trace_ids, score_sum,
+    score_count, degraded)`` ordered oldest-first -- SQL has already reduced
+    every eval row down to one row per evaluation instant per metric type.
 
     ``trace_count`` is *distinct* traces within the run, which is why the ids
     travel rather than a count: re-evaluating the same batch inside one window
-    reported 26 traces for a project holding 25. Across runs the ids are not
-    deduped -- re-evaluating a trace next week is a real data point for that
-    run.
+    reported 26 traces for a project holding 25, and one trace measured by two
+    metric types now arrives as two rows. Across runs the ids are not deduped
+    -- re-evaluating a trace next week is a real data point for that run.
 
-    ``mean_score`` is the row-weighted mean (``score_sum / score_count``), not
-    the mean of per-trace means: a trace evaluated on 8 metrics must not carry
-    the same weight as one evaluated on 2.
+    ``group_means`` is one row-weighted mean per group (``score_sum /
+    score_count``), never a pooled figure across groups. Weighting is by eval
+    row, not by trace: a trace evaluated on 8 metrics must not carry the same
+    weight as one evaluated on 2. Every group seen anywhere in the input gets
+    a key in every run so the client's series stay aligned; a group that run
+    did not measure is ``None``, because a zero would draw a cliff that never
+    happened.
     """
     runs: list[dict] = []
     current: dict | None = None
     previous_at: datetime | None = None
+    groups_seen: set[str] = set()
 
-    for evaluated_at, trace_ids, score_sum, score_count, degraded in rows:
+    for evaluated_at, metric_type, trace_ids, score_sum, score_count, degraded in rows:
         starts_new_run = (
             current is None
             or previous_at is None
@@ -91,23 +120,29 @@ def cluster_eval_runs(
             current = {
                 "run_at": evaluated_at,
                 "_trace_ids": set(),
-                "_score_sum": 0.0,
-                "_score_count": 0,
+                "_by_group": {},
                 "degraded": 0,
             }
             runs.append(current)
         assert current is not None  # narrowed by the branch above
+
+        group = metric_group(metric_type)
+        groups_seen.add(group)
+        totals = current["_by_group"].setdefault(group, [0.0, 0])
+        totals[0] += float(score_sum or 0.0)
+        totals[1] += int(score_count or 0)
+
         current["_trace_ids"].update(trace_ids or ())
-        current["_score_sum"] += float(score_sum or 0.0)
-        current["_score_count"] += int(score_count or 0)
         current["degraded"] += int(degraded or 0)
         previous_at = evaluated_at
 
     for run in runs:
-        count = run.pop("_score_count")
-        total = run.pop("_score_sum")
+        by_group = run.pop("_by_group")
         run["trace_count"] = len(run.pop("_trace_ids"))
-        run["mean_score"] = (total / count) if count else None
+        run["group_means"] = {}
+        for group in sorted(groups_seen):
+            total, count = by_group.get(group, (0.0, 0))
+            run["group_means"][group] = (total / count) if count else None
     return runs
 
 
@@ -190,25 +225,36 @@ def _trace_volume_stmt(project: str | None, since: datetime | None):
 
 
 def _eval_timeline_stmt(project: str | None, since: datetime | None):
-    """One row per evaluation instant, ready for :func:`cluster_eval_runs`.
+    """One row per evaluation instant per metric type, for :func:`cluster_eval_runs`.
 
-    This is the reduction that keeps the fold cheap: 248 eval rows become 31
-    rows, one per evaluated trace, before any Python touches them.
+    This is the reduction that keeps the fold cheap: 248 eval rows become a
+    few dozen before any Python touches them. The metric type is a group-by
+    key because run means are per group -- a judge score and a breach flag do
+    not share a unit.
+
+    Degraded rows are excluded from the score sums exactly as
+    ``_metric_health_stmt`` excludes them. The judge fails closed to 0.0, so
+    without this a run of six broken API calls reads as a 0.750 quality score.
+    They stay in ``degraded`` where they can be reported as what they are.
     """
     degraded = _degraded_expr()
+    scored = ~degraded
     stmt = select(
         EvalResultModel.evaluated_at.label("evaluated_at"),
+        EvalResultModel.metric_type.label("metric_type"),
         # The ids travel, not a count: only the fold can tell whether the same
         # trace turns up again later inside the same run.
         func.array_agg(EvalResultModel.trace_id.distinct()).label("trace_ids"),
-        func.sum(EvalResultModel.score).label("score_sum"),
-        func.count().label("score_count"),
+        func.sum(case((scored, EvalResultModel.score), else_=0.0)).label(
+            "score_sum"
+        ),
+        func.sum(case((scored, 1), else_=0)).label("score_count"),
         func.sum(case((degraded, 1), else_=0)).label("degraded"),
     ).select_from(EvalResultModel)
     stmt = _scope_evals(stmt, project, since)
-    return stmt.group_by(EvalResultModel.evaluated_at).order_by(
-        EvalResultModel.evaluated_at.asc()
-    )
+    return stmt.group_by(
+        EvalResultModel.evaluated_at, EvalResultModel.metric_type
+    ).order_by(EvalResultModel.evaluated_at.asc())
 
 
 def _metric_health_stmt(project: str | None, since: datetime | None):
@@ -435,6 +481,7 @@ def _metric_health_payload(
             {
                 "metric_name": name,
                 "metric_type": metric_type,
+                "group": metric_group(metric_type),
                 "ci_block": ci_block_by_metric.get(name, True),
                 "mean_score": _optional_float(mean_score),
                 "std": std_value,
@@ -512,7 +559,8 @@ def _analytics_payload(
             {
                 "run_at": run["run_at"].isoformat(),
                 "trace_count": run["trace_count"],
-                "mean_score": run["mean_score"],
+                # Per group, never pooled: see cluster_eval_runs.
+                "group_means": run["group_means"],
                 "degraded": run["degraded"],
             }
             for run in runs

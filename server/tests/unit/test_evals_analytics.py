@@ -18,6 +18,7 @@ from agentproof_server.api.analytics import (
     _window_start,
     cluster_eval_runs,
     is_degraded,
+    metric_group,
 )
 
 T0 = datetime(2026, 8, 8, 6, 39, 0, tzinfo=UTC)
@@ -26,6 +27,18 @@ SINCE = datetime(2026, 7, 9, 0, 0, 0, tzinfo=UTC)
 
 def _tick(seconds: float) -> datetime:
     return T0 + timedelta(seconds=seconds)
+
+
+def _tl(
+    seconds: float,
+    trace_ids: list[str],
+    score_sum: float = 8.0,
+    score_count: int = 8,
+    degraded: int = 0,
+    metric_type: str = "llm_judge",
+) -> tuple:
+    """A timeline row as ``_eval_timeline_stmt`` selects it."""
+    return (_tick(seconds), metric_type, trace_ids, score_sum, score_count, degraded)
 
 
 def _sql(stmt) -> str:
@@ -88,7 +101,7 @@ def test_missing_details_is_not_degraded():
 def test_thirteen_traces_evaluated_back_to_back_are_one_run():
     # The measured case: one batch of 13 traces, each stamped a few seconds
     # apart. Equality grouping would report 13 runs; there were 2 batches.
-    rows = [(_tick(i * 4), [f"tr-{i}"], 8.0, 8, 0) for i in range(13)]
+    rows = [_tl(i * 4, [f"tr-{i}"]) for i in range(13)]
 
     runs = cluster_eval_runs(rows)
 
@@ -101,10 +114,10 @@ def test_a_trace_evaluated_twice_in_one_run_counts_once():
     # single window reported trace_count 26 for a project holding 25 traces.
     # A run's trace count is distinct traces, not eval events.
     rows = [
-        (_tick(0), ["tr-a"], 8.0, 8, 0),
-        (_tick(4), ["tr-b"], 8.0, 8, 0),
-        (_tick(8), ["tr-a"], 8.0, 8, 0),
-        (_tick(12), ["tr-b"], 8.0, 8, 0),
+        _tl(0, ["tr-a"]),
+        _tl(4, ["tr-b"]),
+        _tl(8, ["tr-a"]),
+        _tl(12, ["tr-b"]),
     ]
 
     runs = cluster_eval_runs(rows)
@@ -113,21 +126,28 @@ def test_a_trace_evaluated_twice_in_one_run_counts_once():
     assert runs[0]["trace_count"] == 2
 
 
+def test_one_trace_measured_by_two_metric_types_counts_once():
+    # SQL now emits one row per (instant, metric_type), so a single trace
+    # arrives split across groups. Summing those rows' trace ids without a set
+    # would report two traces where one was evaluated.
+    rows = [
+        _tl(0, ["tr-a"], metric_type="llm_judge"),
+        _tl(0, ["tr-a"], metric_type="security"),
+    ]
+
+    assert cluster_eval_runs(rows)[0]["trace_count"] == 1
+
+
 def test_the_same_trace_in_two_runs_counts_in_each():
     # Re-evaluating a trace next week is a real data point for that run;
     # deduping across runs would erase it.
-    rows = [(_tick(0), ["tr-a"], 8.0, 8, 0), (_tick(4000), ["tr-a"], 8.0, 8, 0)]
+    rows = [_tl(0, ["tr-a"]), _tl(4000, ["tr-a"])]
 
     assert [r["trace_count"] for r in cluster_eval_runs(rows)] == [1, 1]
 
 
 def test_a_gap_longer_than_the_threshold_starts_a_new_run():
-    rows = [
-        (_tick(0), ["a"], 8.0, 8, 0),
-        (_tick(4), ["b"], 8.0, 8, 0),
-        (_tick(4 + 600), ["c"], 8.0, 8, 0),
-        (_tick(4 + 604), ["d"], 8.0, 8, 0),
-    ]
+    rows = [_tl(0, ["a"]), _tl(4, ["b"]), _tl(604, ["c"]), _tl(608, ["d"])]
 
     runs = cluster_eval_runs(rows)
 
@@ -136,36 +156,17 @@ def test_a_gap_longer_than_the_threshold_starts_a_new_run():
 
 
 def test_a_gap_exactly_at_the_threshold_stays_in_the_same_run():
-    rows = [(_tick(0), ["a"], 8.0, 8, 0), (_tick(120), ["b"], 8.0, 8, 0)]
-
-    assert len(cluster_eval_runs(rows, gap_seconds=120)) == 1
+    assert len(cluster_eval_runs([_tl(0, ["a"]), _tl(120, ["b"])], gap_seconds=120)) == 1
 
 
 def test_run_at_is_the_earliest_timestamp_in_the_cluster():
-    rows = [(_tick(0), ["a"], 8.0, 8, 0), (_tick(30), ["b"], 8.0, 8, 0)]
-
-    assert cluster_eval_runs(rows)[0]["run_at"] == T0
-
-
-def test_mean_score_is_weighted_by_eval_rows_not_by_trace():
-    # One trace scored 1.0 on 8 metrics, the next 0.0 on 2. The row-weighted
-    # mean is 0.8; averaging the two per-trace means would give 0.5.
-    rows = [(_tick(0), ["a"], 8.0, 8, 0), (_tick(5), ["b"], 0.0, 2, 0)]
-
-    assert cluster_eval_runs(rows)[0]["mean_score"] == 0.8
+    assert cluster_eval_runs([_tl(0, ["a"]), _tl(30, ["b"])])[0]["run_at"] == T0
 
 
 def test_degraded_measurements_are_summed_across_the_run():
-    rows = [(_tick(0), ["a"], 8.0, 8, 1), (_tick(5), ["b"], 8.0, 8, 2)]
+    rows = [_tl(0, ["a"], degraded=1), _tl(5, ["b"], degraded=2)]
 
     assert cluster_eval_runs(rows)[0]["degraded"] == 3
-
-
-def test_a_run_with_no_scores_reports_a_null_mean_not_zero():
-    # "Nothing to average" and "everything scored zero" are different facts.
-    rows = [(_tick(0), ["a"], 0.0, 0, 0)]
-
-    assert cluster_eval_runs(rows)[0]["mean_score"] is None
 
 
 def test_no_eval_rows_yield_no_runs():
@@ -175,9 +176,89 @@ def test_no_eval_rows_yield_no_runs():
 def test_zero_gap_tolerance_reproduces_the_thirteen_run_miscount():
     # Pins what the gap is actually buying: the same 13 rows split into 13
     # runs the moment tolerance goes away, which is what equality grouping did.
-    rows = [(_tick(i * 4), [f"tr-{i}"], 8.0, 8, 0) for i in range(13)]
+    rows = [_tl(i * 4, [f"tr-{i}"]) for i in range(13)]
 
     assert len(cluster_eval_runs(rows, gap_seconds=0)) == 13
+
+
+# ---------------------------------------------------------------------------
+# Metric groups and per-group run means
+# ---------------------------------------------------------------------------
+#
+# A judge score, a 0/1 breach flag and a budget-compliance bit are three
+# different units. Pooling them was measured on the synthetic corpus: a
+# -0.15 drift in the judged metrics came out as a flat 0.974 -> 0.929 line
+# because six metrics pinned at 1.000 diluted it.
+
+
+def test_judge_metrics_group_as_answer_quality():
+    assert metric_group("llm_judge") == "quality"
+
+
+def test_security_metrics_group_as_adversarial_safety():
+    assert metric_group("security") == "safety"
+
+
+def test_deterministic_metrics_group_as_budgets_and_contracts():
+    assert metric_group("deterministic") == "budgets"
+
+
+def test_an_unrecognised_metric_type_gets_its_own_bucket():
+    # ``composite`` is in the type system with no members and no defined chart
+    # form, so it lands here alongside anything else unrecognised rather than
+    # being silently averaged into a group it does not share units with.
+    assert metric_group("composite") == "other"
+    assert metric_group("something-new") == "other"
+
+
+def test_run_means_are_reported_per_group_never_pooled():
+    rows = [
+        _tl(0, ["a"], score_sum=1.6, score_count=2, metric_type="llm_judge"),
+        _tl(4, ["a"], score_sum=3.0, score_count=3, metric_type="deterministic"),
+    ]
+
+    run = cluster_eval_runs(rows)[0]
+
+    assert run["group_means"]["quality"] == 0.8
+    assert run["group_means"]["budgets"] == 1.0
+    # The pooled 0.92 is the number the design brief removed.
+    assert "mean_score" not in run
+
+
+def test_a_group_mean_is_row_weighted_within_the_group():
+    # One trace scored 1.0 on 8 rows, the next 0.0 on 2. Row-weighted is 0.8;
+    # averaging the two per-trace means would give 0.5.
+    rows = [_tl(0, ["a"], 8.0, 8), _tl(5, ["b"], 0.0, 2)]
+
+    assert cluster_eval_runs(rows)[0]["group_means"]["quality"] == 0.8
+
+
+def test_a_group_absent_from_a_run_reports_null_not_zero():
+    # Series have to stay aligned across runs, so every group seen anywhere
+    # gets a key in every run -- but a group nobody measured is unknown, not
+    # zero, and a zero would draw a cliff that never happened.
+    rows = [
+        _tl(0, ["a"], metric_type="llm_judge"),
+        _tl(0, ["a"], metric_type="security"),
+        _tl(4000, ["b"], metric_type="llm_judge"),
+    ]
+
+    runs = cluster_eval_runs(rows)
+
+    assert runs[1]["group_means"]["safety"] is None
+    assert set(runs[0]["group_means"]) == set(runs[1]["group_means"])
+
+
+def test_a_run_whose_rows_all_degraded_reports_a_null_mean_not_zero():
+    # "Nothing to average" and "everything scored zero" are different facts,
+    # and the judge fails closed to 0.0 -- so this is the difference between
+    # "six API calls broke" and "quality collapsed".
+    rows = [_tl(0, ["a"], score_sum=0.0, score_count=0, degraded=6)]
+
+    run = cluster_eval_runs(rows)[0]
+
+    assert run["group_means"]["quality"] is None
+    assert run["degraded"] == 6
 
 
 # ---------------------------------------------------------------------------
@@ -250,14 +331,25 @@ def test_trace_volume_buckets_by_day_and_splits_ok_from_error():
     assert "'error'" in sql
 
 
-def test_eval_timeline_returns_one_row_per_evaluation_instant():
+def test_eval_timeline_returns_one_row_per_instant_per_metric_type():
     # The clustering fold runs over this, so SQL must have already collapsed
-    # every eval row down to its timestamp.
+    # every eval row down to its timestamp. The metric type rides along
+    # because run means are per group -- pooling a judge score with a breach
+    # flag is the defect this split exists to remove.
     sql = _sql(_eval_timeline_stmt("demo", SINCE))
-    assert "group by" in sql
-    assert "eval_results.evaluated_at" in sql
+    assert (
+        "group by eval_results.evaluated_at, eval_results.metric_type" in sql
+    )
     assert "array_agg(distinct eval_results.trace_id)" in sql
-    assert "sum(eval_results.score)" in sql
+
+
+def test_eval_timeline_excludes_degraded_rows_from_the_score_sum():
+    # metric_health already excludes them. A run of six failed judge calls
+    # read as a 0.750 quality score because this statement did not.
+    sql = _sql(_eval_timeline_stmt("demo", SINCE))
+    assert "sum(eval_results.score)" not in sql
+    assert "jsonb_path_exists" in sql
+    assert "sum(case when" in sql
 
 
 def test_eval_timeline_is_ordered_oldest_first():
@@ -371,9 +463,7 @@ def _payload(**overrides):
         "generated_at": T0,
         "trace_totals": (31, 9478, 0.31),
         "volume_rows": [(T0, 13, 12, 1)],
-        "timeline_rows": [
-            (_tick(i * 4), [f"tr-{i}"], 8.0, 8, 0) for i in range(13)
-        ],
+        "timeline_rows": [_tl(i * 4, [f"tr-{i}"]) for i in range(13)],
         "metric_rows": [_metric_row()],
         "bucket_rows": [("faithfulness", 0.2, 1)],
         "evaluated_row": (30, 1),
@@ -425,6 +515,35 @@ def test_eval_runs_are_clustered_not_counted_by_timestamp():
 
     assert payload["totals"]["eval_runs"] == 1
     assert len(payload["eval_runs"]) == 1
+
+
+def test_metric_health_carries_the_group_so_the_client_re_derives_nothing():
+    payload = _payload(
+        metric_rows=[
+            _metric_row(name="faithfulness", metric_type="llm_judge"),
+            _metric_row(name="injection_resistance", metric_type="security"),
+            _metric_row(name="cost_budget", metric_type="deterministic"),
+        ]
+    )
+
+    assert [m["group"] for m in payload["metric_health"]] == [
+        "quality",
+        "safety",
+        "budgets",
+    ]
+
+
+def test_run_rows_carry_per_group_means_and_no_pooled_one():
+    payload = _payload(
+        timeline_rows=[
+            _tl(0, ["a"], 1.6, 2, metric_type="llm_judge"),
+            _tl(4, ["a"], 3.0, 3, metric_type="deterministic"),
+        ]
+    )
+
+    run = payload["eval_runs"][0]
+    assert run["group_means"] == {"quality": 0.8, "budgets": 1.0}
+    assert "mean_score" not in run
 
 
 def test_measurement_health_splits_scored_degraded_and_pending():

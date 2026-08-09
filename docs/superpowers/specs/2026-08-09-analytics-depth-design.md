@@ -219,9 +219,16 @@ No redesign. Three fixes:
 4. **Fix the overloaded word "runs".** Confirmed against the synthetic corpus:
    the scope bar says `9 runs` while the findings feed says
    `33 of 294 runs flagged` on the same screen. Both are true and they mean
-   different things — an *evaluation run* versus an *evaluated trace*. One of
-   them has to change, and it is the severity copy: `33 of 294 traces`.
+   different things — an *evaluation run* versus what the metric's `count`
+   holds. One of them has to change, and it is the severity copy.
    Invisible at 25 traces and 4 runs; glaring at 300 and 9.
+
+   **Resolved as `33 of 294 measurements`, not `traces`.** This item and item 3
+   contradicted each other as first written: item 3 establishes that `count`
+   holds *eval rows* (25 traces produced 35 rows for a deterministic metric),
+   so calling them traces would fix one wrong noun with another. "Measurements"
+   is the word that is true of the quantity and collides with neither the scope
+   bar's runs nor the volume card's traces.
 
 ## 7. Server work
 
@@ -289,13 +296,13 @@ empty, and the two that matter most here —
 
 Each phase ends green and useful on its own.
 
-| Phase | Contents |
-|---|---|
-| **A** | Overview corrections (§6.4) + the server work they need. Smallest, fixes a live wrong number. |
-| **B** | `synthetic-showcase` generator. Unblocks judging every later design against realistic density. |
-| **C** | Evals rebuild: metric strip, three group panels, metric detail with judge reasoning. |
-| **D** | Security rebuild: posture strip, breach timeline, findings list, coverage. |
-| **E** | Traces: eval outcome columns, row expansion, outcome filter, delete relocation. |
+| Phase | Contents | Status |
+|---|---|---|
+| **A** | Overview corrections (§6.4) + the server work they need. Smallest, fixes a live wrong number. | **Done** — plus a fifth fix the corrected panel exposed: a 0–1 axis flattened the drift the per-group split had just made visible, so the axis truncates and declares it. |
+| **B** | `synthetic-showcase` generator. Unblocks judging every later design against realistic density. | **Done** — 300 traces / 180 days / 9 runs; exposed three of Phase A's four defects. |
+| **C** | Evals rebuild: metric strip, three group panels, metric detail with judge reasoning. | Next |
+| **D** | Security rebuild: posture strip, breach timeline, findings list, coverage. | |
+| **E** | Traces: eval outcome columns, row expansion, outcome filter, delete relocation. | |
 
 ## 12. Decisions taken
 

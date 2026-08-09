@@ -47,7 +47,9 @@ describe("MetricHealthPanel", () => {
   it("carries an n-count so the reader knows how much evidence there is", () => {
     renderWithProviders(<MetricHealthPanel analytics={sampleAnalytics} />);
     const row = screen.getByTestId("ceiling-row-cost_budget");
-    expect(row).toHaveTextContent("n=35");
+    // Eval rows, not traces: 25 traces produced 35 measurements of a
+    // deterministic metric, and "n=35" next to "25 traces" needs the noun.
+    expect(row).toHaveTextContent("n=35 measurements");
   });
 
   it("expands a ceiling metric into the full treatment on request", async () => {
@@ -78,7 +80,7 @@ describe("MetricHealthPanel", () => {
   it("states one failure out of thirty-five, never a bare adjective", () => {
     renderWithProviders(<MetricHealthPanel analytics={sampleAnalytics} />);
     expect(screen.getByTestId("metric-row-injection_resistance")).toHaveTextContent(
-      "1 of 35 runs flagged",
+      "1 of 35 measurements flagged",
     );
   });
 

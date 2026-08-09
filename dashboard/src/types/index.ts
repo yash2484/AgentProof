@@ -106,6 +106,15 @@ export interface EvalSummary {
 
 export type MetricType = "deterministic" | "llm_judge" | "security" | "composite";
 
+/**
+ * The panel a metric belongs to, assigned server-side from `metric_type`.
+ *
+ * Three types, three units, three questions — see `lib/groups.ts`. `other`
+ * catches `composite` (in the type system, no members) and anything the
+ * server adds later.
+ */
+export type MetricGroup = "quality" | "safety" | "budgets" | "other";
+
 export interface AnalyticsTotals {
   traces: number;
   /** Gap-clustered runs, not distinct `evaluated_at` values. */
@@ -133,14 +142,23 @@ export interface AnalyticsEvalRun {
   run_at: string;
   /** Distinct traces in the run. */
   trace_count: number;
-  /** Row-weighted mean; null when the run scored nothing. */
-  mean_score: number | null;
+  /**
+   * Row-weighted mean per group, degraded rows excluded. Never pooled across
+   * groups — a judge score and a breach flag do not share a unit.
+   *
+   * Every group seen anywhere in the window has a key, so series stay aligned
+   * across runs. Null means that run measured nothing in that group, which is
+   * not the same as scoring zero.
+   */
+  group_means: Partial<Record<MetricGroup, number | null>>;
   degraded: number;
 }
 
 export interface MetricHealth {
   metric_name: string;
   metric_type: MetricType | string;
+  /** Assigned server-side from `metric_type`; the client re-derives nothing. */
+  group: MetricGroup | string;
   ci_block: boolean;
   /** Over non-degraded rows only. */
   mean_score: number | null;

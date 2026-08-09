@@ -93,8 +93,12 @@ export function SyntheticBadge({ compact = false }: { compact?: boolean }) {
  *
  * Pairs with the ceiling strip's muted "no variance observed" label: the
  * sample size is what turns "passed" into "passed, on this much evidence".
+ *
+ * The default noun is "measurements" because that is what a metric's `count`
+ * holds — eval rows. It is neither traces (25 traces produced 35 rows for a
+ * deterministic metric) nor evaluation runs (the scope bar's noun).
  */
-export function CountChip({ n, label = "runs" }: { n: number; label?: string }) {
+export function CountChip({ n, label = "measurements" }: { n: number; label?: string }) {
   return (
     <Box
       component="span"

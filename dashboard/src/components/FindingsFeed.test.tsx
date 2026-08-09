@@ -35,7 +35,7 @@ describe("FindingsFeed", () => {
   it("states the fraction on every finding", () => {
     renderWithProviders(<FindingsFeed analytics={sampleAnalytics} project="demo" />);
     expect(screen.getByTestId("finding-injection_resistance")).toHaveTextContent(
-      "1 of 35 runs flagged",
+      "1 of 35 measurements flagged",
     );
   });
 

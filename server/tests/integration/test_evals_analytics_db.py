@@ -81,8 +81,13 @@ async def _seed_trace(
     status: str = "ok",
     tokens: int = 100,
     cost_usd: float = 0.01,
+    types: dict[str, str] | None = None,
 ) -> str:
-    """Insert one trace plus its eval rows, all stamped ``evaluated_at``."""
+    """Insert one trace plus its eval rows, all stamped ``evaluated_at``.
+
+    ``types`` overrides ``metric_type`` per metric name; anything unnamed is a
+    judge metric, which is what most of these tests are about.
+    """
     trace_id = f"{project}-tr-{index}"
     session.add(
         TraceModel(
@@ -106,7 +111,7 @@ async def _seed_trace(
                 trace_id=trace_id,
                 span_id=None,
                 metric_name=metric_name,
-                metric_type="llm_judge",
+                metric_type=(types or {}).get(metric_name, "llm_judge"),
                 score=score,
                 threshold=0.7,
                 passed=passed,
@@ -266,6 +271,136 @@ async def test_two_batches_an_hour_apart_report_two_runs(session: AsyncSession):
 
         assert payload["totals"]["eval_runs"] == 2
         assert [r["trace_count"] for r in payload["eval_runs"]] == [3, 3]
+    finally:
+        await _cleanup(session, project)
+
+
+async def test_a_run_mean_is_reported_per_group_never_pooled(session: AsyncSession):
+    """Three units, three series.
+
+    The judged metric sits at 0.50 and the budget metric at 1.00. Pooled they
+    average to 0.75, which describes neither and is the number the Overview
+    used to draw. Measured on the synthetic corpus: a 0.15 drift in the judged
+    metrics rendered flat because six metrics pinned at 1.000 diluted it.
+    """
+    project = f"an-grp-{uuid.uuid4().hex[:8]}"
+    now = datetime.now(UTC)
+    try:
+        await _seed_trace(
+            session, project, 0,
+            [
+                ("faithfulness", 0.5, False, JUDGE_OK),
+                ("cost_budget", 1.0, True, DETERMINISTIC),
+                ("injection_resistance", 1.0, True, JUDGE_OK),
+            ],
+            now,
+            types={
+                "cost_budget": "deterministic",
+                "injection_resistance": "security",
+            },
+        )
+
+        payload = await get_evals_analytics(db=session, project=project, days=30)
+
+        run = payload["eval_runs"][0]
+        assert run["group_means"] == {
+            "quality": 0.5,
+            "budgets": 1.0,
+            "safety": 1.0,
+        }
+        assert "mean_score" not in run
+        # One trace, three metric types -- SQL emits three rows for it now.
+        assert run["trace_count"] == 1
+    finally:
+        await _cleanup(session, project)
+
+
+async def test_a_run_mean_excludes_degraded_rows_like_metric_health_does(
+    session: AsyncSession,
+):
+    """The 0.750 flat line, reproduced and fixed.
+
+    Runs 1-3 of the demo corpus read 0.750 because each held 24 eval rows of
+    which 6 were broken judge calls scoring 0.0. That is six failed API calls
+    rendered as a quality score. Here: two clean 1.0 rows and two degraded
+    ones. Pooled it is 0.5; excluding the broken measurements it is 1.0.
+    """
+    project = f"an-rundeg-{uuid.uuid4().hex[:8]}"
+    now = datetime.now(UTC)
+    try:
+        await _seed_trace(
+            session, project, 0,
+            [
+                ("faithfulness", 1.0, True, JUDGE_OK),
+                ("relevance", 0.0, False, JUDGE_ERROR),
+            ],
+            now,
+        )
+        await _seed_trace(
+            session, project, 1,
+            [
+                ("faithfulness", 1.0, True, JUDGE_OK),
+                ("relevance", 0.0, False, JUDGE_REFUSAL),
+            ],
+            now + timedelta(seconds=4),
+        )
+
+        payload = await get_evals_analytics(db=session, project=project, days=30)
+
+        run = payload["eval_runs"][0]
+        assert run["group_means"]["quality"] == 1.0
+        assert run["degraded"] == 2
+    finally:
+        await _cleanup(session, project)
+
+
+async def test_a_run_of_only_broken_judge_calls_scores_null_not_zero(
+    session: AsyncSession,
+):
+    """Nothing measured is not zero quality. The judge fails closed to 0.0."""
+    project = f"an-allbad-{uuid.uuid4().hex[:8]}"
+    now = datetime.now(UTC)
+    try:
+        await _seed_trace(
+            session, project, 0,
+            [("faithfulness", 0.0, False, JUDGE_ERROR)], now,
+        )
+
+        payload = await get_evals_analytics(db=session, project=project, days=30)
+
+        assert payload["eval_runs"][0]["group_means"]["quality"] is None
+    finally:
+        await _cleanup(session, project)
+
+
+async def test_metric_health_carries_the_group_for_each_metric_type(
+    session: AsyncSession,
+):
+    project = f"an-mgrp-{uuid.uuid4().hex[:8]}"
+    now = datetime.now(UTC)
+    try:
+        await _seed_trace(
+            session, project, 0,
+            [
+                ("faithfulness", 1.0, True, JUDGE_OK),
+                ("cost_budget", 1.0, True, DETERMINISTIC),
+                ("injection_resistance", 1.0, True, JUDGE_OK),
+            ],
+            now,
+            types={
+                "cost_budget": "deterministic",
+                "injection_resistance": "security",
+            },
+        )
+
+        payload = await get_evals_analytics(db=session, project=project, days=30)
+
+        groups = {m["metric_name"]: m["group"] for m in payload["metric_health"]}
+        assert groups == {
+            "faithfulness": "quality",
+            "cost_budget": "budgets",
+            "injection_resistance": "safety",
+        }
     finally:
         await _cleanup(session, project)
 

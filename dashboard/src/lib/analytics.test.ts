@@ -14,6 +14,7 @@ function metric(overrides: Partial<MetricHealth> = {}): MetricHealth {
   return {
     metric_name: "faithfulness",
     metric_type: "llm_judge",
+    group: "quality",
     ci_block: true,
     mean_score: 0.9,
     std: 0.15,
@@ -182,11 +183,29 @@ describe("metricSeverity", () => {
 
 describe("severityCopy", () => {
   it("always states the fraction, never a bare adjective", () => {
-    expect(severityCopy(metric({ failed: 1, count: 31 }))).toBe("1 of 31 runs flagged");
+    expect(severityCopy(metric({ failed: 1, count: 31 }))).toBe(
+      "1 of 31 measurements flagged",
+    );
   });
 
   it("says zero of n rather than just passing", () => {
-    expect(severityCopy(metric({ failed: 0, count: 31 }))).toBe("0 of 31 runs flagged");
+    expect(severityCopy(metric({ failed: 0, count: 31 }))).toBe(
+      "0 of 31 measurements flagged",
+    );
+  });
+
+  it("never calls an eval row a run", () => {
+    // The scope bar says "9 runs" meaning evaluation runs; this denominator
+    // counts eval rows, and a trace evaluated twice contributes twice. On the
+    // synthetic corpus the same screen read "9 runs" and "33 of 294 runs
+    // flagged" — both true, two different nouns.
+    expect(severityCopy(metric({ failed: 33, count: 294 }))).not.toContain("run");
+  });
+
+  it("never calls an eval row a trace either", () => {
+    // 25 traces produced 35 rows for a deterministic metric. The denominator
+    // is measurements, and it has to say so.
+    expect(severityCopy(metric({ failed: 1, count: 35 }))).not.toContain("trace");
   });
 
   it("calls a broken measurement what it is, in its own words", () => {
@@ -207,7 +226,7 @@ describe("severityCopy", () => {
       gate({ is_regression: true }),
     );
     expect(copy).toContain("Regressed against baseline");
-    expect(copy).toContain("2 of 20 runs flagged");
+    expect(copy).toContain("2 of 20 measurements flagged");
   });
 
   it("never says regressed without one", () => {

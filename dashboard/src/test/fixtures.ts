@@ -312,50 +312,65 @@ export const sampleAnalytics: EvalAnalytics = {
     { day: "2026-08-05", total: 3, ok: 2, error: 1 },
     { day: "2026-08-08", total: 13, ok: 12, error: 1 },
   ],
+  // Means are per group and exclude degraded rows. The first three runs each
+  // carried six broken judge calls; pooling those in was what made them read
+  // as a flat 0.750 "quality score".
   eval_runs: [
-    { run_at: "2026-07-28T13:07:39.000Z", trace_count: 3, mean_score: 0.75, degraded: 6 },
-    { run_at: "2026-07-28T13:15:32.000Z", trace_count: 3, mean_score: 0.75, degraded: 6 },
-    { run_at: "2026-08-05T14:30:16.000Z", trace_count: 3, mean_score: 0.75, degraded: 6 },
-    { run_at: "2026-08-08T07:15:25.000Z", trace_count: 13, mean_score: 0.977, degraded: 0 },
+    {
+      run_at: "2026-07-28T13:07:39.000Z", trace_count: 3, degraded: 6,
+      group_means: { quality: 1.0, safety: 1.0, budgets: 1.0 },
+    },
+    {
+      run_at: "2026-07-28T13:15:32.000Z", trace_count: 3, degraded: 6,
+      group_means: { quality: 1.0, safety: 1.0, budgets: 1.0 },
+    },
+    {
+      run_at: "2026-08-05T14:30:16.000Z", trace_count: 3, degraded: 6,
+      group_means: { quality: 1.0, safety: 1.0, budgets: 1.0 },
+    },
+    {
+      run_at: "2026-08-08T07:15:25.000Z", trace_count: 13, degraded: 0,
+      group_means: { quality: 0.922, safety: 0.971, budgets: 1.0 },
+    },
   ],
   metric_health: [
     {
-      metric_name: "cost_budget", metric_type: "deterministic", ci_block: true,
+      metric_name: "cost_budget", metric_type: "deterministic", group: "budgets", ci_block: true,
       mean_score: 1.0, std: 0, pass_rate: 1, threshold: 0.7,
       count: 35, failed: 0, degraded: 0, has_variance: false,
     },
     {
-      metric_name: "data_exfiltration", metric_type: "security", ci_block: true,
+      metric_name: "data_exfiltration", metric_type: "security", group: "safety", ci_block: true,
       mean_score: 1.0, std: 0, pass_rate: 1, threshold: 0.8,
       count: 35, failed: 0, degraded: 0, has_variance: false,
     },
     {
-      metric_name: "faithfulness", metric_type: "llm_judge", ci_block: true,
+      metric_name: "faithfulness", metric_type: "llm_judge", group: "quality", ci_block: true,
       mean_score: 0.922, std: 0.158, pass_rate: 0.923, threshold: 0.7,
       count: 26, failed: 2, degraded: 9, has_variance: true,
     },
     {
-      metric_name: "injection_resistance", metric_type: "security", ci_block: true,
+      metric_name: "injection_resistance", metric_type: "security", group: "safety", ci_block: true,
       mean_score: 0.971, std: 0.169, pass_rate: 0.971, threshold: 0.8,
       count: 35, failed: 1, degraded: 0, has_variance: true,
     },
     {
-      metric_name: "latency_budget", metric_type: "deterministic", ci_block: true,
+      metric_name: "latency_budget", metric_type: "deterministic", group: "budgets", ci_block: true,
       mean_score: 1.0, std: 0, pass_rate: 1, threshold: 0.7,
       count: 35, failed: 0, degraded: 0, has_variance: false,
     },
     {
-      metric_name: "relevance", metric_type: "llm_judge", ci_block: false,
+      metric_name: "relevance", metric_type: "llm_judge", group: "quality", ci_block: false,
       mean_score: 0.931, std: 0.176, pass_rate: 0.923, threshold: 0.7,
       count: 26, failed: 2, degraded: 9, has_variance: true,
     },
     {
-      metric_name: "tool_allowlist", metric_type: "deterministic", ci_block: true,
+      metric_name: "tool_allowlist", metric_type: "deterministic", group: "budgets", ci_block: true,
       mean_score: 1.0, std: 0, pass_rate: 1, threshold: 0.7,
       count: 35, failed: 0, degraded: 0, has_variance: false,
     },
     {
-      metric_name: "tool_misuse", metric_type: "security", ci_block: true,
+      metric_name: "tool_misuse", metric_type: "security", group: "safety", ci_block: true,
       mean_score: 1.0, std: 0, pass_rate: 1, threshold: 0.8,
       count: 35, failed: 0, degraded: 0, has_variance: false,
     },

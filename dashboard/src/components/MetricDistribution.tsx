@@ -1,23 +1,20 @@
 import { Box, Typography } from "@mui/material";
 import { tokens, TABULAR_NUMS } from "../theme";
 import { metricSeverity, severityCopy, varianceLabel } from "../lib/analytics";
+import { JUDGE_NOISE, groupHasJudgeNoise } from "../lib/groups";
 import { SeverityChip, SEVERITY_COLOR } from "./SeverityChip";
 import type { GateVerdict, MetricHealth, ScoreBucket } from "../types";
 
-/**
- * The measured run-to-run swing on a judged metric.
- *
- * Same trace, same frozen fixture, same model: 0.20 on one run and 0.40 on
- * the next. Every judge number on this page is drawn with that band so a mean
- * is never read as a precise value.
- */
-export const JUDGE_NOISE = 0.2;
-
 const pct = (v: number) => `${Math.max(0, Math.min(1, v)) * 100}%`;
 
-/** Judge noise applies to judged metrics; a latency budget has no such band. */
+/**
+ * Judge noise applies to judged metrics; a latency budget has no such band.
+ *
+ * Reads the server-assigned group rather than the metric type, so there is
+ * one taxonomy on the client and not two.
+ */
 export function hasJudgeNoise(metric: MetricHealth): boolean {
-  return metric.metric_type === "llm_judge";
+  return groupHasJudgeNoise(metric.group);
 }
 
 /**
