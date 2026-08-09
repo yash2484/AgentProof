@@ -322,29 +322,44 @@ things.
    pinned test.
 3. **One trace carries no faithfulness signal.** The `error` scenario's retriever
    fails before the writer runs, so there is no writer span and the metric scores
-   1.0 for "no applicable spans" — clean and fabricated alike.
-   **Same root cause, second instance, found 2026-08-08:**
-   `tests/integration/test_eval_pipeline.py::test_unfaithful_trace_scores_lower`
-   fails reproducibly with `assert 1.0 < 0.7`. `build_demo_traces()[1]` names its
-   `llm_call` span `synthesis`, but `agentproof.yaml` scopes faithfulness to
-   `span_names: [writer]`, so the fabricated "built by NASA" claim is never
-   judged. The test cannot pass with the current config. Fixing it means either
-   renaming the demo span or widening `span_names` — an eval-semantics decision,
-   deliberately not taken here. Live-data effect: on the demo project 5 metrics
-   sit on the ceiling strip and 3 vary, not the 6/2 the design spec assumed.
-   (`injection_resistance` returned to the ceiling strip once its one "failure"
-   was correctly identified as a degraded measurement.)
+   1.0 for "no applicable spans" — clean and fabricated alike. This part stands:
+   "no applicable spans" still scores 1.0, which launders unmeasured into
+   passing at the evaluator level.
+   **The second instance is now CLOSED (2026-08-09).**
+   `test_unfaithful_trace_scores_lower` failed with `assert 1.0 < 0.7` because
+   `build_demo_traces()[1]` names its `llm_call` span `synthesis` while
+   `agentproof.yaml` scoped faithfulness to `span_names: [writer]`, so the
+   fabricated "built by NASA" claim was never judged. Resolved by widening the
+   scope to `[writer, synthesis]` — the same role under a different name,
+   carrying the same `user_prompt`/`completion` metadata — rather than renaming
+   the span, which would have edited a recording. *Verified: the whole of
+   `test_eval_pipeline.py` now passes 3/3 in the container, including the
+   end-to-end test that was also failing.*
 4. **The exporter logs once per dropped trace** under sustained backpressure,
    which is most of the full-buffer path's extra cost. Rate-limit or count-and-
    summarise.
 5. **Alembic `versions/` is empty**, so the `ondelete="CASCADE"` declared on
    `eval_results.trace_id` is not in the deployed schema.
-6. **`dual` mode's `combine: "min"` takes a failed-closed 0.0 from a broken
-   judge leg**, even when the heuristic leg scored 1.0 — the stored score for
-   that row is a measurement failure wearing a breach's clothes. Analytics now
-   labels it degraded, but the *score in the database* is still 0.0. Fixing it
-   means falling back to the heuristic leg when the LLM leg is degraded, which
-   changes stored scores and needs a decision.
+6. **CLOSED (2026-08-09): `dual` mode's `combine: "min"`** took a failed-closed
+   0.0 from a broken judge leg even when the heuristic leg scored 1.0. `min`
+   combines two opinions, not an opinion and a failure. It now falls back to
+   the heuristic leg when the LLM leg is degraded, and records
+   `combine: "heuristic — llm leg degraded"`. The broken records stay in
+   `details` on purpose: the configured mode was `dual` and only half of it
+   ran, so the row must still read as degraded rather than let a
+   heuristic-only score masquerade as a dual-mode one. **Going forward only** —
+   rows already stored keep their 0.0, because rewriting recorded eval results
+   would undermine the byte-for-byte recording claim. *Verified: 4 unit tests,
+   including one asserting a healthy dual run still takes the worst of the two
+   legs, so the fallback cannot become a way to ignore a judge that disagrees.*
+7. **Deterministic `details` use different keys per project.** The real
+   evaluators write `total_cost_usd` and `total_latency_ms`; the synthetic
+   generator writes `cost_usd` and `latency_ms`. Anything reading those keys
+   must handle both, and the synthetic corpus should mirror the real names —
+   otherwise it stops being a valid stand-in, which is its whole purpose. This
+   blocks the Budgets margin chart: an aggregate written against one shape
+   returns data for one project and silently nothing for the other. Also
+   `tool_allowlist` has object `details` on only 6 of 36 demo rows.
 
 ## Next up
 

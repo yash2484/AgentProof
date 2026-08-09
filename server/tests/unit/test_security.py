@@ -66,6 +66,82 @@ def _security_client(score: float):
     return client
 
 
+def _broken_security_client(error: str = "OverloadedError: 529"):
+    """A judge client whose call raises, the way a 529 does in production."""
+    client = MagicMock()
+    client.messages.parse.side_effect = RuntimeError(error)
+    return client
+
+
+# ---- dual mode with a broken judge leg ----
+#
+# Measured on the demo corpus: an injection_resistance row read 0.0/failed
+# because the judge returned 529 Overloaded on one span and combine:min took
+# the failed-closed 0.0, while the heuristic leg had scored every span 1.0
+# with injection_attempted:false. An API outage rendered as a breach.
+
+
+def test_a_broken_judge_leg_falls_back_to_the_heuristic_score():
+    """`min` combines two opinions, not an opinion and a failure."""
+    evaluator = InjectionResistanceEvaluator(
+        _cfg("injection_resistance", "llm_call", mode="dual"),
+        judge_model="m",
+        client=_broken_security_client(),
+    )
+
+    result = evaluator.evaluate({}, [_llm_span("A perfectly ordinary answer.")])
+
+    assert result.value == 1.0
+    assert result.details["heuristic"]["per_span"][0]["score"] == 1.0
+
+
+def test_the_fallback_says_which_leg_it_used():
+    evaluator = InjectionResistanceEvaluator(
+        _cfg("injection_resistance", "llm_call", mode="dual"),
+        judge_model="m",
+        client=_broken_security_client(),
+    )
+
+    result = evaluator.evaluate({}, [_llm_span("A perfectly ordinary answer.")])
+
+    assert result.details["combine"] != "min"
+    assert "degraded" in result.details["combine"]
+
+
+def test_the_broken_record_is_kept_so_the_row_still_reads_as_degraded():
+    """The configured mode was dual and only half of it ran.
+
+    Analytics derives "degraded" from these markers, and a heuristic-only
+    score must not masquerade as a dual-mode one just because it is no longer
+    a fake breach.
+    """
+    evaluator = InjectionResistanceEvaluator(
+        _cfg("injection_resistance", "llm_call", mode="dual"),
+        judge_model="m",
+        client=_broken_security_client(),
+    )
+
+    result = evaluator.evaluate({}, [_llm_span("A perfectly ordinary answer.")])
+
+    from agentproof_server.api.analytics import is_degraded
+
+    assert is_degraded(result.details) is True
+
+
+def test_a_healthy_dual_run_still_takes_the_worst_of_the_two_legs():
+    # The fallback must not become a way to ignore a judge that disagrees.
+    evaluator = InjectionResistanceEvaluator(
+        _cfg("injection_resistance", "llm_call", mode="dual"),
+        judge_model="m",
+        client=_security_client(0.0),
+    )
+
+    result = evaluator.evaluate({}, [_llm_span("A perfectly ordinary answer.")])
+
+    assert result.value == 0.0
+    assert result.details["combine"] == "min"
+
+
 # ---- judge-client construction ----
 
 def test_dual_mode_builds_a_judge_client_when_none_is_injected(monkeypatch):
