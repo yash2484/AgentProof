@@ -8,6 +8,8 @@ import {
   groupQuestion,
   presentGroups,
 } from "./groups";
+import { tokens } from "../theme";
+import { hue, hueDistance, saturation } from "../theme/contrast";
 
 describe("metric groups", () => {
   it("orders the groups the way the pages read top to bottom", () => {
@@ -36,13 +38,28 @@ describe("metric groups", () => {
     expect(groupColor("composite")).toBe(groupColor("other"));
   });
 
-  it("gives each group a colour outside the pass/fail bands", () => {
+  it("gives each group a colour outside the pass/watch/fail bands", () => {
     const colors = GROUP_ORDER.map(groupColor);
     expect(new Set(colors).size).toBe(GROUP_ORDER.length);
-    // Green and red are reserved for verdicts. A group is a category, and a
-    // category that borrows a verdict colour reads as a verdict.
-    expect(colors).not.toContain("#3FCF8E");
-    expect(colors).not.toContain("#E5484D");
+    // Green, amber and red are reserved for verdicts. A group is a category,
+    // and a category that borrows a verdict colour reads as a verdict.
+    // Asserted by hue rather than by hex so re-picking a group colour cannot
+    // quietly land in a reserved band the way a hex allowlist would let it.
+    for (const color of colors) {
+      if (saturation(color) < 0.15) continue; // the neutral "other" bucket
+      for (const verdict of [tokens.status.pass, tokens.status.watch, tokens.status.fail]) {
+        expect(hueDistance(hue(color), hue(verdict))).toBeGreaterThanOrEqual(25);
+      }
+    }
+  });
+
+  it("draws every group colour from the shared categorical band", () => {
+    // One band across groups and span types, so the product has a single
+    // categorical vocabulary rather than two that drift apart.
+    const band = Object.values(tokens.category);
+    for (const color of GROUP_ORDER.map(groupColor)) {
+      expect(band).toContain(color);
+    }
   });
 
   it("scopes the judge noise band to the judged group only", () => {

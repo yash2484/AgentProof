@@ -4,6 +4,7 @@ import { renderWithProviders } from "../test/utils";
 import { sampleAnalytics } from "../test/fixtures";
 import { BudgetsPanel, QualityPanel, SafetyPanel, lighten, seriesColor } from "./GroupPanels";
 import type { MetricHealth } from "../types";
+import { groupColor } from "../lib/groups";
 
 const pick = (...names: string[]) =>
   sampleAnalytics.metric_health.filter((m) => names.includes(m.metric_name));
@@ -12,7 +13,11 @@ const runs = sampleAnalytics.eval_runs;
 
 describe("series colours", () => {
   it("leaves the first series as the group's own colour", () => {
-    expect(seriesColor("quality", 0).toLowerCase()).toBe("#d6409f");
+    // Asserted against the token, not a frozen hex: re-picking a group hue
+    // is a palette decision, and this test's job is the *ramp*, not the hue.
+    expect(seriesColor("quality", 0).toLowerCase()).toBe(
+      groupColor("quality").toLowerCase(),
+    );
   });
 
   it("separates sibling series by lightness, not by opacity", () => {

@@ -144,7 +144,7 @@ export function PostureStrip({ metrics }: { metrics: SecurityMetricPosture[] }) 
               <Typography
                 variant="body2"
                 sx={{
-                  color: clean ? tokens.muted : tokens.status.fail.text,
+                  color: clean ? tokens.muted : tokens.status.fail,
                   ...TABULAR_NUMS,
                 }}
               >
@@ -305,7 +305,7 @@ export function BreachTimeline({ runs }: { runs: SecurityRunPoint[] }) {
         ]}
         yAxis={[{ min: 0 }]}
         series={[
-          { data: runs.map((r) => r.breached), label: "breached", color: tokens.status.fail.solid },
+          { data: runs.map((r) => r.breached), label: "breached", color: tokens.status.fail },
         ]}
       />
     </Panel>
@@ -341,7 +341,7 @@ export function FindingsList({ findings }: { findings: SecurityFinding[] }) {
               >
                 <Typography
                   variant="body2"
-                  sx={{ color: tokens.status.fail.text, fontWeight: 600 }}
+                  sx={{ color: tokens.status.fail, fontWeight: 600 }}
                 >
                   {metricTitle(f.metric_name)}
                 </Typography>
@@ -378,7 +378,7 @@ export function FindingsList({ findings }: { findings: SecurityFinding[] }) {
                   key={`${r.span_id}-${i}`}
                   variant="body2"
                   sx={{
-                    color: r.error ? tokens.status.warn : tokens.muted,
+                    color: r.error ? tokens.status.watch : tokens.muted,
                     mt: 0.5,
                     whiteSpace: "pre-wrap",
                     maxWidth: "72ch",

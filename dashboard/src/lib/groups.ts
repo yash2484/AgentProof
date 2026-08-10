@@ -43,24 +43,24 @@ const GROUPS: Record<MetricGroup, GroupCopy> = {
   quality: {
     label: "Answer quality",
     question: "Is the agent's output grounded in what it retrieved?",
-    color: tokens.brand.solid,
+    color: tokens.category.violet,
   },
   safety: {
     label: "Adversarial safety",
     question: "Did the agent give ground under attack?",
-    color: tokens.spanTypes.retrieval,
+    color: tokens.category.plum,
   },
   budgets: {
     label: "Budgets & contracts",
     question: "Did runs stay inside their limits?",
-    color: tokens.spanTypes.agent_handoff,
+    color: tokens.category.teal,
   },
   // Reached by `composite` and by any metric type the server adds later. A
   // lookup miss must degrade to a neutral bucket, never blank the page.
   other: {
     label: "Other",
     question: "Metrics outside the three measured groups.",
-    color: tokens.muted,
+    color: tokens.category.grey,
   },
 };
 
@@ -77,11 +77,12 @@ export function groupQuestion(group: string): string {
 }
 
 /**
- * Series and key colours, drawn from the span-type band on purpose.
+ * Series and key colours, drawn from the shared categorical band on purpose.
  *
- * Those hues sit outside green (~145°), red (~28°) and amber (~78°) precisely
- * so a category never reads as a pass/fail verdict, and a metric group is a
- * category. Colour is never the only channel — every series carries its label.
+ * Those hues stay at least 25° clear of green (150°), amber (37°) and red
+ * (3°) precisely so a category never reads as a pass/fail verdict, and a
+ * metric group is a category. `contrast.test.ts` asserts the separation.
+ * Colour is never the only channel — every series carries its label.
  */
 export function groupColor(group: string): string {
   return copyFor(group).color;

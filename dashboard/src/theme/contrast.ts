@@ -32,3 +32,39 @@ export function contrastRatio(fg: string, bg: string): number {
   const [hi, lo] = a > b ? [a, b] : [b, a];
   return (hi + 0.05) / (lo + 0.05);
 }
+
+/**
+ * Hue in degrees, 0..359. Grey returns 0 and means nothing — check
+ * `saturation` before reading it.
+ *
+ * Ledger reserves hue bands: green for pass, amber for watch, red for fail.
+ * This is what lets a test assert that a *category* colour has not wandered
+ * into a *verdict* band, which is the failure that would make a metric
+ * group read as a judgement of that group.
+ */
+export function hue(hex: string): number {
+  const [r, g, b] = channels(hex);
+  const max = Math.max(r, g, b);
+  const delta = max - Math.min(r, g, b);
+  if (delta === 0) return 0;
+  const sextant =
+    max === r ? ((g - b) / delta) % 6 : max === g ? (b - r) / delta + 2 : (r - g) / delta + 4;
+  return Math.round((sextant * 60 + 360) % 360);
+}
+
+/** HSL saturation, 0..1. Zero means the hue is meaningless. */
+export function saturation(hex: string): number {
+  const [r, g, b] = channels(hex);
+  const max = Math.max(r, g, b);
+  const min = Math.min(r, g, b);
+  const delta = max - min;
+  if (delta === 0) return 0;
+  const lightness = (max + min) / 2;
+  return delta / (1 - Math.abs(2 * lightness - 1));
+}
+
+/** Smallest angular distance between two hues, 0..180. */
+export function hueDistance(a: number, b: number): number {
+  const d = Math.abs(a - b) % 360;
+  return d > 180 ? 360 - d : d;
+}

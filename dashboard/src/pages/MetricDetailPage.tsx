@@ -277,7 +277,7 @@ function CurrentState({
                   flex: 1,
                   height: `${Math.max(height, count > 0 ? 3 : 0)}%`,
                   minHeight: count > 0 ? 3 : 0,
-                  bgcolor: belowThreshold ? tokens.status.fail.solid : color,
+                  bgcolor: belowThreshold ? tokens.status.fail : color,
                   borderRadius: "2px 2px 0 0",
                 }}
               />
@@ -350,7 +350,7 @@ function History({
                     {
                       label: "threshold",
                       data: points.map(() => data.health.threshold as number),
-                      color: tokens.status.fail.solid,
+                      color: tokens.status.fail,
                       showMark: false,
                     },
                   ]
@@ -391,7 +391,7 @@ export function renderEmphasis(text: string): ReactNode[] {
 function Reasoning({ record }: { record: SpanReasoning }) {
   if (record.error) {
     return (
-      <Typography variant="body2" sx={{ color: tokens.status.warn, mt: 0.5 }}>
+      <Typography variant="body2" sx={{ color: tokens.status.watch, mt: 0.5 }}>
         Judge call failed: {record.error} — this measurement is degraded, not a
         finding.
       </Typography>
@@ -440,7 +440,7 @@ function WorstTraces({ rows, judged }: { rows: WorstRow[]; judged: boolean }) {
                 <Typography
                   variant="h6"
                   sx={{
-                    color: row.passed ? tokens.ink : tokens.status.fail.text,
+                    color: row.passed ? tokens.ink : tokens.status.fail,
                     ...TABULAR_NUMS,
                   }}
                 >

@@ -166,7 +166,7 @@ export function DeleteTrace({
         size="small"
         data-testid="delete-start"
         onClick={() => setOpen(true)}
-        sx={{ color: tokens.status.fail.text, justifySelf: "start", px: 0 }}
+        sx={{ color: tokens.status.fail, justifySelf: "start", px: 0 }}
       >
         Delete this trace
       </Button>

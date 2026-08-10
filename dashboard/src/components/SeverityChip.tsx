@@ -15,8 +15,8 @@ import type { Severity } from "../lib/analytics";
 export const SEVERITY_COLOR: Record<Severity, { fill: string; text: string }> = {
   degraded: { fill: tokens.muted, text: tokens.muted },
   clear: { fill: tokens.status.pass, text: tokens.status.pass },
-  watch: { fill: tokens.status.warn, text: tokens.status.warn },
-  serious: { fill: tokens.status.fail.solid, text: tokens.status.fail.text },
+  watch: { fill: tokens.status.watch, text: tokens.status.watch },
+  serious: { fill: tokens.status.fail, text: tokens.status.fail },
 };
 
 const LABEL: Record<Severity, string> = {

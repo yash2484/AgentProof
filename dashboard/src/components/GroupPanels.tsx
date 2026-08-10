@@ -219,7 +219,7 @@ function PrevalenceRow({ metric }: { metric: MetricHealth }) {
       <Typography
         variant="body2"
         sx={{
-          color: clean ? tokens.muted : tokens.status.fail.text,
+          color: clean ? tokens.muted : tokens.status.fail,
           ...TABULAR_NUMS,
         }}
       >

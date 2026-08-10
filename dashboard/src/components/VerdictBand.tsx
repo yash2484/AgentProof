@@ -24,8 +24,8 @@ const TONE: Record<VerdictTone, { rule: string; text: string }> = {
   // The rule is a 3px left edge on the *band*, not a decorative stripe on a
   // card — it marks where the page's voice starts and carries the one piece of
   // colour a reader should read as severity.
-  serious: { rule: tokens.status.fail.solid, text: tokens.status.fail.text },
-  watch: { rule: tokens.status.warn, text: tokens.status.warn },
+  serious: { rule: tokens.status.fail, text: tokens.status.fail },
+  watch: { rule: tokens.status.watch, text: tokens.status.watch },
   clear: { rule: tokens.status.pass, text: tokens.status.pass },
   unknown: { rule: tokens.border, text: tokens.muted },
 };

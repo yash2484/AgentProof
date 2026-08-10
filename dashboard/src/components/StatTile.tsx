@@ -7,8 +7,8 @@ export type Tone = "neutral" | "pass" | "fail" | "warn";
 export const TONE_COLOR: Record<Tone, string> = {
   neutral: tokens.ink,
   pass: tokens.status.pass,
-  fail: tokens.status.fail.text,
-  warn: tokens.status.warn,
+  fail: tokens.status.fail,
+  warn: tokens.status.watch,
 };
 
 /** A small bento tile: one figure, its label, and optional context beneath. */

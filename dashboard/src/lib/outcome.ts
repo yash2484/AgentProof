@@ -39,9 +39,9 @@ export function worstMetricLabel(outcome: EvalOutcome): string {
 export function outcomeColor(outcome: TraceOutcome): string {
   switch (outcome) {
     case "failed":
-      return tokens.status.fail.text;
+      return tokens.status.fail;
     case "degraded":
-      return tokens.status.warn;
+      return tokens.status.watch;
     case "passed":
       return tokens.status.pass;
     default:

@@ -73,7 +73,7 @@ export function SpanDetailPanel({
             </Typography>
             <Typography variant="body2">Status: {span.status}</Typography>
             {span.error_message && (
-              <Typography variant="body2" sx={{ mt: 1, color: tokens.status.fail.text }}>
+              <Typography variant="body2" sx={{ mt: 1, color: tokens.status.fail }}>
                 {span.error_message}
               </Typography>
             )}
