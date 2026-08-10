@@ -58,23 +58,24 @@ The Overview is now a triage page: verdict → what changed → what you can tru
 → where to look. Three server defects surfaced on the way and are fixed
 (negative `pending`, undercounted `scored`, `degraded` labelled "failed").
 
-### R16. The landing project points at the generated corpus — OPEN · **DEMO BLOCKER**
-`DEFAULT_PROJECT` in `context/ProjectContext.tsx` is `synthetic-showcase`, set
-at the user's request because it is the only corpus dense enough to read the
-design against (300 traces, 8 runs, against the measured project's 31 and 4).
+### R16. The landing project points at the generated corpus — CLOSED (2026-08-10)
+`DEFAULT_PROJECT` in `context/ProjectContext.tsx` was `synthetic-showcase`,
+set at the user's request because it was the only corpus dense enough to read
+the design against (300 traces, 8 runs, against the measured project's 31 and
+4). It cut against R5, and with a job-application screenshot as the stated
+goal it was the one open item that could actually do damage.
 
-This cuts against R5. It is safe only while the disclosure holds: the switcher
-badges it, the scope bar badges it, and the trust band states in full sentences
-that every figure was authored by a script.
+Closed with the Ledger work: the constant is `demo-research-agent`, and the
+fix is no longer one line of trust. `scripts/demo_check.py` walks all six
+routes and **fails** if the app lands anywhere but the measured corpus, or if
+a generated-data marker appears anywhere a screenshot could catch it. Run it
+before any capture.
 
-**Fix before any demo, screenshot, benchmark, or external use:** flip the
-constant to `demo-research-agent`. One line, no other change needed.
-
-Escalated 2026-08-10: the next session's stated goal is a job-application
-screenshot and a LinkedIn recording, which makes this the one open item that can
-actually do damage. A fabricated corpus presented as product evidence is the
-exact failure this project was built to catch. It is listed as a blocker in
-`docs/handover-ledger-frontend.md` §4.1.
+One detail worth keeping: the check deliberately does not flag the bare word
+"generated". The judge's real reasoning contains phrases like *"agents
+generate false or fabricated information"*, and flagging that would be
+flagging the evidence rather than the fabrication. It matches the badge text
+and the generated project's id instead.
 
 ### R17. Provenance is a hard-coded set, not a property of the data — OPEN
 `server/agentproof_server/provenance.py` holds `GENERATED_PROJECTS` as a
@@ -217,11 +218,11 @@ the wrong row and still type it correctly.
 
 ---
 
-## Ledger theme rework — opened 2026-08-10
+## Ledger theme rework — opened 2026-08-10, built 2026-08-10
 
-Specced in `docs/design/2026-08-10-ledger-design-system.md`, not yet built.
-These are decisions the spec makes that someone other than the author should
-sign off on.
+Specced in `docs/design/2026-08-10-ledger-design-system.md` and now
+implemented. These are decisions the spec makes that someone other than the
+author should sign off on.
 
 ### R18. Light-only, with no dark variant — QUEUED (owner, 2026-08-10)
 A dark mode was considered and deliberately dropped. The reasoning: this is a CI
@@ -244,11 +245,46 @@ the distinction the ban is actually about.
 has been lost and it should retreat to prose-only or be dropped entirely. The
 tell to watch for is a serif column header.
 
-### R20. Contrast tests must be re-pointed, not deleted — OPEN
-`theme/contrast.ts` and its 26 tests encode dark-ground ratios. Under Ledger
-every pair changes. They are the guard that caught real contrast failures during
-the analytics rework, so deleting them to get the suite green would remove the
-only automated check on the palette.
+### R20. Contrast tests must be re-pointed, not deleted — CLOSED (2026-08-10)
+`theme/contrast.ts` and its 26 tests encoded dark-ground ratios; under Ledger
+every pair changed. They were re-pointed rather than deleted, and gained four
+guards the light ground needed:
 
-**Review:** confirm the re-pointed tests still fail when given a bad pair —
-otherwise they are decoration.
+- no ground is warm, asserted by **hue** (the banned cream band), and the
+  grounds stay ordered card > paper > data > rail in lightness;
+- no category hue sits within 25° of a verdict hue, and magenta stays retired
+  — by hue distance, not a hex allowlist, which is what let the old group
+  test pass while the palette moved underneath it;
+- every step of every group's series ramp clears 3:1 on all three grounds
+  (this is the guard that caught the lighten-toward-white ramp);
+- every font stack is valid CSS (see R21).
+
+They demonstrably fail on a bad pair: the group-colour test failed on the
+first hue re-pick, and the ramp test failed on the dark-ground ramp. Both
+were real defects, caught by these tests rather than by eye.
+
+### R21. A font stack can fail silently, and did — CLOSED (2026-08-10)
+`Source Serif 4 Variable` unquoted is invalid CSS: a font-family is a sequence
+of identifiers and an identifier may not begin with a digit, so the browser
+discards the **entire** declaration. Every heading rendered at the correct
+size, weight and tracking in the wrong face, and nothing appeared in the
+console. It survived a full green test run and a visual pass before being
+found by reading `getComputedStyle` in the browser.
+
+Closed by quoting all three stacks, with a unit test asserting any family
+needing quotes has them.
+
+**Worth generalising:** a test suite cannot see a font, a colour that was
+discarded, or an element pushed off-screen. `scripts/ui_audit.py` exists
+because of this class of defect and should be run whenever the theme changes,
+not only at the end.
+
+### R22. The vitest worker pool is bounded to 6 — OPEN
+`vite.config.ts` caps `maxThreads` at 6 and raises `testTimeout` to 20s. One
+worker per core oversubscribed 12 cores while Docker was up, and a DataGrid
+test that takes 1.2s alone took 26s in the full run — a scheduling artefact
+reported as a test failure.
+
+**Review:** these numbers are tuned to one developer machine. On CI, measure
+before keeping them; the timeout in particular should come down if the
+hardware is not contended, because a 20s ceiling hides a genuinely slow test.

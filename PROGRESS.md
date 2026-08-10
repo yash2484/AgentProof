@@ -1,28 +1,39 @@
 # AgentProof — Progress
 
-**Current phase:** Ledger frontend — specced and approved, **not yet built**
+**Current phase:** Ledger frontend — **built and verified**
 **Branch:** `overview-analytics`
 **Last updated:** 2026-08-10
 
-> **Next session reads `docs/handover-ledger-frontend.md` first.** Scope is the
-> frontend only, ending in a state that can be screenshotted for a job
-> application and recorded for a LinkedIn demo. The analytics rework behind it
-> is complete and verified.
+> Ledger is implemented across all six routes and the app lands on the
+> **measured** corpus (`demo-research-agent`). The branch is demo-ready: run
+> `python scripts/demo_check.py` before any capture — it fails if the landing
+> project or a generated-data marker ever regresses.
 
 ## Last verified working
 
-Full sweep, 2026-08-10, after the Overview redesign landed (the last phase).
+Full sweep, 2026-08-10, after Ledger landed.
 
 | Suite | Result | How verified |
 |---|---|---|
 | server (host) | 355 passed | `python -m pytest tests/unit -q` **from `server/`** |
 | server DB (container) | 36 passed | `docker compose exec -T server python -m pytest tests/integration -q -o asyncio_mode=auto --ignore=tests/integration/test_trace_pipeline.py` |
-| dashboard | 325 passed, 31 files | `npx vitest run` |
+| dashboard | 383 passed, 32 files | `npx vitest run` (was 325/31 before Ledger) |
 | lint | All checks passed | `ruff check .` from repo root |
 | types + lint (dashboard) | exit 0 | `npx tsc --noEmit` and `npx eslint src --max-warnings 0` |
+| production build | 4 latin woff2, 191 kB of type | `npx vite build` — asserts the font subset never widens |
 | live endpoint | 200, partition holds | `GET /api/v1/evals/analytics` — `scored + unmeasurable + pending == traces` in every scope |
-| all 5 pages in a browser | 0 overflow, 0 console errors | Playwright at 1440px and 390px against the live stack |
-| contrast (Overview) | every text node passes WCAG AA | computed luminance ratio per node vs its resolved background, in-page |
+| all 6 routes in a browser | 0 overflow, 0 console errors, WCAG AA | `python scripts/ui_audit.py` at 1440px and 390px — 12/12 clean |
+| demo readiness | passed | `python scripts/demo_check.py` — lands on `demo-research-agent`, no generated-data marker on any route |
+
+Two scripts now carry the browser gate, because it caught three real defects
+that no unit test could have:
+
+- **`scripts/ui_audit.py`** — overflow, console errors, resolved font
+  families, and a WCAG AA sweep per text node, at both viewports. Reports;
+  does not gate.
+- **`scripts/demo_check.py`** — fails if the app lands anywhere but the
+  measured corpus, or if a generated-data marker appears anywhere a
+  screenshot could catch it. **Run before any capture.**
 
 `ruff format --check` reports 65 files at HEAD as well as on this branch — this
 repo has never used the formatter, so it is not a regression and was not run.
@@ -72,7 +83,49 @@ Inter, which is why headings looked subtly off.
 No dark variant. Questioned by the owner and dropped: one theme that is exactly
 right beats two that are merely fine.
 
-## Built & verified — the Overview redesign (final phase)
+## Built & verified — Ledger (this phase)
+
+Spec: `docs/design/2026-08-10-ledger-design-system.md`. Built in the eight
+steps of `docs/handover-ledger-frontend.md`, one commit each, every one green.
+
+**The dashboard is a light document that carries data.** Prose is serif on
+paper, data is mono on a tinted panel, and a colour always means a status.
+The tint is the structural device: it marks the boundary between what was
+*written* and what was *measured*.
+
+What the work turned up that the spec could not have known:
+
+- **The serif was invisible, and silently so.** `Source Serif 4 Variable`
+  unquoted is invalid CSS — a font-family identifier may not begin with a
+  digit — so browsers discarded the whole declaration. Headings rendered at
+  the correct size, weight and tracking in the wrong face, with nothing in
+  the console. A unit test now asserts every stack is quotable-and-quoted.
+  (The spec's claim that Inter had never loaded was stale; `main.tsx` had
+  imported `@fontsource/inter` since the previous phase.)
+- **The series ramp was built for a dark ground.** It lightened each sibling
+  series toward white, which on the old surface only improved legibility and
+  on paper walked series 2–4 into the background. Measured: only one
+  lightening step clears 3:1 here, so the ramp now steps mostly toward ink.
+- **The scope bar asserted a falsehood.** Given no runs it printed
+  "0 runs · never evaluated" above a page listing 300 traces. Absent is not
+  zero — the same laundering the product exists to prevent, committed by the
+  product. Now guarded by a test pinning `undefined` against `[]`.
+- **The verdict lede leaked a developer diagnostic.** On the measured corpus
+  the largest sentence in the product read `Small sample -> absolute-drop
+  floor: drop 1.000 >= 0.05..`. It now says what moved.
+
+Deliberately **not** built: the spec's `⌘K` affordance. No command palette
+exists, and advertising a shortcut that does nothing is worse than silence.
+
+Colour discipline holds: the categorical band (span types and metric groups
+share one set) sits ≥25° from every verdict hue, asserted by hue distance
+rather than a hex allowlist — which is what let the old test pass while the
+palette moved underneath it. Magenta is retired everywhere.
+
+The token compatibility layer that carried 30 files through the flip has been
+deleted, and a test asserts the old names cannot come back.
+
+## Built & verified — the Overview redesign (previous phase)
 
 Full diagnosis, decisions and theme rules: `docs/overview-redesign-brief.md`.
 
@@ -578,19 +631,23 @@ defects in shipped behaviour, that file is decisions and deferrals.
 
 ## Next up
 
-**One job, and it is the frontend.** Full handover:
-`docs/handover-ledger-frontend.md`. Spec: `docs/design/2026-08-10-ledger-design-system.md`.
+**Ledger is done and the branch is demo-ready.** The two items that were here
+are closed: the theme is implemented across all six routes, and
+`DEFAULT_PROJECT` now points at the measured corpus (R16 closed).
 
-1. **Implement Ledger** — re-theme the dashboard from a dark console to a light
-   document that carries data. Governing rule: *prose is serif on paper, data is
-   mono on a tinted panel; if something is coloured, it has a status.* Order:
-   fonts → tokens → primitives → Overview → Metric detail → Traces → Evals and
-   Security. Each step ends green.
+1. **Merge `overview-analytics`.** ~20 commits ahead of `main`, all gates
+   green. Nothing on the branch is half-finished.
 
-2. **Then make it demo-ready.** Flip `DEFAULT_PROJECT` to `demo-research-agent`
-   (blocker — the current landing corpus is fabricated, see R16), walk the demo
-   path in the handover §4.3, re-run the Playwright pass at both viewports, and
-   capture at 1440px with `device_scale_factor=2`.
+2. **Re-run the demo agent against a working `ANTHROPIC_API_KEY`** before the
+   application. 32 traces with 50 real judged measurements is thin, and 19 of
+   the judge calls in the current window are auth failures. They demo *well* —
+   they are live proof that a broken measurement is shown as broken rather
+   than averaged in as a failure — but a clean run would deepen the only
+   corpus that may be shown as evidence. Costs cents. `ANTHROPIC_API_KEY` is
+   in `.env`, gitignored; never print or commit it.
+
+3. **Re-read *Claims status* end to end** before anything goes on a CV. Every
+   quantified claim must be traceable to a real run.
 
 No new backend work. The server is complete and verified. Everything below is
 parked deliberately.
@@ -638,6 +695,18 @@ hard-coded set).
    `docker-compose.yml` masks `node_modules` with an anonymous volume that
    survives `docker compose up --build`. Run `docker compose rm -sfv dashboard`
    before `up -d`. **Never `docker compose down -v`** — it destroys `pgdata`.
+   `rm -sfv` was **not** sufficient during the Ledger work: the container came
+   back crash-looping on `Cannot find module '@rollup/rollup-linux-x64-gnu'`
+   because the volume was reused anyway.
+   `docker compose up -d --force-recreate --renew-anon-volumes dashboard` is
+   the one that reliably works.
+1a. **Vite serves stale modules to the container after a host-side edit.**
+   The single biggest time sink of this phase. The file is correct on disk and
+   in `/app`, HMR misses it, and the browser keeps rendering the old build —
+   which looks exactly like "my change did nothing", and cost a wrong
+   diagnosis before it was recognised. `docker compose restart dashboard`
+   after any theme or config edit, *before* concluding anything from a
+   screenshot.
 2. **Port 5432 is shared** between Docker's Postgres and a native `postgres.exe`,
    so host-side DB tests skip. Run them inside the `server` container with
    `-o asyncio_mode=auto`.
