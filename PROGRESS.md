@@ -53,6 +53,47 @@ CI 6/6; both regression gates PASS exit 0.
 **Repo:** public, `github.com/yash2484/AgentProof`. Tags continuous
 `phase-1` … `phase-8`. Remote branches: `main`, `overview-analytics`.
 
+## What this product is for
+
+Recorded 2026-08-10. **Judgement, not measurement** — inferred from what the
+code does well, validated with nobody. Full reasoning and the review triggers
+are in `docs/review-later.md` R23–R25.
+
+**Best case: a CI regression gate for a team shipping an agent as a product.**
+A fixed eval set runs against a pinned baseline and returns a verdict per run
+carrying a p-value and an effect size. The distinguishing behaviour is that it
+declines to conclude when the sample cannot support a conclusion.
+
+Three properties carry that, all verified in code:
+
+- the ±0.2 judge swing is **measured**, not assumed, and appears on every
+  judged figure, so a smaller move is labelled as not evidence;
+- degraded is never folded into failed (the 12 auth-failed judge calls in
+  `demo-research-agent` are excluded from every score, not counted against
+  the agent);
+- a metric that never varied reads as unexercised, never as passing.
+
+**Not** an observability or monitoring product. Evaluation is after-the-fact
+and batch; there is no live ingest. The Ledger spec says it directly: *"This
+is not a monitoring product. It runs in CI and produces a verdict per run."*
+Competing with LangSmith or Langfuse on live tracing means competing on the
+one axis where this is weakest.
+
+**The "developer using an LLM CLI" audience does not work directly** and a
+demo should not be built on it. Every ad-hoc coding session is a different
+task, so there is no fixed input to pin a baseline against, and the
+regression detector — the core of the product — has nothing to bite on. See
+R24 for the other two reasons.
+
+**The variant that does work** is fixed-task self-benchmarking: pin a set of
+coding tasks, then change something the user controls (`CLAUDE.md`, skills,
+model tier, MCP config) and re-run the same set. That restores the fixed
+input. Enabled by Claude Code's own session transcripts, which already carry
+model, token usage, tool calls, full content and a `parentUuid` chain that
+maps onto the span DAG — verified by inspection, see R25. The missing piece
+is an importer, not a capability, and the metric config has to be rethought
+for coding work before it is built.
+
 ## Decided, not yet built — Ledger, the theme rework
 
 **Spec:** `docs/design/2026-08-10-ledger-design-system.md` ·

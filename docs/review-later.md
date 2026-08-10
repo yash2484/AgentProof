@@ -288,3 +288,90 @@ reported as a test failure.
 **Review:** these numbers are tuned to one developer machine. On CI, measure
 before keeping them; the timeout in particular should come down if the
 hardware is not contended, because a 20s ceiling hides a genuinely slow test.
+
+---
+
+## Positioning and audience — opened 2026-08-10
+
+Raised while preparing the branch for an external audience. These are
+**judgement calls, not measurements**, and they are recorded here rather than
+in `PROGRESS.md` precisely because none of them has been validated with a
+user. Treat every claim below as a hypothesis with an owner, not a finding.
+
+### R23. The product is positioned as a CI regression gate — OPEN
+The stated best-case use case: **a regression gate for a team shipping an
+agent as a product.** A fixed eval set runs in CI against a pinned baseline;
+the verdict carries a p-value and an effect size, and the tool declines to
+conclude when the sample cannot support one.
+
+Three properties support that positioning, and all three are verified in the
+code rather than asserted:
+
+- the ±0.2 judge swing is measured (same trace, same fixture, same model:
+  0.20 then 0.40) and is rendered on every judged figure, so a move smaller
+  than the noise floor is labelled as not evidence;
+- degraded is never folded into failed — the 12 auth-failed judge calls in
+  `demo-research-agent` are excluded from every score rather than counted
+  against the agent;
+- a metric that never varied is reported as unexercised, not passing.
+
+**Explicitly not positioned as** observability or monitoring. The evaluation
+path is after-the-fact and batch, there is no live ingest, and the design
+spec says so directly: *"This is not a monitoring product. It runs in CI and
+produces a verdict per run."* Competing on that ground against LangSmith or
+Langfuse would be competing on the axis where this is weakest.
+
+**Review:** the ICP has not been tested against a single real user. It is
+inferred from what the code does well. Before it goes on a CV or a landing
+page, at minimum sanity-check it against two or three people who actually
+ship an agent, because the failure mode is a well-built tool aimed at a
+group that does not feel the pain.
+
+### R24. The "normal coder using an LLM CLI" story is structurally weak — OPEN
+Tempting audience, and the honest assessment is that the direct version does
+not hold up. Three structural reasons, in order of severity:
+
+1. **No baseline is possible.** The regression detector compares a candidate
+   against a pinned baseline over a *fixed* eval set. Every ad-hoc coding
+   session is a different task, so there is nothing to hold constant and the
+   core machinery has nothing to bite on.
+2. **The metrics do not transfer.** Of the eight configured: `faithfulness`
+   needs retrieval context and a coding session is not RAG; `tool_allowlist`
+   duplicates the CLI's own permission system; the three security checks are
+   content heuristics whose meaning on coding transcripts is untested. That
+   leaves `latency_budget`, `cost_budget` and a stretched `relevance`, and
+   token/cost dashboards already exist upstream.
+3. **They are using an agent, not building one.** No control over prompts,
+   model routing or tools means no change of their own to regress against.
+
+**Do not build a demo on this framing.** A technical reviewer reaches reason
+1 within a minute of seeing it.
+
+**The one variant that does work** — see R25.
+
+### R25. Fixed-task self-benchmarking is the bridge to CLI users — QUEUED
+The narrow version of R24 that survives its own objections: fix a set of
+coding tasks, pin that run as the baseline, then change something the user
+*does* control — `CLAUDE.md`, the installed skill set, model tier, MCP
+configuration — and re-run the same set.
+
+This restores the fixed input the detector requires, and it answers a
+question CLI users currently answer by feel: *did rewriting my CLAUDE.md
+actually change anything, or am I inside the noise?*
+
+**Enabled by a capability that already exists and is unused.** Claude Code
+writes every session to `~/.claude/projects/<project>/<session>.jsonl`.
+Inspected 2026-08-10; each assistant record carries `message.model`,
+`message.usage` (input / output / cache-read / cache-creation tokens),
+`timestamp`, `tool_use` and `tool_result` blocks, full prompt and completion
+content, and `parentUuid` — which is already a parent-child chain and maps
+directly onto the span DAG. `sdk/agentproof/pricing.py` converts the token
+counts to cost.
+
+So the transcripts contain everything the SDK records. The missing piece is
+an importer, not a capability.
+
+**Before building it, decide the metric set.** Importing sessions and
+scoring them with the current `agentproof.yaml` would produce figures that
+look authoritative and mean very little, which is the one failure mode this
+whole product exists to prevent. A coding-specific config comes first.
