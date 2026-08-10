@@ -64,7 +64,7 @@ export function SecurityPage() {
 
           <Typography
             variant="caption"
-            sx={{ color: tokens.muted, display: "block", mb: `${SPACE.md}px` }}
+            sx={{ color: tokens.dim, display: "block", mb: `${SPACE.md}px` }}
           >
             {data
               ? `${data.totals.breached} breached of ${data.totals.measured} security measurements${data.totals.degraded ? `, ${data.totals.degraded} unmeasurable` : ""} — ${days === 0 ? "over all history" : `in the last ${days} days`}.`

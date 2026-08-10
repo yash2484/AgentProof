@@ -83,7 +83,7 @@ export function outcomeColor(outcome: TraceOutcome): string {
     case "passed":
       return tokens.status.pass;
     default:
-      return tokens.muted;
+      return tokens.dim;
   }
 }
 

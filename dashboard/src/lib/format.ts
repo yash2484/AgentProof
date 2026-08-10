@@ -20,7 +20,7 @@ import { tokens } from "../theme";
 
 export const SPAN_TYPE_COLORS: Record<SpanType, string> = tokens.spanTypes;
 
-const FALLBACK_COLOR = tokens.muted;
+const FALLBACK_COLOR = tokens.dim;
 
 export function spanColor(type: string): string {
   return SPAN_TYPE_COLORS[type as SpanType] ?? FALLBACK_COLOR;

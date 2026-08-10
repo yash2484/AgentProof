@@ -122,28 +122,6 @@ export const tokens = {
     agent_handoff: CATEGORY.plum,
     human_decision: CATEGORY.grey,
   },
-
-  // ---------------------------------------------------------------------
-  // Compatibility layer. Deprecated on sight.
-  //
-  // 30 files and ~286 references still speak the Graphite & Magenta
-  // vocabulary. These aliases hold the new light values so the app renders
-  // correctly in Ledger from this commit, while each surface migrates to
-  // the names above one page at a time. When the last consumer is migrated
-  // this block is deleted; nothing new may be written against it.
-  // ---------------------------------------------------------------------
-  /** @deprecated use `paper`. */
-  bg: GROUND.paper,
-  /** @deprecated use `card`. */
-  surface: GROUND.card,
-  /** @deprecated use `data`. */
-  surfaceRaised: GROUND.data,
-  /** @deprecated use `hair`. */
-  border: RULE.hair,
-  /** @deprecated use `dim`. */
-  muted: TEXT.dim,
-  /** @deprecated the brand accent retired; its remaining job is `link`. */
-  brand: { solid: LINK, text: LINK },
 } as const;
 
 export const palette: PaletteOptions = {

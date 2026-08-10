@@ -5,6 +5,7 @@ import { renderWithProviders } from "../test/utils";
 import { sampleSpanTree, sampleEvalResults } from "../test/fixtures";
 import * as api from "../api/client";
 import { TraceDetailPage } from "./TraceDetailPage";
+import { metricTitle } from "../lib/metricCopy";
 
 beforeEach(() => {
   vi.spyOn(api, "getTraceTree").mockResolvedValue(sampleSpanTree);
@@ -26,7 +27,10 @@ describe("TraceDetailPage", () => {
   it("renders the waterfall and eval results", async () => {
     renderPage();
     await waitFor(() => expect(screen.getByText("orchestrator")).toBeInTheDocument());
-    expect(screen.getByText(/answer_relevance/)).toBeInTheDocument();
+    // Metrics are named the way the rest of the product names them, via
+    // metricTitle — the same page's side-panel equivalent on /traces already
+    // did, and showing the raw key here made one record read two ways.
+    expect(screen.getByText(metricTitle("answer_relevance"))).toBeInTheDocument();
   });
 
   it("triggers a run-eval on button click", async () => {

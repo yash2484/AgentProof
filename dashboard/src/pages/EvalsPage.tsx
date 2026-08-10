@@ -63,7 +63,7 @@ export function EvalsPage() {
 
           <Typography
             variant="caption"
-            sx={{ color: tokens.muted, display: "block", mb: `${SPACE.md}px` }}
+            sx={{ color: tokens.dim, display: "block", mb: `${SPACE.md}px` }}
           >
             Every figure counts measurements — eval rows, not traces and not
             evaluation runs. Open any metric for its distribution, its history,

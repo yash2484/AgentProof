@@ -312,17 +312,24 @@ describe("font stacks are valid CSS", () => {
   });
 });
 
-describe("the compatibility layer holds Ledger values, not dark ones", () => {
-  // These aliases exist only until the last consumer migrates. While they
-  // exist they must be light — a stray dark hex reaching a page through an
-  // alias is exactly the regression this suite is here to prevent.
-  it("maps every deprecated alias onto a current token", () => {
-    expect(tokens.bg).toBe(tokens.paper);
-    expect(tokens.surface).toBe(tokens.card);
-    expect(tokens.surfaceRaised).toBe(tokens.data);
-    expect(tokens.border).toBe(tokens.hair);
-    expect(tokens.muted).toBe(tokens.dim);
-    expect(tokens.brand.solid).toBe(tokens.link);
-    expect(tokens.brand.text).toBe(tokens.link);
+describe("the Graphite & Magenta vocabulary is gone", () => {
+  // The compatibility aliases (bg, surface, surfaceRaised, border, muted,
+  // brand) carried the migration and were deleted once the last surface
+  // moved. This asserts they cannot come back by habit: a re-added `muted`
+  // would let a component drift out of the token set silently.
+  it("exposes no deprecated alias", () => {
+    const retired = ["bg", "surface", "surfaceRaised", "border", "muted", "brand"];
+    for (const name of retired) {
+      expect(Object.keys(tokens), `tokens.${name} is retired`).not.toContain(name);
+    }
+  });
+
+  it("names every token the pages actually use", () => {
+    for (const name of [
+      "paper", "card", "data", "rail", "hair", "hairStrong",
+      "ink", "ink2", "dim", "link", "onFill", "steel",
+    ]) {
+      expect(Object.keys(tokens)).toContain(name);
+    }
   });
 });

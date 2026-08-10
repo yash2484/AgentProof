@@ -2,7 +2,7 @@ import { useEffect } from "react";
 import { Box, Drawer, IconButton, Stack, Typography } from "@mui/material";
 import CloseIcon from "@mui/icons-material/Close";
 import { formatDuration } from "../lib/format";
-import { tokens, SPACE, TABULAR_NUMS } from "../theme";
+import { tokens, SPACE, DATA, MICRO, RADIUS } from "../theme";
 import type { Span } from "../types";
 
 const PANEL_WIDTH = 380;
@@ -49,8 +49,8 @@ export function SpanDetailPanel({
           sx: {
             pointerEvents: "auto",
             width: PANEL_WIDTH,
-            bgcolor: tokens.surface,
-            borderLeft: `1px solid ${tokens.border}`,
+            bgcolor: tokens.card,
+            borderLeft: `1px solid ${tokens.hairStrong}`,
             borderRadius: 0,
           },
         },
@@ -60,36 +60,46 @@ export function SpanDetailPanel({
         {span && (
           <>
             <Stack direction="row" justifyContent="space-between" alignItems="center">
-              <Typography variant="h6">{span.name}</Typography>
-              <IconButton onClick={onClose} aria-label="close" size="small">
+              <Typography sx={{ ...DATA, fontSize: 14, fontWeight: 500, color: tokens.ink }}>
+                {span.name}
+              </Typography>
+              <IconButton
+                onClick={onClose}
+                aria-label="close"
+                size="small"
+                sx={{ color: tokens.dim }}
+              >
                 <CloseIcon fontSize="small" />
               </IconButton>
             </Stack>
-            <Typography variant="body2" sx={{ color: tokens.muted }}>
-              {span.span_type}
+            <Typography sx={{ ...DATA, color: tokens.dim }}>{span.span_type}</Typography>
+            <Typography sx={{ ...DATA, color: tokens.ink, mt: 1 }}>
+              latency {formatDuration(span.latency_ms)}
             </Typography>
-            <Typography variant="body2" sx={{ mt: 1, ...TABULAR_NUMS }}>
-              Latency: {formatDuration(span.latency_ms)}
+            <Typography sx={{ ...DATA, color: tokens.ink }}>
+              status {span.status}
             </Typography>
-            <Typography variant="body2">Status: {span.status}</Typography>
             {span.error_message && (
-              <Typography variant="body2" sx={{ mt: 1, color: tokens.status.fail }}>
+              <Typography sx={{ ...DATA, mt: 1, color: tokens.status.fail }}>
                 {span.error_message}
               </Typography>
             )}
-            <Typography variant="subtitle2" sx={{ mt: 2 }}>Metadata</Typography>
+            <Typography sx={{ ...MICRO, color: tokens.dim, mt: 2, mb: "5px" }}>
+              Metadata
+            </Typography>
             <Box
               component="pre"
               sx={{
+                ...DATA,
                 fontSize: 11,
                 whiteSpace: "pre-wrap",
                 wordBreak: "break-word",
-                color: tokens.muted,
-                bgcolor: tokens.bg,
-                border: `1px solid ${tokens.border}`,
-                borderRadius: 1.5,
+                color: tokens.ink2,
+                bgcolor: tokens.data,
+                border: `1px solid ${tokens.hair}`,
+                borderRadius: `${RADIUS}px`,
                 p: `${SPACE.xs}px`,
-                ...TABULAR_NUMS,
+                m: 0,
               }}
             >
               {JSON.stringify(span.metadata, null, 2)}
