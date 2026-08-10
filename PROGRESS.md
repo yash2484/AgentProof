@@ -8,6 +8,11 @@
 > **measured** corpus (`demo-research-agent`). The branch is demo-ready: run
 > `python scripts/demo_check.py` before any capture — it fails if the landing
 > project or a generated-data marker ever regresses.
+>
+> **Next session reads `docs/handover-launch-readiness.md` first.** It ranks
+> everything remaining for a public post and a demo. The P0 item is that
+> `main` still holds the pre-Ledger dark dashboard, so anyone clicking through
+> from a post lands on the old product.
 
 ## Last verified working
 
