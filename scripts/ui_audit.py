@@ -208,8 +208,17 @@ def main() -> int:
             for name, path in routes.items():
                 page = ctx.new_page()
                 errors: list[str] = []
-                page.on("console", lambda m: errors.append(f"{m.type}: {m.text}") if m.type == "error" else None)
-                page.on("pageerror", lambda e: errors.append(f"pageerror: {e}"))
+                # `sink=errors` binds the list at handler-definition time. The
+                # bare closure over a loop variable works here only because
+                # each page is closed inside its own iteration, which is the
+                # kind of thing that stops being true after one edit.
+                page.on(
+                    "console",
+                    lambda m, sink=errors: sink.append(f"{m.type}: {m.text}")
+                    if m.type == "error"
+                    else None,
+                )
+                page.on("pageerror", lambda e, sink=errors: sink.append(f"pageerror: {e}"))
 
                 url = f"{BASE}{path}"
                 if args.query:

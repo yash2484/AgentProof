@@ -16,7 +16,7 @@ Full sweep, 2026-08-10, after Ledger landed.
 | Suite | Result | How verified |
 |---|---|---|
 | server (host) | 355 passed | `python -m pytest tests/unit -q` **from `server/`** |
-| server DB (container) | 36 passed | `docker compose exec -T server python -m pytest tests/integration -q -o asyncio_mode=auto --ignore=tests/integration/test_trace_pipeline.py` |
+| server DB (container) | 35 passed, 1 **intermittent** | `docker compose exec -T server python -m pytest tests/integration -q -o asyncio_mode=auto --ignore=tests/integration/test_trace_pipeline.py` — see Known issues #10 |
 | dashboard | 383 passed, 32 files | `npx vitest run` (was 325/31 before Ledger) |
 | lint | All checks passed | `ruff check .` from repo root |
 | types + lint (dashboard) | exit 0 | `npx tsc --noEmit` and `npx eslint src --max-warnings 0` |
@@ -738,6 +738,24 @@ hard-coded set).
     `settings.baselines_path` resolves against the process CWD (`/app`). Without
     the mount the gate verdict silently reports "no baseline" for every metric
     rather than erroring.
+12. **`test_eval_pipeline_end_to_end` fails intermittently — OPEN, backend.**
+    Observed 2026-08-10 during the Ledger verification sweep. It POSTs a batch
+    of demo traces, gets **200**, then immediately POSTs `/evals/run` for one
+    of them and gets **404 "Trace not found"**. Checked in Postgres afterwards:
+    no `seed-*` rows exist at all, so the batch reported success without
+    persisting.
+
+    Observed 2 failures in 4 runs. Fails more readily as part of the full
+    integration suite than alone, which points at ordering or a cold
+    connection pool rather than randomness.
+
+    **Not caused by the Ledger work:** `git diff 36b77c2..HEAD` touches zero
+    backend files (only `dashboard/`, `docs/`, `scripts/`, `PROGRESS.md`), and
+    this branch changed no server code at all.
+
+    Worth fixing before the batch endpoint is trusted anywhere: an endpoint
+    that returns 200 without writing is the same class of defect as a metric
+    that reports a pass without measuring.
 
 ## Shelved
 
