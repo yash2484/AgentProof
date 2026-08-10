@@ -9,20 +9,42 @@ import { JUDGE_NOISE, groupColor, groupHasJudgeNoise, groupLabel } from "../lib/
 import { isSyntheticProject } from "../lib/analytics";
 import { SyntheticBadge } from "../components/SeverityChip";
 import { EmptyState } from "../components/EmptyState";
-import { tokens, SPACE, TILE_GAP, TILE_PADDING, TABULAR_NUMS } from "../theme";
+import {
+  SectionHeading,
+  DataPanel,
+  Figure,
+  FigureRow,
+  Prose,
+  NoteBlock,
+} from "../components/Ledger";
+import {
+  tokens,
+  SPACE,
+  TILE_PADDING,
+  DATA,
+  UI,
+  MICRO,
+  PROSE,
+} from "../theme";
 import type { MetricDetail, SpanReasoning, WorstRow } from "../types";
 
 /**
- * One metric, in depth.
+ * One metric, in depth. The page the register exists for.
  *
  * Ordered the way a reader actually asks: what is this, how was it computed,
  * what does it catch — and only then the numbers. A metric you cannot explain
  * is a metric nobody will act on, and a number whose mechanism is hidden is a
  * number you have to take on faith.
  *
- * The judge's reasoning at the bottom has been in the database since the judge
- * shipped and has never been displayed anywhere in the product. It is the most
- * useful thing on the page.
+ * ~19,900 characters of body text live on this page. That writing is the
+ * product's differentiator and monospace is a poor face for it — no italic, a
+ * crippled weight range, measurably slower to read. So prose sits left in
+ * serif at a reading measure and every measured figure sits right in mono on
+ * tint, and the split is legible before a single word is read.
+ *
+ * The judge's reasoning at the bottom had been in the database since the
+ * judge shipped without ever being displayed. It is the most useful thing
+ * here, and it is the clearest case for the serif.
  */
 export function MetricDetailPage() {
   const { metric = "" } = useParams();
@@ -43,9 +65,7 @@ export function MetricDetailPage() {
 
   if (query.isLoading) {
     return (
-      <Typography variant="body2" sx={{ color: tokens.muted }}>
-        Loading {metric}…
-      </Typography>
+      <Box sx={{ ...DATA, color: tokens.dim }}>Loading {metric}…</Box>
     );
   }
 
@@ -59,7 +79,7 @@ export function MetricDetailPage() {
             <Box
               component={RouterLink}
               to="/evals"
-              sx={{ color: tokens.brand.text, textDecoration: "none" }}
+              sx={{ ...UI, color: tokens.link, textDecoration: "none" }}
             >
               ← Back to Evals
             </Box>
@@ -79,96 +99,91 @@ export function MetricDetailPage() {
         component={RouterLink}
         to="/evals"
         sx={{
-          color: tokens.muted,
-          textDecoration: "none",
+          ...UI,
           fontSize: 13,
-          "&:hover": { color: tokens.ink },
+          color: tokens.dim,
+          textDecoration: "none",
+          "&:hover": { color: tokens.link },
         }}
       >
         ← Evals
       </Box>
 
-      <Box sx={{ display: "flex", alignItems: "center", gap: 1, mt: 0.5 }}>
-        <Box
-          aria-hidden
-          sx={{ width: 10, height: 10, borderRadius: "50%", bgcolor: color }}
-        />
-        <Typography variant="h4" sx={{ color: tokens.ink }}>
-          {copy.title}
-        </Typography>
-      </Box>
       <Box
-        data-testid="metric-scope"
         sx={{
           display: "flex",
-          alignItems: "center",
-          gap: 1,
+          alignItems: "baseline",
           flexWrap: "wrap",
-          mb: `${SPACE.md}px`,
+          columnGap: `${SPACE.sm}px`,
+          rowGap: "4px",
+          mt: "2px",
+          pb: `${SPACE.xs}px`,
+          borderBottom: `1px solid ${tokens.hairStrong}`,
         }}
       >
-        <Typography variant="body2" sx={{ color: tokens.muted }}>
-          {groupLabel(data.group)}
-          {" · "}
-          <Box component="span" data-testid="metric-ci-block">
-            {data.ci_block ? "blocks CI on regression" : "advisory — does not block CI"}
-          </Box>
-          {" · "}
-          {/* Never implicit. Without a project this page pools every project,
-            * including a generated one, and that has to be said out loud. */}
-          {/* "All" excludes generated corpora server-side, so the old warning
-              that this pooled a fabricated corpus is now false. */}
-          {project ?? "all measured projects"}
-          {" · "}
-          {days === 0 ? "all history" : `last ${days} days`}
+        <Box
+          aria-hidden
+          sx={{
+            width: 9,
+            height: 9,
+            borderRadius: "50%",
+            bgcolor: color,
+            alignSelf: "center",
+          }}
+        />
+        <Typography variant="h4" component="h1" sx={{ color: tokens.ink }}>
+          {copy.title}
         </Typography>
+        <Box component="span" sx={{ ...DATA, color: tokens.dim }}>
+          {data.metric_name}
+        </Box>
         {isSyntheticProject(project) && <SyntheticBadge />}
       </Box>
 
-      <Box sx={{ display: "grid", gap: `${TILE_GAP}px` }}>
+      <Box
+        data-testid="metric-scope"
+        sx={{
+          ...DATA,
+          color: tokens.dim,
+          mt: "6px",
+          mb: `${SPACE.lg}px`,
+        }}
+      >
+        {groupLabel(data.group)}
+        {" · "}
+        <Box component="span" data-testid="metric-ci-block">
+          {data.ci_block ? "blocks CI on regression" : "advisory — does not block CI"}
+        </Box>
+        {" · "}
+        {/* Never implicit. Without a project this page pools every project,
+          * and that has to be said out loud. "All" excludes generated
+          * corpora server-side, so it can no longer pool a fabricated one. */}
+        {project ?? "all measured projects"}
+        {" · "}
+        {days === 0 ? "all history" : `last ${days} days`}
+      </Box>
+
+      {/* The register, made structural. Prose holds a 60ch column on paper;
+        * figures sit on tint beside it. Below 1000px the columns stack and
+        * the explanation still comes first, because it is what makes the
+        * numbers mean anything. */}
+      <Box
+        sx={{
+          display: "grid",
+          gap: `${SPACE.lg}px`,
+          gridTemplateColumns: "1fr",
+          alignItems: "start",
+          "@media (min-width:1000px)": { gridTemplateColumns: "minmax(0, 30rem) 1fr" },
+        }}
+      >
         <Explainer copy={copy} />
-        <CurrentState data={data} judged={judged} color={color} />
+        <CurrentState data={data} judged={judged} />
+      </Box>
+
+      <Box sx={{ mt: `${SPACE.lg}px`, display: "grid", gap: `${SPACE.lg}px` }}>
         <History data={data} color={color} judged={judged} />
         <WorstTraces rows={data.worst} judged={judged} />
       </Box>
-    </Box>
-  );
-}
-
-function Panel({
-  title,
-  children,
-  ...rest
-}: {
-  title: string;
-  children: React.ReactNode;
-  [key: string]: unknown;
-}) {
-  return (
-    <Box
-      component="section"
-      aria-label={title}
-      sx={{
-        p: `${TILE_PADDING}px`,
-        bgcolor: tokens.surface,
-        border: `1px solid ${tokens.border}`,
-        borderRadius: 2.5,
-      }}
-      {...rest}
-    >
-      <Typography
-        variant="caption"
-        sx={{
-          color: tokens.muted,
-          textTransform: "uppercase",
-          letterSpacing: "0.06em",
-          display: "block",
-          mb: 1,
-        }}
-      >
-        {title}
-      </Typography>
-      {children}
     </Box>
   );
 }
@@ -181,84 +196,67 @@ function Explainer({ copy }: { copy: ReturnType<typeof metricCopy> }) {
   ];
 
   return (
-    <Panel title="In plain language">
-      <Box sx={{ display: "grid", gap: `${SPACE.sm}px`, maxWidth: "68ch" }}>
+    <Box component="section" aria-label="In plain language">
+      <SectionHeading>In plain language</SectionHeading>
+      {/* No panel. Prose sits directly on paper — a container around it would
+        * make writing look measured, which is the one confusion this page
+        * exists to prevent. */}
+      <Box sx={{ display: "grid", gap: `${SPACE.sm}px` }}>
         {rows.map((row) => (
           <Box key={row.key}>
-            <Typography variant="body2" sx={{ color: tokens.muted }}>
+            <Box component="span" sx={{ ...UI, fontSize: 12.5, color: tokens.dim }}>
               {row.label}
-            </Typography>
-            <Typography
-              data-testid={`metric-${row.key}`}
-              variant="body1"
-              sx={{ color: tokens.ink }}
-            >
+            </Box>
+            <Prose data-testid={`metric-${row.key}`} sx={{ color: tokens.ink }}>
               {row.body}
-            </Typography>
+            </Prose>
           </Box>
         ))}
       </Box>
-    </Panel>
-  );
-}
-
-function Figure({ label, value }: { label: string; value: string }) {
-  return (
-    <Box>
-      <Typography variant="h6" sx={{ color: tokens.ink, ...TABULAR_NUMS }}>
-        {value}
-      </Typography>
-      <Typography variant="caption" sx={{ color: tokens.muted }}>
-        {label}
-      </Typography>
     </Box>
   );
 }
 
-function CurrentState({
-  data,
-  judged,
-  color,
-}: {
-  data: MetricDetail;
-  judged: boolean;
-  color: string;
-}) {
+function CurrentState({ data, judged }: { data: MetricDetail; judged: boolean }) {
   const h = data.health;
   const total = data.buckets.reduce((sum, b) => sum + b.count, 0);
 
   return (
-    <Panel title="Current state">
-      <Box
+    <Box component="section" aria-label="Current state">
+      <SectionHeading meta={`n=${h.count}`}>Current state</SectionHeading>
+
+      <FigureRow
         data-testid="metric-health-figures"
-        sx={{ display: "flex", flexWrap: "wrap", gap: `${SPACE.lg}px`, mb: 1.5 }}
+        sx={{ gridTemplateColumns: "repeat(auto-fit, minmax(120px, 1fr))" }}
       >
         <Figure
-          label={judged ? `mean ±${JUDGE_NOISE} judge swing` : "mean"}
+          size={17}
+          label={judged ? `mean ±${JUDGE_NOISE} swing` : "mean"}
           value={h.mean_score === null ? "—" : h.mean_score.toFixed(3)}
         />
+        <Figure size={17} label="spread (σ)" value={h.std === null ? "n=1" : h.std.toFixed(3)} />
         <Figure
-          label="spread (σ)"
-          value={h.std === null ? "n=1" : h.std.toFixed(3)}
-        />
-        <Figure
+          size={17}
           label="threshold"
           value={h.threshold === null ? "—" : h.threshold.toFixed(2)}
         />
-        <Figure label="measurements" value={String(h.count)} />
-        <Figure label="flagged" value={String(h.failed)} />
-        <Figure label="degraded" value={String(h.degraded)} />
-      </Box>
+        <Figure
+          size={17}
+          label="flagged"
+          value={String(h.failed)}
+          tone={h.failed > 0 ? "fail" : "neutral"}
+        />
+        <Figure
+          size={17}
+          label="degraded"
+          value={String(h.degraded)}
+          tone={h.degraded > 0 ? "watch" : "neutral"}
+        />
+      </FigureRow>
 
-      <Box data-testid="metric-distribution">
+      <DataPanel data-testid="metric-distribution" sx={{ mt: `${SPACE.sm}px`, p: `${TILE_PADDING}px` }}>
         <Box
-          sx={{
-            display: "flex",
-            alignItems: "flex-end",
-            gap: "2px",
-            height: 96,
-            px: 0.5,
-          }}
+          sx={{ display: "flex", alignItems: "flex-end", gap: "2px", height: 104 }}
         >
           {Array.from({ length: 10 }, (_v, i) => {
             const lower = i / 10;
@@ -275,29 +273,42 @@ function CurrentState({
                 title={`${lower.toFixed(1)}–${(lower + 0.1).toFixed(1)}: ${count}`}
                 sx={{
                   flex: 1,
+                  // A single measurement in a bucket of 300 is 0.33% tall,
+                  // which rounds to nothing. The floor is what makes a rare
+                  // event visible at all, and its absence elsewhere is the
+                  // defect that started this whole rework. Do not remove it.
                   height: `${Math.max(height, count > 0 ? 3 : 0)}%`,
                   minHeight: count > 0 ? 3 : 0,
-                  bgcolor: belowThreshold ? tokens.status.fail : color,
-                  borderRadius: "2px 2px 0 0",
+                  // Steel, not the group colour: the group is already named
+                  // above, and colouring every bar would leave the flagged
+                  // ones with nothing to stand out against.
+                  bgcolor: belowThreshold ? tokens.status.fail : tokens.steel,
+                  borderRadius: "1px 1px 0 0",
                 }}
               />
             );
           })}
         </Box>
-        <Box sx={{ display: "flex", justifyContent: "space-between", mt: 0.5 }}>
-          <Typography variant="caption" sx={{ color: tokens.muted }}>
-            0.0
-          </Typography>
-          <Typography variant="caption" sx={{ color: tokens.muted }}>
-            {total} measurements, bucketed at 0.1 — bars below the threshold are
-            red
-          </Typography>
-          <Typography variant="caption" sx={{ color: tokens.muted }}>
-            1.0
-          </Typography>
+        <Box
+          sx={{
+            display: "flex",
+            justifyContent: "space-between",
+            mt: "6px",
+            pt: "5px",
+            borderTop: `1px solid ${tokens.hair}`,
+            ...MICRO,
+            color: tokens.dim,
+          }}
+        >
+          <span>0.0</span>
+          <span>1.0</span>
         </Box>
-      </Box>
-    </Panel>
+        <Box sx={{ ...UI, fontSize: 12.5, color: tokens.dim, mt: "6px" }}>
+          {total} measurements, bucketed at 0.1
+          {h.threshold !== null && " — bars below the threshold are red"}
+        </Box>
+      </DataPanel>
+    </Box>
   );
 }
 
@@ -314,58 +325,73 @@ function History({
   const scored = points.filter((p) => p.mean_score !== null);
 
   return (
-    <Panel title="History">
-      {scored.length < 2 ? (
-        <Typography variant="body2" sx={{ color: tokens.muted }}>
-          {scored.length === 0
-            ? "No run has produced a score for this metric in this window."
-            : "One scored run so far. A second is what turns a score into a movement."}
-        </Typography>
-      ) : (
-        <>
-          <LineChart
-            height={200}
-            margin={{ top: 8, right: 16, bottom: 24, left: 40 }}
-            slotProps={{ legend: { hidden: true } }}
-            xAxis={[
-              {
-                data: points.map((_p, i) => i),
-                scaleType: "point",
-                valueFormatter: (i: number, ctx) =>
-                  ctx?.location === "tick"
-                    ? `#${i + 1}`
-                    : new Date(points[i].run_at).toLocaleDateString(),
-              },
-            ]}
-            yAxis={[{ min: 0, max: 1 }]}
-            series={[
-              {
-                label: data.metric_name,
-                data: points.map((p) => p.mean_score),
-                color,
-                connectNulls: false,
-              },
-              ...(data.health.threshold !== null
-                ? [
-                    {
-                      label: "threshold",
-                      data: points.map(() => data.health.threshold as number),
-                      color: tokens.status.fail,
-                      showMark: false,
-                    },
-                  ]
-                : []),
-            ]}
-          />
-          <Typography variant="caption" sx={{ color: tokens.muted }}>
-            Red line is the threshold. A run with no bar measured nothing —
-            every judge call in it failed.
-            {judged &&
-              ` Judged scores carry a ±${JUDGE_NOISE} swing between runs on identical input.`}
+    <Box component="section" aria-label="History">
+      <SectionHeading>History</SectionHeading>
+      <DataPanel sx={{ p: `${TILE_PADDING}px` }}>
+        {scored.length < 2 ? (
+          <Typography sx={{ ...PROSE, fontSize: 15, color: tokens.ink2 }}>
+            {scored.length === 0
+              ? "No run has produced a score for this metric in this window."
+              : "One scored run so far. A second is what turns a score into a movement."}
           </Typography>
-        </>
-      )}
-    </Panel>
+        ) : (
+          <>
+            <LineChart
+              height={200}
+              margin={{ top: 8, right: 16, bottom: 24, left: 40 }}
+              slotProps={{ legend: { hidden: true } }}
+              grid={{ horizontal: true }}
+              sx={{
+                "& .MuiChartsAxis-line, & .MuiChartsAxis-tick": {
+                  stroke: tokens.hairStrong,
+                },
+                "& .MuiChartsAxis-tickLabel": {
+                  fill: tokens.dim,
+                  fontFamily: DATA.fontFamily,
+                  fontSize: 11,
+                },
+                "& .MuiChartsGrid-line": { stroke: tokens.hair },
+              }}
+              xAxis={[
+                {
+                  data: points.map((_p, i) => i),
+                  scaleType: "point",
+                  valueFormatter: (i: number, ctx) =>
+                    ctx?.location === "tick"
+                      ? `#${i + 1}`
+                      : new Date(points[i].run_at).toLocaleDateString(),
+                },
+              ]}
+              yAxis={[{ min: 0, max: 1 }]}
+              series={[
+                {
+                  label: data.metric_name,
+                  data: points.map((p) => p.mean_score),
+                  color,
+                  connectNulls: false,
+                },
+                ...(data.health.threshold !== null
+                  ? [
+                      {
+                        label: "threshold",
+                        data: points.map(() => data.health.threshold as number),
+                        color: tokens.status.fail,
+                        showMark: false,
+                      },
+                    ]
+                  : []),
+              ]}
+            />
+            <Typography sx={{ ...PROSE, fontSize: 14, maxWidth: "88ch", color: tokens.dim }}>
+              Red line is the threshold. A run with no point measured nothing —
+              every judge call in it failed.
+              {judged &&
+                ` Judged scores carry a ±${JUDGE_NOISE} swing between runs on identical input.`}
+            </Typography>
+          </>
+        )}
+      </DataPanel>
+    </Box>
   );
 }
 
@@ -390,87 +416,94 @@ export function renderEmphasis(text: string): ReactNode[] {
 
 function Reasoning({ record }: { record: SpanReasoning }) {
   if (record.error) {
+    // A broken judge call is a watch, not a finding. The distinction is the
+    // product's central claim, so it gets the same ruled note the provenance
+    // warning uses rather than being tucked into the prose as an aside.
     return (
-      <Typography variant="body2" sx={{ color: tokens.status.watch, mt: 0.5 }}>
+      <NoteBlock tone="watch" sx={{ mt: `${SPACE.xs}px`, fontSize: 15 }}>
         Judge call failed: {record.error} — this measurement is degraded, not a
         finding.
-      </Typography>
+      </NoteBlock>
     );
   }
   return (
-    <Typography
-      variant="body2"
+    <Prose
       sx={{
         color: tokens.ink,
-        mt: 0.5,
+        mt: `${SPACE.xs}px`,
         whiteSpace: "pre-wrap",
-        maxWidth: "72ch",
-        borderLeft: `1px solid ${tokens.border}`,
-        pl: 1.5,
+        borderLeft: `1px solid ${tokens.hairStrong}`,
+        pl: `${SPACE.sm}px`,
       }}
     >
       {renderEmphasis(record.reasoning ?? "")}
-    </Typography>
+    </Prose>
   );
 }
 
 function WorstTraces({ rows, judged }: { rows: WorstRow[]; judged: boolean }) {
   return (
-    <Panel title={judged ? "Lowest scores, with the judge's reasoning" : "Lowest scores"}>
+    <Box component="section" aria-label="Lowest scores">
+      <SectionHeading meta={rows.length > 0 ? `${rows.length} shown` : undefined}>
+        {judged ? "Lowest scores, with the judge's reasoning" : "Lowest scores"}
+      </SectionHeading>
+
       {rows.length === 0 ? (
-        <Typography variant="body2" sx={{ color: tokens.muted }}>
+        <Prose sx={{ color: tokens.ink2 }}>
           No scored measurements in this window.
-        </Typography>
+        </Prose>
       ) : (
-        <Box sx={{ display: "grid", gap: `${SPACE.md}px` }}>
+        <Box sx={{ display: "grid", gap: `${SPACE.lg}px` }}>
           {rows.map((row) => (
-            <Box
-              key={`${row.trace_id}-${row.evaluated_at}`}
-              data-testid={`worst-row-${row.trace_id}`}
-              sx={{ borderTop: `1px solid ${tokens.border}`, pt: 1.5 }}
-            >
-              <Box
+            <Box key={`${row.trace_id}-${row.evaluated_at}`} data-testid={`worst-row-${row.trace_id}`}>
+              {/* The row's identity is measured — score, id, timestamp — so
+                * it sits on tint. What the judge *said* about it is written,
+                * and sits on paper underneath. */}
+              <DataPanel
                 sx={{
                   display: "flex",
                   alignItems: "baseline",
-                  gap: 1,
+                  gap: `${SPACE.sm}px`,
                   flexWrap: "wrap",
+                  px: `${SPACE.sm}px`,
+                  py: "7px",
                 }}
               >
-                <Typography
-                  variant="h6"
+                <Box
+                  component="span"
                   sx={{
+                    ...DATA,
+                    fontSize: 16,
+                    fontWeight: 500,
                     color: row.passed ? tokens.ink : tokens.status.fail,
-                    ...TABULAR_NUMS,
                   }}
                 >
                   {row.score === null ? "—" : row.score.toFixed(3)}
-                </Typography>
+                </Box>
                 <Box
                   component={RouterLink}
                   to={`/traces/${row.trace_id}`}
                   data-testid={`worst-link-${row.trace_id}`}
                   sx={{
-                    color: tokens.brand.text,
+                    ...DATA,
+                    color: tokens.link,
                     textDecoration: "none",
-                    fontSize: 13,
                     "&:hover": { textDecoration: "underline" },
                   }}
                 >
                   {row.trace_id.slice(0, 12)}… →
                 </Box>
-                <Typography variant="caption" sx={{ color: tokens.muted }}>
+                <Box component="span" sx={{ ...DATA, color: tokens.dim }}>
                   {row.evaluated_at
                     ? new Date(row.evaluated_at).toLocaleString()
                     : "no timestamp"}
-                </Typography>
-              </Box>
-
-              {row.explanation && (
-                <Typography variant="caption" sx={{ color: tokens.muted, display: "block" }}>
-                  {row.explanation}
-                </Typography>
-              )}
+                </Box>
+                {row.explanation && (
+                  <Box component="span" sx={{ ...DATA, color: tokens.dim }}>
+                    {row.explanation}
+                  </Box>
+                )}
+              </DataPanel>
 
               {row.reasoning.map((record, i) => (
                 <Reasoning key={`${record.span_id}-${i}`} record={record} />
@@ -479,6 +512,6 @@ function WorstTraces({ rows, judged }: { rows: WorstRow[]; judged: boolean }) {
           ))}
         </Box>
       )}
-    </Panel>
+    </Box>
   );
 }

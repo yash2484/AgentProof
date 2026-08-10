@@ -273,9 +273,18 @@ export const pillGroupSx = {
  * Wrapping to a second line keeps the rules horizontal-only, so a wrapped
  * row never leaves a rule dangling against nothing.
  */
-export function FigureRow({ children, sx }: { children: ReactNode; sx?: SxProps<Theme> }) {
+export function FigureRow({
+  children,
+  sx,
+  ...rest
+}: {
+  children: ReactNode;
+  sx?: SxProps<Theme>;
+  [key: `data-${string}`]: unknown;
+}) {
   return (
     <DataPanel
+      {...rest}
       sx={{
         display: "grid",
         gridTemplateColumns: "repeat(auto-fit, minmax(190px, 1fr))",
