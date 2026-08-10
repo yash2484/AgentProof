@@ -58,7 +58,7 @@ The Overview is now a triage page: verdict → what changed → what you can tru
 → where to look. Three server defects surfaced on the way and are fixed
 (negative `pending`, undercounted `scored`, `degraded` labelled "failed").
 
-### R16. The landing project points at the generated corpus — OPEN
+### R16. The landing project points at the generated corpus — OPEN · **DEMO BLOCKER**
 `DEFAULT_PROJECT` in `context/ProjectContext.tsx` is `synthetic-showcase`, set
 at the user's request because it is the only corpus dense enough to read the
 design against (300 traces, 8 runs, against the measured project's 31 and 4).
@@ -69,6 +69,12 @@ that every figure was authored by a script.
 
 **Fix before any demo, screenshot, benchmark, or external use:** flip the
 constant to `demo-research-agent`. One line, no other change needed.
+
+Escalated 2026-08-10: the next session's stated goal is a job-application
+screenshot and a LinkedIn recording, which makes this the one open item that can
+actually do damage. A fabricated corpus presented as product evidence is the
+exact failure this project was built to catch. It is listed as a blocker in
+`docs/handover-ledger-frontend.md` §4.1.
 
 ### R17. Provenance is a hard-coded set, not a property of the data — OPEN
 `server/agentproof_server/provenance.py` holds `GENERATED_PROJECTS` as a
@@ -208,3 +214,41 @@ name would be a weaker guarantee, not a stronger one — you could be looking at
 the wrong row and still type it correctly.
 
 **Review:** if trace names become unique and meaningful, switch to the name.
+
+---
+
+## Ledger theme rework — opened 2026-08-10
+
+Specced in `docs/design/2026-08-10-ledger-design-system.md`, not yet built.
+These are decisions the spec makes that someone other than the author should
+sign off on.
+
+### R18. Light-only, with no dark variant — QUEUED (owner, 2026-08-10)
+A dark mode was considered and deliberately dropped. The reasoning: this is a CI
+product read once per run, not a monitoring surface watched all day, so the
+usual eye-strain argument does not apply; and one theme executed exactly beats
+two executed adequately.
+
+**Review:** if real users ask for dark, it gets *designed* — a second palette
+built for a dark ground, contrast re-verified independently. Never derived by
+inverting Ledger, which is how the "dark mode that looks wrong" failure happens.
+
+### R19. Serif in a product UI is a bet — OPEN
+`impeccable`'s product register warns that display faces in UI are a bans-list
+item, and the editorial-serif look is itself a saturated AI default. The bet
+here is that the serif is confined to *prose* — verdicts, judge reasoning,
+explanations — and never reaches labels, buttons, data or navigation, which is
+the distinction the ban is actually about.
+
+**Review:** if the serif starts appearing on controls or in table cells, the bet
+has been lost and it should retreat to prose-only or be dropped entirely. The
+tell to watch for is a serif column header.
+
+### R20. Contrast tests must be re-pointed, not deleted — OPEN
+`theme/contrast.ts` and its 26 tests encode dark-ground ratios. Under Ledger
+every pair changes. They are the guard that caught real contrast failures during
+the analytics rework, so deleting them to get the suite green would remove the
+only automated check on the palette.
+
+**Review:** confirm the re-pointed tests still fail when given a bad pair —
+otherwise they are decoration.

@@ -1,8 +1,13 @@
 # AgentProof — Progress
 
-**Current phase:** Overview analytics — complete, ready for review
+**Current phase:** Ledger frontend — specced and approved, **not yet built**
 **Branch:** `overview-analytics`
 **Last updated:** 2026-08-10
+
+> **Next session reads `docs/handover-ledger-frontend.md` first.** Scope is the
+> frontend only, ending in a state that can be screenshotted for a job
+> application and recorded for a LinkedIn demo. The analytics rework behind it
+> is complete and verified.
 
 ## Last verified working
 
@@ -36,6 +41,36 @@ CI 6/6; both regression gates PASS exit 0.
 
 **Repo:** public, `github.com/yash2484/AgentProof`. Tags continuous
 `phase-1` … `phase-8`. Remote branches: `main`, `overview-analytics`.
+
+## Decided, not yet built — Ledger, the theme rework
+
+**Spec:** `docs/design/2026-08-10-ledger-design-system.md` ·
+**Handover:** `docs/handover-ledger-frontend.md` ·
+**Specimen:** https://claude.ai/code/artifact/f11669ac-9f3c-4bb8-8b62-49b0e0d037f0
+
+The dashboard moves from a dark console ("Graphite & Magenta") to a **light
+document that carries data**. Three directions were built as working specimens
+against live data — Instrument (dark, hairline rules), Console (all-mono
+terminal), Report (light, editorial) — and the owner chose a hybrid of the last
+two on 2026-08-10.
+
+**The rule:** prose is serif on paper, data is mono on a tinted panel. The tint
+marks the boundary between what was *written* and what was *measured*.
+
+**Why, in one line:** the product exists because evals get laundered on the way
+to whoever ships on them, and that reader is never the operator. A console
+design serves only the operator and argues against the product's own thesis.
+Two measured facts settled it — the metric detail page carries ~19,900
+characters of body text that monospace sets badly, and this is a CI product read
+per run, not a monitoring product watched all day.
+
+**Also fixes a real bug:** `typography.ts` has always declared Inter and
+**nothing has ever loaded it** — no `@font-face`, no package, no link tag. Every
+screen has rendered in Segoe UI while carrying `-0.02em` tracking tuned for
+Inter, which is why headings looked subtly off.
+
+No dark variant. Questioned by the owner and dropped: one theme that is exactly
+right beats two that are merely fine.
 
 ## Built & verified — the Overview redesign (final phase)
 
@@ -543,33 +578,59 @@ defects in shipped behaviour, that file is decisions and deferrals.
 
 ## Next up
 
-1. **The Overview's visual design and theme** — the phase the user has been
-   waiting for, deferred by them until C/D/E landed. See `docs/review-later.md`
-   R3 for the diagnosis: the metric-health distribution bar packs four
-   encodings onto one 0→1 track with no legend, and the fix is to separate
-   them the way the Evals group panels separated the shared axis.
-3. **Then the Overview's visual design and theme**, deferred to last at the
-   user's instruction (2026-08-09): they cannot read the metric-health
-   distribution bars or tell what to take from them. Treat it as a redesign of
-   that panel's form, not a tweak — it packs histogram, threshold, mean marker
-   and judge band into one 0–1 track with no legend.
-4. **A budgets aggregate for the underlying quantity.** The Budgets panel
-   currently states that a compliance rate hides the margin and cannot yet
-   show it: `details` carries `latency_ms`, `cost_usd` and `violations` under
-   different keys per metric, and nothing aggregates them. Spec §7 lists it.
-3. Decide the `span_names: [writer]` mismatch above — it is currently a failing
-   test and two traces with no faithfulness signal.
-3. Band 4 (latency and tokens as separate mini-charts) and span-role ranking
-   are still deferred; see the design spec §7 for why.
-3. Cohen's kappa, done properly: a blind-labelled gold set, judge run against it,
-   kappa with a bootstrap CI. A rushed one is worse than none.
-4. Scenarios that stress the deterministic and security metrics, so more than two
-   metrics have variance.
-5. Nightly/manual judge workflow (`ANTHROPIC_API_KEY` as a repo secret) so the
-   key-gated judge tests and the sensitivity sweep run somewhere other than a
+**One job, and it is the frontend.** Full handover:
+`docs/handover-ledger-frontend.md`. Spec: `docs/design/2026-08-10-ledger-design-system.md`.
+
+1. **Implement Ledger** — re-theme the dashboard from a dark console to a light
+   document that carries data. Governing rule: *prose is serif on paper, data is
+   mono on a tinted panel; if something is coloured, it has a status.* Order:
+   fonts → tokens → primitives → Overview → Metric detail → Traces → Evals and
+   Security. Each step ends green.
+
+2. **Then make it demo-ready.** Flip `DEFAULT_PROJECT` to `demo-research-agent`
+   (blocker — the current landing corpus is fabricated, see R16), walk the demo
+   path in the handover §4.3, re-run the Playwright pass at both viewports, and
+   capture at 1440px with `device_scale_factor=2`.
+
+No new backend work. The server is complete and verified. Everything below is
+parked deliberately.
+
+### Parked — backend and data
+
+3. **A budgets aggregate for the underlying quantity** (R7, spec §7). The
+   Budgets panel states that a compliance rate hides the margin and cannot yet
+   show it. Now unblocked: `measured_quantity` in `eval_engine/details.py` reads
+   both key spellings. Chart p50/p99 of `latency_ms` and `cost_usd` against
+   their limits.
+
+4. **Re-run the demo agent against a working `ANTHROPIC_API_KEY`.** The only
+   corpus that may be shown as evidence holds 31 traces, of which 50
+   measurements are real judge verdicts and 12 are `AuthenticationError: 401`.
+   A clean run deepens it for cents. Key is in `.env`, gitignored — never print
+   or commit it.
+
+5. **Scenarios that stress the deterministic and security metrics**, so more
+   than two metrics have variance. Five of eight currently never move, which is
+   honestly reported but thin.
+
+6. **Cohen's kappa, done properly** — a blind-labelled gold set, judge run
+   against it, kappa with a bootstrap CI. A rushed one is worse than none.
+
+7. **Nightly/manual judge workflow** with `ANTHROPIC_API_KEY` as a repo secret,
+   so key-gated tests and the sensitivity sweep run somewhere other than a
    laptop.
-6. Instrument a second real project — the strongest authenticity move, and the
-   honest answer to "has this run against anything but its own demo?"
+
+8. **Instrument a second real project** — the strongest authenticity move, and
+   the honest answer to *"has this run against anything but its own demo?"*
+
+### Parked — known gaps with entries in `docs/review-later.md`
+
+R2 (unmeasurable scores 1.0, needs a migration) · R4 (truncated variance axis) ·
+R9 (findings capped at 50 without disclosure — latent, neither project exceeds
+it) · R10 (only `injection_resistance` records an attempt signal) · R13, R14
+(outcome column unsortable, worst-metric ties arbitrary) · R17 (provenance is a
+hard-coded set).
+
 
 ## Known issues
 
