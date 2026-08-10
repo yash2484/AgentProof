@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Box, Typography } from "@mui/material";
+import { Box } from "@mui/material";
 import { useEvalAnalytics } from "../hooks/queries";
 import { useProject } from "../context/ProjectContext";
 import { QueryBoundary } from "../components/QueryBoundary";
@@ -8,7 +8,7 @@ import { VerdictBand } from "../components/VerdictBand";
 import { VariancePanel } from "../components/VariancePanel";
 import { TrustBand } from "../components/TrustBand";
 import { FindingsFeed } from "../components/FindingsFeed";
-import { tokens, TILE_GAP, SPACE } from "../theme";
+import { tokens, SPACE, DATA } from "../theme";
 
 /**
  * Overview — triage, not detail.
@@ -34,9 +34,12 @@ import { tokens, TILE_GAP, SPACE } from "../theme";
  *   3. What you can trust — coverage, broken measurements, provenance.
  *   4. Where to look — findings, each routing to the page that owns it.
  *
- * Hierarchy comes from structure rather than chrome: band 1 is not a card, so
- * nothing competes with it; bands 2 and 3 are cards; band 4 is a list. Five
- * bordered boxes of equal weight is what made the old page unreadable.
+ * Hierarchy comes from structure rather than chrome. Band 1 sits directly on
+ * paper in serif, so it reads as the page speaking; bands 2 to 4 are tinted
+ * data panels under serif headings, so they read as evidence for it. Five
+ * bordered boxes of equal weight is what made the old page unreadable, and
+ * the fix is not a better border — it is that written things and measured
+ * things stop looking alike.
  */
 export function OverviewPage() {
   const { project } = useProject();
@@ -63,7 +66,10 @@ export function OverviewPage() {
         emptyMessage="No traces in this window — widen the range, run the demo agent, or POST a trace to /api/v1/traces."
         onRetry={() => analytics.refetch()}
       >
-        <Box sx={{ display: "grid", gap: `${TILE_GAP}px` }}>
+        {/* Section gap, not tile gap. The bands are chapters of one document
+          * rather than tiles on a board, and 24px is what stops a heading
+          * belonging visually to the panel above it. */}
+        <Box sx={{ display: "grid", gap: `${SPACE.lg}px` }}>
           <VerdictBand analytics={data} project={project} />
 
           <VariancePanel runs={data?.eval_runs ?? []} />
@@ -72,14 +78,22 @@ export function OverviewPage() {
 
           <FindingsFeed analytics={data} project={project} />
 
-          <Typography
-            variant="caption"
-            sx={{ color: tokens.muted, display: "block", mb: `${SPACE.md}px` }}
+          {/* The colophon: what the whole page was computed from. Mono,
+            * because every figure in it was counted. */}
+          <Box
+            component="p"
+            sx={{
+              ...DATA,
+              color: tokens.dim,
+              mb: `${SPACE.md}px`,
+              pt: `${SPACE.xs}px`,
+              borderTop: `1px solid ${tokens.hair}`,
+            }}
           >
             {data
               ? `${data.outcome_split.passed} passed · ${data.outcome_split.failed} failed · ${data.outcome_split.degraded} degraded measurements, across ${data.totals.eval_runs} ${data.totals.eval_runs === 1 ? "run" : "runs"} ${days === 0 ? "over all history" : `in the last ${days} days`}.`
               : null}
-          </Typography>
+          </Box>
         </Box>
       </QueryBoundary>
     </Box>

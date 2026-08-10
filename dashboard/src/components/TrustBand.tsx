@@ -1,6 +1,7 @@
-import { Box, Typography } from "@mui/material";
-import { tokens, TILE_PADDING, TABULAR_NUMS, SPACE } from "../theme";
+import { Box } from "@mui/material";
+import { tokens, SPACE } from "../theme";
 import { provenanceOf, provenanceSentence } from "../lib/provenance";
+import { SectionHeading, Figure, FigureRow, NoteBlock, Prose } from "./Ledger";
 import type { EvalAnalytics } from "../types";
 
 /**
@@ -16,39 +17,12 @@ import type { EvalAnalytics } from "../types";
  * was measured at all, what kind of numbers are these, and what did the
  * measurement itself get wrong.
  *
- * Everything here is muted or bordered — never red, amber or green. This band
- * reports on the *harness*, not on the agent, and colouring a harness problem
- * with severity would put it in the same visual language as a finding.
+ * Every figure here is neutral ink — never red, amber or green. This band
+ * reports on the *harness*, not on the agent, and colouring a harness
+ * problem with severity would put it in the same visual language as a
+ * finding. The one exception is the provenance note, where the rule marks a
+ * statement about the data's standing rather than about a metric.
  */
-
-function Figure({
-  value,
-  label,
-  note,
-}: {
-  value: string;
-  label: string;
-  note?: string;
-}) {
-  return (
-    <Box sx={{ minWidth: 0 }}>
-      <Typography
-        variant="h5"
-        sx={{ color: tokens.ink, ...TABULAR_NUMS, lineHeight: 1.2 }}
-      >
-        {value}
-      </Typography>
-      <Typography variant="body2" sx={{ color: tokens.ink }}>
-        {label}
-      </Typography>
-      {note && (
-        <Typography variant="caption" sx={{ color: tokens.muted, display: "block" }}>
-          {note}
-        </Typography>
-      )}
-    </Box>
-  );
-}
 
 /**
  * The coverage bar: measured / broken-only / never measured.
@@ -83,20 +57,22 @@ function CoverageBar({
       aria-label={`${scored} of ${traces} traces measured, ${unmeasurable} unmeasurable, ${pending} never evaluated`}
       sx={{
         display: "flex",
-        height: 8,
-        borderRadius: 1,
+        height: 6,
+        borderRadius: "2px",
         overflow: "hidden",
-        bgcolor: tokens.surfaceRaised,
+        // The track is the unmeasured remainder, so it has to be visible
+        // against the panel rather than the page.
+        bgcolor: tokens.hair,
         mt: `${SPACE.sm}px`,
       }}
     >
-      <Box sx={{ width: pct(scored), bgcolor: tokens.muted }} />
+      <Box sx={{ width: pct(scored), bgcolor: tokens.steel }} />
       <Box
         sx={{
           width: pct(unmeasurable),
           // Hatched rather than filled: "we tried and it broke" is not a
           // quantity of the same kind as "we measured it".
-          backgroundImage: `repeating-linear-gradient(45deg, ${tokens.muted} 0 2px, transparent 2px 5px)`,
+          backgroundImage: `repeating-linear-gradient(45deg, ${tokens.steel} 0 2px, transparent 2px 5px)`,
         }}
       />
       <Box sx={{ width: pct(pending) }} />
@@ -118,42 +94,14 @@ export function TrustBand({ analytics }: { analytics: EvalAnalytics | undefined 
   // is the reason the page cannot make any claim about change, and that
   // belongs with the other limits on what these numbers can support.
   const comparable = (analytics?.gate ?? []).filter((g) => g.comparable).length;
-  const provenance = provenanceOf({
-    metrics,
-    generated: analytics?.generated ?? false,
-  });
+  const generated = analytics?.generated ?? false;
+  const provenance = provenanceOf({ metrics, generated });
 
   return (
-    <Box
-      component="section"
-      aria-label="What you can trust"
-      data-testid="trust-band"
-      sx={{
-        p: `${TILE_PADDING}px`,
-        bgcolor: tokens.surface,
-        border: `1px solid ${tokens.border}`,
-        borderRadius: 2.5,
-      }}
-    >
-      <Typography
-        variant="caption"
-        sx={{
-          color: tokens.muted,
-          textTransform: "uppercase",
-          letterSpacing: "0.06em",
-        }}
-      >
-        What you can trust
-      </Typography>
+    <Box component="section" aria-label="What you can trust" data-testid="trust-band">
+      <SectionHeading>What you can trust</SectionHeading>
 
-      <Box
-        sx={{
-          display: "grid",
-          gap: `${SPACE.md}px`,
-          gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))",
-          mt: `${SPACE.sm}px`,
-        }}
-      >
+      <FigureRow>
         <Figure
           value={`${scored} of ${traces}`}
           label="traces measured"
@@ -190,7 +138,7 @@ export function TrustBand({ analytics }: { analytics: EvalAnalytics | undefined 
               : "nothing is pinned, so no regression verdict is possible"
           }
         />
-      </Box>
+      </FigureRow>
 
       <CoverageBar
         scored={scored}
@@ -199,31 +147,26 @@ export function TrustBand({ analytics }: { analytics: EvalAnalytics | undefined 
         traces={traces}
       />
 
-      <Typography
-        data-testid="provenance-sentence"
-        variant="body2"
-        sx={{
-          color: analytics?.generated ? tokens.ink : tokens.muted,
-          mt: `${SPACE.md}px`,
-          // Full width when it is a warning block; a readable measure when it
-          // is a footnote. A half-width bordered box reads as an unfinished
-          // column rather than as a statement.
-          maxWidth: analytics?.generated ? "none" : "72ch",
-          // A generated corpus gets a bordered block rather than a muted
-          // footnote: the disclosure is load-bearing when the landing view
-          // points at fabricated data, and a footnote is what people skip.
-          ...(analytics?.generated
-            ? {
-                border: `1px solid ${tokens.border}`,
-                borderRadius: 1.5,
-                p: `${SPACE.sm}px`,
-                bgcolor: tokens.surfaceRaised,
-              }
-            : {}),
-        }}
-      >
-        {provenanceSentence(provenance)}
-      </Typography>
+      {/* A generated corpus gets a ruled note rather than a footnote: the
+        * disclosure is load-bearing when the view points at fabricated data,
+        * and a footnote is what people skip. When the data is real the same
+        * sentence is a quiet statement of provenance and reads as one. */}
+      {generated ? (
+        <NoteBlock
+          tone="watch"
+          data-testid="provenance-sentence"
+          sx={{ mt: `${SPACE.md}px`, maxWidth: "82ch" }}
+        >
+          {provenanceSentence(provenance)}
+        </NoteBlock>
+      ) : (
+        <Prose
+          data-testid="provenance-sentence"
+          sx={{ mt: `${SPACE.md}px`, fontSize: 14.5, color: tokens.dim, maxWidth: "82ch" }}
+        >
+          {provenanceSentence(provenance)}
+        </Prose>
+      )}
     </Box>
   );
 }

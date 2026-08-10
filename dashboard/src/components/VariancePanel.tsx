@@ -1,6 +1,6 @@
 import { Box, Typography } from "@mui/material";
 import { LineChart } from "@mui/x-charts/LineChart";
-import { tokens, TILE_PADDING, TABULAR_NUMS, SPACE } from "../theme";
+import { tokens, SPACE, DATA, UI, PROSE, TILE_PADDING } from "../theme";
 import {
   JUDGE_NOISE,
   groupColor,
@@ -8,6 +8,7 @@ import {
   groupLabel,
   presentGroups,
 } from "../lib/groups";
+import { SectionHeading, DataPanel } from "./Ledger";
 import type { AnalyticsEvalRun, MetricGroup } from "../types";
 
 /** At this many runs a line stops being an extrapolation invitation. */
@@ -47,16 +48,18 @@ function GroupKey({ group }: { group: MetricGroup }) {
       <Box
         aria-hidden
         sx={{
-          width: 8,
-          height: 8,
+          width: 7,
+          height: 7,
           borderRadius: "50%",
           bgcolor: groupColor(group),
           flexShrink: 0,
         }}
       />
-      <Typography variant="caption" sx={{ color: tokens.ink }} noWrap>
+      {/* A legend key names a series; it is not a column head, so it is not
+        * uppercased. Four tracked capitals in a row rebuilds the eyebrow. */}
+      <Box component="span" sx={{ ...UI, fontSize: 12.5, color: tokens.ink2 }}>
         {groupLabel(group)}
-      </Typography>
+      </Box>
     </Box>
   );
 }
@@ -78,11 +81,20 @@ function PairedSlope({
   const [first, last] = [runs[0], runs[runs.length - 1]];
 
   return (
-    <Box data-testid="paired-slope" sx={{ mt: 1.5, display: "grid", gap: 1.25 }}>
-      <Typography variant="caption" sx={{ color: tokens.muted }}>
+    <Box data-testid="paired-slope">
+      <Box component="div" sx={{ ...DATA, color: tokens.dim, mb: `${SPACE.sm}px` }}>
         {when(first.run_at)} → {when(last.run_at)}
-      </Typography>
-      {groups.map((group) => {
+      </Box>
+      {/* Groups run across rather than down. Stacked, three groups made a
+        * 500px column of mostly empty tint for nine numbers. */}
+      <Box
+        sx={{
+          display: "grid",
+          gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))",
+          gap: `${SPACE.md}px`,
+        }}
+      >
+        {groups.map((group) => {
         const from = meanFor(first, group);
         const to = meanFor(last, group);
         if (from === null || to === null) return null;
@@ -95,28 +107,24 @@ function PairedSlope({
         return (
           <Box key={group}>
             <GroupKey group={group} />
-            <Box
-              sx={{
-                display: "flex",
-                alignItems: "baseline",
-                gap: 1,
-                ...TABULAR_NUMS,
-              }}
-            >
-              <Typography variant="h6" sx={{ color: tokens.muted }}>
+            <Box sx={{ display: "flex", alignItems: "baseline", gap: 1, mt: "2px" }}>
+              <Box component="span" sx={{ ...DATA, fontSize: 17, color: tokens.dim }}>
                 {from.toFixed(3)}
-              </Typography>
-              <Typography variant="body2" sx={{ color: tokens.muted }}>
+              </Box>
+              <Box component="span" sx={{ ...DATA, color: tokens.dim }}>
                 →
-              </Typography>
-              <Typography variant="h6" sx={{ color: tokens.ink }}>
+              </Box>
+              <Box
+                component="span"
+                sx={{ ...DATA, fontSize: 17, fontWeight: 500, color: tokens.ink }}
+              >
                 {to.toFixed(3)}
-              </Typography>
+              </Box>
             </Box>
-            <Typography
+            <Box
+              component="div"
               data-testid={`paired-delta-${group}`}
-              variant="caption"
-              sx={{ color: tokens.muted, ...TABULAR_NUMS }}
+              sx={{ ...DATA, color: tokens.dim }}
             >
               {delta >= 0 ? "+" : ""}
               {delta.toFixed(3)}
@@ -125,19 +133,20 @@ function PairedSlope({
                   ? ` — larger than the ±${JUDGE_NOISE} judge swing`
                   : ` — within the ±${JUDGE_NOISE} judge swing`
                 : ""}
-            </Typography>
-          </Box>
-        );
-      })}
+            </Box>
+            </Box>
+          );
+        })}
+      </Box>
     </Box>
   );
 }
 
 /**
- * Band 3 — run-to-run variance, one series per metric group.
+ * Band 2 — run-to-run variance, one series per metric group.
  *
- * The panel never disappears; only its form changes with n, so nothing shifts
- * on the page when run 3 lands.
+ * The panel never disappears; only its form changes with n, so nothing
+ * shifts on the page when run 3 lands.
  *
  * Labelled variance, never trend. Same trace, same frozen fixture, same
  * model, 0.20 on one run and 0.40 on the next — that swing is a first-class
@@ -164,105 +173,118 @@ export function VariancePanel({ runs }: { runs: AnalyticsEvalRun[] }) {
       component="section"
       aria-label="What changed between runs"
       data-testid="variance-panel"
-      sx={{
-        p: `${TILE_PADDING}px`,
-        bgcolor: tokens.surface,
-        border: `1px solid ${tokens.border}`,
-        borderRadius: 2.5,
-        minHeight: 180,
-      }}
     >
-      <Typography
-        variant="caption"
-        sx={{ color: tokens.muted, textTransform: "uppercase", letterSpacing: "0.06em" }}
-      >
-        Run-to-run variance
-      </Typography>
+      <SectionHeading>What changed between runs</SectionHeading>
 
-      {points.length === 0 && (
-        <Typography data-testid="variance-empty" variant="body2" sx={{ color: tokens.muted, mt: 1.5 }}>
-          No scored runs in this window yet. This panel fills in once evaluation
-          has run twice.
-        </Typography>
-      )}
-
-      {points.length === 1 && (
-        <Box data-testid="variance-single" sx={{ mt: 1.5 }}>
-          <Box
-            sx={{
-              display: "flex",
-              flexWrap: "wrap",
-              gap: `${SPACE.md}px`,
-            }}
+      <DataPanel sx={{ p: `${TILE_PADDING}px`, minHeight: 140 }}>
+        {points.length === 0 && (
+          <Typography
+            data-testid="variance-empty"
+            sx={{ ...PROSE, fontSize: 15, color: tokens.ink2 }}
           >
-            {groups.map((group) => (
-              <Box key={group}>
-                <GroupKey group={group} />
-                <Typography variant="h6" sx={{ color: tokens.ink, ...TABULAR_NUMS }}>
-                  {meanFor(points[0], group)?.toFixed(3) ?? "—"}
-                </Typography>
-              </Box>
-            ))}
-          </Box>
-          <Typography variant="body2" sx={{ color: tokens.muted, mt: 1 }}>
-            One run. Variance needs a second — the slot is held so nothing moves
-            when it arrives.
+            No scored runs in this window yet. This panel fills in once
+            evaluation has run twice.
           </Typography>
-        </Box>
-      )}
+        )}
 
-      {points.length >= 2 && points.length < TREND_MIN_RUNS && (
-        <PairedSlope runs={points} groups={groups} />
-      )}
-
-      {points.length >= TREND_MIN_RUNS && (
-        <Box data-testid="variance-trend" sx={{ mt: 1 }}>
-          <Box sx={{ display: "flex", flexWrap: "wrap", gap: `${SPACE.sm}px`, mb: 0.5 }}>
-            {groups.map((group) => (
-              <GroupKey key={group} group={group} />
-            ))}
-          </Box>
-          <LineChart
-            height={168}
-            margin={{ top: 8, right: 16, bottom: 24, left: 40 }}
-            slotProps={{ legend: { hidden: true } }}
-            xAxis={[
-              {
-                data: points.map((_p, i) => i),
-                scaleType: "point",
-                valueFormatter: (i: number, ctx) =>
-                  ctx?.location === "tick" ? `#${i + 1}` : when(points[i].run_at),
-              },
-            ]}
-            yAxis={[{ min: floor, max: 1 }]}
-            series={groups.map((group) => ({
-              label: groupLabel(group),
-              // Nulls break the line rather than dropping to zero: a group a
-              // run did not measure is unknown, not failing.
-              data: points.map((p) => meanFor(p, group)),
-              color: groupColor(group),
-              connectNulls: false,
-              showMark: points.length <= 12,
-            }))}
-          />
-        </Box>
-      )}
-
-      {points.length >= 2 && (
-        <Typography variant="caption" sx={{ color: tokens.muted, display: "block", mt: 1 }}>
-          Variance, not trend.{" "}
-          {judged
-            ? `A ±${JUDGE_NOISE} swing between runs on identical input is expected
-               from the judged group; the others are measured, not judged.`
-            : "These groups are measured, not judged."}
-          {points.length >= TREND_MIN_RUNS && floor > 0 && (
-            <Box component="span" data-testid="axis-note">
-              {" "}
-              Axis starts at {floor.toFixed(2)}, not 0.
+        {points.length === 1 && (
+          <Box data-testid="variance-single">
+            <Box sx={{ display: "flex", flexWrap: "wrap", gap: `${SPACE.md}px` }}>
+              {groups.map((group) => (
+                <Box key={group}>
+                  <GroupKey group={group} />
+                  <Box
+                    component="span"
+                    sx={{ ...DATA, fontSize: 17, fontWeight: 500, color: tokens.ink }}
+                  >
+                    {meanFor(points[0], group)?.toFixed(3) ?? "—"}
+                  </Box>
+                </Box>
+              ))}
             </Box>
-          )}
-        </Typography>
-      )}
+            <Typography sx={{ ...PROSE, fontSize: 15, color: tokens.ink2, mt: 1 }}>
+              One run. Variance needs a second — the slot is held so nothing
+              moves when it arrives.
+            </Typography>
+          </Box>
+        )}
+
+        {points.length >= 2 && points.length < TREND_MIN_RUNS && (
+          <PairedSlope runs={points} groups={groups} />
+        )}
+
+        {points.length >= TREND_MIN_RUNS && (
+          <Box data-testid="variance-trend">
+            <Box
+              sx={{ display: "flex", flexWrap: "wrap", gap: `${SPACE.sm}px`, mb: 0.5 }}
+            >
+              {groups.map((group) => (
+                <GroupKey key={group} group={group} />
+              ))}
+            </Box>
+            <LineChart
+              height={168}
+              margin={{ top: 8, right: 16, bottom: 24, left: 40 }}
+              slotProps={{ legend: { hidden: true } }}
+              // A faint horizontal grid only. Vertical rules would imply the
+              // x-axis is continuous, and it is a sequence of runs.
+              grid={{ horizontal: true }}
+              sx={{
+                "& .MuiChartsAxis-line, & .MuiChartsAxis-tick": {
+                  stroke: tokens.hairStrong,
+                },
+                "& .MuiChartsAxis-tickLabel": {
+                  fill: tokens.dim,
+                  fontFamily: DATA.fontFamily,
+                  fontSize: 11,
+                },
+                "& .MuiChartsGrid-line": { stroke: tokens.hair },
+                // The last point is where the reader's question actually is.
+                "& .MuiMarkElement-root": { strokeWidth: 1.5 },
+              }}
+              xAxis={[
+                {
+                  data: points.map((_p, i) => i),
+                  scaleType: "point",
+                  valueFormatter: (i: number, ctx) =>
+                    ctx?.location === "tick" ? `#${i + 1}` : when(points[i].run_at),
+                },
+              ]}
+              yAxis={[{ min: floor, max: 1 }]}
+              series={groups.map((group) => ({
+                label: groupLabel(group),
+                // Nulls break the line rather than dropping to zero: a group
+                // a run did not measure is unknown, not failing.
+                data: points.map((p) => meanFor(p, group)),
+                color: groupColor(group),
+                connectNulls: false,
+                showMark: points.length <= 12,
+              }))}
+            />
+          </Box>
+        )}
+
+        {points.length >= 2 && (
+          <Typography
+            // A footnote, not body prose: it may run wider than the 62ch
+            // reading measure without becoming hard to read, and at 62ch it
+            // wrapped into three short lines inside a panel four times that.
+            sx={{ ...PROSE, fontSize: 14, maxWidth: "88ch", color: tokens.dim, mt: `${SPACE.sm}px` }}
+          >
+            Variance, not trend.{" "}
+            {judged
+              ? `A ±${JUDGE_NOISE} swing between runs on identical input is expected
+                 from the judged group; the others are measured, not judged.`
+              : "These groups are measured, not judged."}
+            {points.length >= TREND_MIN_RUNS && floor > 0 && (
+              <Box component="span" data-testid="axis-note">
+                {" "}
+                Axis starts at {floor.toFixed(2)}, not 0.
+              </Box>
+            )}
+          </Typography>
+        )}
+      </DataPanel>
     </Box>
   );
 }

@@ -1,7 +1,7 @@
 import { ReactNode } from "react";
 import { Box, Typography } from "@mui/material";
 import type { SxProps, Theme } from "@mui/material/styles";
-import { tokens, SPACE, RADIUS, H3, PROSE, MICRO, DATA, FONT_MONO } from "../theme";
+import { tokens, SPACE, RADIUS, H3, PROSE, MICRO, DATA, UI, FONT_MONO } from "../theme";
 
 /**
  * Ledger's structural vocabulary.
@@ -151,7 +151,10 @@ export function Figure({
       >
         {value}
       </Box>
-      <Box sx={{ ...MICRO, color: tokens.dim, mt: "5px" }}>{label}</Box>
+      {/* Sentence-case sans, not tracked uppercase. "Traces measured" is a
+        * phrase, and uppercasing phrases is the eyebrow tell wearing a new
+        * hat; MICRO's uppercase is reserved for actual column heads. */}
+      <Box sx={{ ...UI, fontSize: 12.5, color: tokens.dim, mt: "5px" }}>{label}</Box>
       {note && (
         <Box
           data-testid={noteTestId}
@@ -276,13 +279,10 @@ export function FigureRow({ children, sx }: { children: ReactNode; sx?: SxProps<
       sx={{
         display: "grid",
         gridTemplateColumns: "repeat(auto-fit, minmax(190px, 1fr))",
-        "& > *": {
-          p: `${SPACE.sm}px`,
-          borderRight: `1px solid ${tokens.hair}`,
-          borderBottom: `1px solid ${tokens.hair}`,
-        },
-        // The trailing cell on each line and the final line carry no rule,
-        // which is what stops the grid reading as a boxed table.
+        "& > *": { p: `${SPACE.sm}px`, borderRight: `1px solid ${tokens.hair}` },
+        // Vertical rules only. A horizontal rule under the last row would
+        // sit a hairline above the panel's own border and read as a mistake,
+        // and the cells are separated by column, not by row.
         "& > *:last-child": { borderRight: "none" },
         ...sx,
       }}

@@ -25,6 +25,9 @@ const NAV = [
  */
 const RAIL_WIDTH = 178;
 
+/** The page width of the document, before padding. */
+const MAX_CONTENT = 1180;
+
 /**
  * Below this the rail's fixed width costs more than it gives: at 375px it
  * would leave under 200px of content. Matches the Overview grid's own
@@ -197,9 +200,25 @@ export function AppShell({ children }: { children: ReactNode }) {
         </Drawer>
       )}
 
+      {/* A document has a page width. Without this the panels stretch to
+        * whatever the monitor is, and a 62ch paragraph inside a 1700px panel
+        * reads as a narrow ragged column floating in empty tint — the prose
+        * looks broken even though its own measure is correct. 1180px keeps
+        * the seven-column trace grid comfortable and still leaves real
+        * margins above 1440. */}
       <Box
         component="main"
-        sx={{ flexGrow: 1, p: `${SPACE.lg}px`, pt: `${SPACE.md}px`, minWidth: 0, bgcolor: tokens.paper }}
+        sx={{
+          flexGrow: 1,
+          minWidth: 0,
+          bgcolor: tokens.paper,
+          px: `${SPACE.lg}px`,
+          pt: `${SPACE.md}px`,
+          pb: `${SPACE.lg}px`,
+          maxWidth: MAX_CONTENT + SPACE.lg * 2,
+          mx: "auto",
+          width: "100%",
+        }}
       >
         {isNarrow && (
           <IconButton

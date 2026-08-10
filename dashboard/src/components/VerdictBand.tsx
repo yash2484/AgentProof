@@ -1,6 +1,6 @@
 import { Box, Typography } from "@mui/material";
 import { Link as RouterLink } from "react-router-dom";
-import { tokens, SPACE, TABULAR_NUMS } from "../theme";
+import { tokens, SPACE, LEDE, PROSE, UI } from "../theme";
 import { overviewVerdict } from "../lib/verdict";
 import type { VerdictTone } from "../lib/verdict";
 import { metricHref } from "./MetricStrip";
@@ -9,25 +9,26 @@ import type { EvalAnalytics } from "../types";
 /**
  * Band 1 — the conclusion, before any evidence for it.
  *
- * Deliberately **not a card**. Every other element on this page sits on a
- * surface with a border, so the one thing that sits directly on the page
- * ground reads as the page speaking rather than as another tile competing for
- * attention. Uniform card weight is what flattened the old Overview: five
- * bordered boxes, and the largest type on the screen belonged to the least
- * important number.
+ * Deliberately **not a panel**. Every figure on this page sits on a tinted
+ * data surface, so the one thing that sits directly on paper reads as the
+ * page speaking rather than as another tile competing for attention. Uniform
+ * weight is what flattened the old Overview: five bordered boxes, and the
+ * largest type on the screen belonged to the least important number.
  *
- * Severity colour appears here and on severity chips, nowhere else on the
+ * The lede is 22px serif — the same register as the judge's own reasoning,
+ * because both are written rather than measured. It is not the largest type
+ * on the page by much, and it does not need to be: nothing else is serif at
+ * that size, so it is unmistakably the page's voice.
+ *
+ * Severity colour appears here and on severity chips, nowhere else on this
  * page. A rule with one exception is not a rule.
  */
 
-const TONE: Record<VerdictTone, { rule: string; text: string }> = {
-  // The rule is a 3px left edge on the *band*, not a decorative stripe on a
-  // card — it marks where the page's voice starts and carries the one piece of
-  // colour a reader should read as severity.
-  serious: { rule: tokens.status.fail, text: tokens.status.fail },
-  watch: { rule: tokens.status.watch, text: tokens.status.watch },
-  clear: { rule: tokens.status.pass, text: tokens.status.pass },
-  unknown: { rule: tokens.border, text: tokens.muted },
+const TONE: Record<VerdictTone, string> = {
+  serious: tokens.status.fail,
+  watch: tokens.status.watch,
+  clear: tokens.status.pass,
+  unknown: tokens.ink2,
 };
 
 export function VerdictBand({
@@ -44,7 +45,6 @@ export function VerdictBand({
       ? analytics.outcome_split.passed + analytics.outcome_split.failed
       : 0,
   });
-  const tone = TONE[verdict.tone];
 
   return (
     <Box
@@ -52,24 +52,16 @@ export function VerdictBand({
       aria-label="Verdict"
       data-testid="verdict-band"
       data-tone={verdict.tone}
-      sx={{
-        borderLeft: `3px solid ${tone.rule}`,
-        pl: `${SPACE.md}px`,
-        py: `${SPACE.xs}px`,
-      }}
+      sx={{ pb: `${SPACE.xs}px` }}
     >
       <Typography
         data-testid="verdict-headline"
         component="h2"
         sx={{
-          color: tone.text,
-          // Larger than the page title, because the conclusion outranks the
-          // name of the page it is on.
-          fontSize: "clamp(1.5rem, 3.2vw, 2rem)",
-          fontWeight: 600,
-          lineHeight: 1.15,
-          letterSpacing: "-0.02em",
+          ...LEDE,
+          color: TONE[verdict.tone],
           textWrap: "balance",
+          maxWidth: "34ch",
         }}
       >
         {verdict.headline}
@@ -77,15 +69,8 @@ export function VerdictBand({
 
       <Typography
         data-testid="verdict-detail"
-        sx={{
-          color: tokens.ink,
-          mt: `${SPACE.xs}px`,
-          fontSize: 15,
-          lineHeight: 1.6,
-          // Body copy stays inside a readable measure even on a wide screen.
-          maxWidth: "68ch",
-          ...TABULAR_NUMS,
-        }}
+        component="p"
+        sx={{ ...PROSE, color: tokens.ink2, mt: "6px" }}
       >
         {verdict.detail}
       </Typography>
@@ -96,17 +81,13 @@ export function VerdictBand({
           data-testid="verdict-focus"
           to={metricHref(verdict.focus, project, analytics?.days)}
           sx={{
+            ...UI,
             display: "inline-block",
             mt: `${SPACE.sm}px`,
-            color: tokens.brand.text,
+            color: tokens.link,
             textDecoration: "none",
-            fontSize: 14,
-            "&:hover": { textDecoration: "underline" },
-            "&:focus-visible": {
-              outline: `2px solid ${tokens.brand.solid}`,
-              outlineOffset: 3,
-              borderRadius: "2px",
-            },
+            borderBottom: `1px solid ${tokens.hairStrong}`,
+            "&:hover": { borderBottomColor: tokens.link },
           }}
         >
           Open {verdict.focus} →
