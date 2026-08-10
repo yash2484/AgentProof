@@ -375,3 +375,76 @@ an importer, not a capability.
 scoring them with the current `agentproof.yaml` would produce figures that
 look authoritative and mean very little, which is the one failure mode this
 whole product exists to prevent. A coding-specific config comes first.
+
+### R26. Who the CI-gate positioning is aimed at — OPEN
+Recorded 2026-08-10 for the launch post and demo. Same status as R23:
+**reasoned from what the code does well, validated with nobody.** Ranked by
+how much pain the group feels today.
+
+**Tier 1 — the bullseye.** Small teams (2–15 engineers) shipping an LLM agent
+as a *core product feature*, with a CI pipeline already running. Customer
+support, contract and document analysis, research assistants, coding agents,
+healthcare intake, financial reporting. The test is whether the agent's output
+quality *is* the product rather than a convenience on top of it.
+
+Why this group and not a larger one:
+
+- they ship weekly and change prompts constantly, so every release is an
+  untested regression risk;
+- the GitHub Action drops into a pipeline that already exists, so there is no
+  new habit to form;
+- they either have a fixed eval set or feel guilty about not having one,
+  which is the fixed input the detector requires;
+- they cannot justify a dedicated evals engineer, so the statistical rigour is
+  exactly the part they would otherwise skip;
+- their failures are public — a fabricated answer reaches a customer.
+
+*Sharpest sub-segment:* teams whose agent output is regulated or
+high-consequence (health, legal, financial). "Unexercised, not proven" is a
+compliance artefact for them, not only good taste — someone will eventually
+ask them to show a control was actually exercised.
+
+**Tier 2 — real, harder to reach.** Platform/ML engineers at 50–500-person
+companies building an internal eval harness for several product teams. The
+most sophisticated users, and they will read the effect-size guard correctly
+on sight — but they tend to build in-house, so the pitch becomes "do not
+build this yourself", which is a harder argument. Also: maintainers of agent
+frameworks and templates who must show a refactor did not degrade behaviour.
+
+**Tier 3 — do not spend effort here.** Individual developers using an LLM CLI
+(see R24 — structurally wrong, and large and loud enough to generate
+attention that will not convert). Enterprise AI governance and risk teams —
+the epistemic honesty is aimed squarely at them and they would want it, but
+they buy through procurement and need SOC2, SSO, audit logs and a vendor
+entity. Wrong stage, not wrong audience.
+
+**Communities, by signal-to-noise for this specific product:**
+
+| Where | Why |
+|---|---|
+| LangChain / LangGraph Discord and forum | the SDK already ships a LangGraph adapter, so integration cost is one line, and "did my prompt change break it" is universal there. **Start here.** |
+| AI Engineer / Latent Space community | explicitly identifies as "engineers shipping LLM products" — closest audience-to-ICP match that exists |
+| MLOps Community Slack, evals channel | practitioners with CI who are actively arguing about this problem |
+| r/LLMDevs, builder threads in r/LocalLLaMA | builders rather than users; r/MachineLearning is too research-facing |
+| Show HN | the "declines to conclude" argument is HN-shaped, but it is one shot — spend it only after a second real corpus exists |
+| LangSmith / Langfuse issue trackers and adjacent threads | people already frustrated with eval tooling, self-identified |
+
+**The strategic problem, stated plainly.** Tier 1 is also the segment
+LangSmith owns by default, because it ships with the framework those teams
+already use. This will not win on tracing or on breadth, and should not try.
+
+The wedge that is not taken is **statistical honesty in CI**: other tools
+report that a number moved; this one reports whether it moved further than
+the measured noise, and refuses to answer when the sample cannot support an
+answer. Narrow, defensible, and the only claim worth leading with.
+
+**Implication for the demo** (relevant when the post is drafted): the opening
+frame should not be the dashboard. It should be **a CI run that blocks a
+merge with the p-value visible**, ideally followed by a second run that
+*declines* to block and says why. The dashboard is the evidence for the
+claim, not the claim.
+
+**Review:** every tier and every ranking here is a hypothesis. Before the
+post goes out, sanity-check Tier 1 against two or three people who actually
+ship an agent — the failure mode is a well-built tool aimed at a group that
+does not feel the pain.

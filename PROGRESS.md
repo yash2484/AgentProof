@@ -94,6 +94,25 @@ maps onto the span DAG — verified by inspection, see R25. The missing piece
 is an importer, not a capability, and the metric config has to be rethought
 for coding work before it is built.
 
+### Who it is for, in one paragraph
+
+**Tier 1:** teams of 2–15 shipping an LLM agent as a *core product feature*,
+with CI already running — support agents, document analysis, research
+assistants, coding agents, regulated-output tools. They ship weekly, change
+prompts constantly, cannot justify a dedicated evals engineer, and their
+failures reach customers. **Start in the LangGraph community**, where the
+integration cost is one line. Full tiering, the communities ranked by
+signal-to-noise, and what *not* to chase are in `review-later.md` R26.
+
+**The wedge:** other tools report that a number moved; this one reports
+whether it moved further than the measured noise, and refuses to answer when
+the sample cannot support an answer. LangSmith owns tracing and breadth by
+default — do not compete there.
+
+**Demo implication:** lead with a CI run that blocks a merge, p-value
+visible, ideally followed by one that *declines* to block and says why. The
+dashboard is the evidence, not the claim.
+
 ## Decided, not yet built — Ledger, the theme rework
 
 **Spec:** `docs/design/2026-08-10-ledger-design-system.md` ·
