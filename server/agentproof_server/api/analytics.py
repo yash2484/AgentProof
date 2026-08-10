@@ -28,6 +28,7 @@ from agentproof_server.eval_engine.baseline import baselines_from_json
 from agentproof_server.eval_engine.config_parser import load_config
 from agentproof_server.eval_engine.models import Baseline, RegressionConfig
 from agentproof_server.eval_engine.regression import detect_regression
+from agentproof_server.provenance import exclude_generated, is_generated
 
 logger = logging.getLogger("agentproof_server")
 
@@ -176,9 +177,15 @@ def _degraded_expr():
 
 
 def _scope_traces(stmt, project: str | None, since: datetime | None):
-    """Filter a traces-rooted statement by project and time window."""
+    """Filter a traces-rooted statement by project and time window.
+
+    With no project named, "all" means all *measured* projects -- see
+    ``provenance``. Pooling a generated corpus into an unlabelled total is the
+    one thing no caption can undo.
+    """
     if project is not None:
         stmt = stmt.where(TraceModel.project == project)
+    stmt = exclude_generated(stmt, project, TraceModel)
     if since is not None:
         stmt = stmt.where(TraceModel.created_at >= since)
     return stmt
@@ -188,13 +195,18 @@ def _scope_evals(stmt, project: str | None, since: datetime | None):
     """Filter an eval-rooted statement by project and time window.
 
     Eval rows carry no project, so scoping one means joining the owning trace.
+    The join is now unconditional: excluding generated corpora from the
+    unscoped case needs the project column too, and the previous version
+    skipped the join precisely when no project was named -- which is the case
+    that pooled fabricated rows into the default view.
+
     The window applies to ``evaluated_at``: an old trace evaluated today
     belongs in today's numbers.
     """
+    stmt = stmt.join(TraceModel, EvalResultModel.trace_id == TraceModel.trace_id)
     if project is not None:
-        stmt = stmt.join(
-            TraceModel, EvalResultModel.trace_id == TraceModel.trace_id
-        ).where(TraceModel.project == project)
+        stmt = stmt.where(TraceModel.project == project)
+    stmt = exclude_generated(stmt, project, TraceModel)
     if since is not None:
         stmt = stmt.where(EvalResultModel.evaluated_at >= since)
     return stmt
@@ -360,20 +372,57 @@ def _score_buckets_stmt(project: str | None, since: datetime | None):
     )
 
 
-def _evaluated_traces_stmt(project: str | None, since: datetime | None):
-    """How many traces were measured, and how many of those measurements broke.
+def _trace_health_stmt(project: str | None, since: datetime | None):
+    """Partition the traces in this window by whether they were measured.
 
     Counts *traces*, not eval rows: 31 traces across 8 metrics is 248 rows,
     and measurement health is a statement about traces.
+
+    Rooted at ``traces`` and scoped by the trace window, deliberately. The
+    previous version counted evaluated traces from the eval side and derived
+    ``pending`` by subtraction, which mixed two windows -- traces filtered on
+    ``created_at``, eval rows on ``evaluated_at``. Measured on the live corpus:
+    19 traces were evaluated inside the window but created before it, so
+    ``evaluated`` (90) exceeded ``traces`` (84) and the card rendered
+    "-6 pending". Windowing the trace and taking all of its measurements makes
+    the three states a genuine partition at every input.
+
+    The join is an outer join because ``pending`` is otherwise unrepresentable:
+    a trace with no eval row would drop out of an inner join entirely.
     """
     degraded = _degraded_expr()
-    stmt = select(
-        func.count(EvalResultModel.trace_id.distinct()).label("evaluated"),
-        func.count(
-            case((degraded, EvalResultModel.trace_id)).distinct()
-        ).label("degraded"),
-    ).select_from(EvalResultModel)
-    return _scope_evals(stmt, project, since)
+    per_trace = (
+        select(
+            TraceModel.id.label("trace_pk"),
+            func.bool_or(EvalResultModel.id.isnot(None)).label("has_any"),
+            # ``case`` rather than a bare boolean AND: with no eval row the
+            # degraded predicate is NULL, and NULL is not false -- it would
+            # poison ``bool_or`` instead of contributing nothing.
+            func.bool_or(
+                case((EvalResultModel.id.isnot(None) & ~degraded, True), else_=False)
+            ).label("has_usable"),
+            func.bool_or(
+                case((EvalResultModel.id.isnot(None) & degraded, True), else_=False)
+            ).label("has_broken"),
+        )
+        .select_from(TraceModel)
+        .outerjoin(EvalResultModel, EvalResultModel.trace_id == TraceModel.trace_id)
+    )
+    per_trace = (
+        _scope_traces(per_trace, project, since).group_by(TraceModel.id).subquery()
+    )
+
+    return select(
+        func.count().filter(per_trace.c.has_usable).label("scored"),
+        func.count()
+        .filter(~per_trace.c.has_usable & per_trace.c.has_any)
+        .label("unmeasurable"),
+        func.count().filter(~per_trace.c.has_any).label("pending"),
+        # Overlaps ``scored`` on purpose and is never subtracted from it: a
+        # trace can hold a usable measurement *and* a broken one, and both
+        # facts are true at once.
+        func.count().filter(per_trace.c.has_broken).label("degraded_traces"),
+    ).select_from(per_trace)
 
 
 # ---------------------------------------------------------------------------
@@ -552,7 +601,7 @@ def _analytics_payload(
     timeline_rows: Sequence[tuple],
     metric_rows: Sequence[tuple],
     bucket_rows: Sequence[tuple],
-    evaluated_row: tuple,
+    trace_health_row: tuple,
     ci_block_by_metric: dict[str, bool],
     metric_run_rows: Sequence[tuple] = (),
     gate: list[dict] | None = None,
@@ -563,10 +612,10 @@ def _analytics_payload(
     a database.
     """
     traces, tokens, cost_usd = trace_totals
-    evaluated, degraded_traces = evaluated_row
+    scored, unmeasurable, pending, degraded_traces = (
+        int(v or 0) for v in trace_health_row
+    )
     traces = int(traces or 0)
-    evaluated = int(evaluated or 0)
-    degraded_traces = int(degraded_traces or 0)
 
     runs = cluster_eval_runs(timeline_rows)
     metrics = _metric_health_payload(metric_rows, ci_block_by_metric)
@@ -600,14 +649,23 @@ def _analytics_payload(
         "project": project,
         "days": days,
         "generated_at": generated_at.isoformat(),
+        # Whether these figures were authored rather than measured. Travels
+        # with the payload so the client cannot disagree with the server about
+        # what it is rendering, and so the answer survives any future change to
+        # which corpora are generated.
+        "generated": is_generated(project),
         "totals": {
             "traces": traces,
             "eval_runs": len(runs),
-            # A trace whose only measurement broke is not "scored", and a
-            # trace nobody evaluated is not "passing" -- it is pending.
-            "scored": evaluated - degraded_traces,
-            "degraded": degraded_traces,
-            "pending": traces - evaluated,
+            # Three mutually exclusive states that always sum to ``traces``:
+            # at least one usable measurement, measurements that all broke,
+            # and never measured at all. Computed in SQL as a partition rather
+            # than by subtracting differently-scoped counts.
+            "scored": scored,
+            "unmeasurable": unmeasurable,
+            "pending": pending,
+            # Reported alongside, not subtracted: overlaps ``scored``.
+            "degraded_traces": degraded_traces,
             "tokens": int(tokens) if tokens is not None else None,
             "cost_usd": _optional_float(cost_usd),
         },
@@ -893,8 +951,8 @@ async def get_evals_analytics(
     timeline_rows = (await db.execute(_eval_timeline_stmt(project, since))).all()
     metric_rows = (await db.execute(_metric_health_stmt(project, since))).all()
     bucket_rows = (await db.execute(_score_buckets_stmt(project, since))).all()
-    evaluated_row = (
-        await db.execute(_evaluated_traces_stmt(project, since))
+    trace_health_row = (
+        await db.execute(_trace_health_stmt(project, since))
     ).one()
 
     # The candidate sample is the *latest run*, not the whole window: the gate
@@ -934,7 +992,7 @@ async def get_evals_analytics(
         timeline_rows=timeline_rows,
         metric_rows=metric_rows,
         bucket_rows=bucket_rows,
-        evaluated_row=tuple(evaluated_row),
+        trace_health_row=tuple(trace_health_row),
         ci_block_by_metric=_ci_block_by_metric(),
         metric_run_rows=metric_run_rows,
         gate=gate,

@@ -38,6 +38,19 @@ export function AppShell({ children }: { children: ReactNode }) {
   const { project, setProject } = useProject();
   const projects = useProjects();
   const isNarrow = useMediaQuery(NARROW);
+
+  // The app lands on a named project (see DEFAULT_PROJECT), which a fresh
+  // install will not have. MUI renders a Select whose value is absent from its
+  // options as *blank*, so without this the rail would claim no scope while
+  // every query on the page returned nothing for a project that does not
+  // exist. Falling back to "all" is the honest state, and it self-heals rather
+  // than requiring the reader to notice.
+  const known = projects.data;
+  useEffect(() => {
+    if (project !== undefined && known && !known.includes(project)) {
+      setProject(undefined);
+    }
+  }, [project, known, setProject]);
   const [open, setOpen] = useState(false);
 
   // The permanent branch ignores `open`, so a drawer left open on a narrow

@@ -4,7 +4,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { MemoryRouter } from "react-router-dom";
 import { ThemeProvider } from "@mui/material";
 import { theme } from "../theme";
-import { ProjectProvider } from "../context/ProjectContext";
+import { DEFAULT_PROJECT, ProjectProvider } from "../context/ProjectContext";
 import { renderWithProviders } from "../test/utils";
 import { sampleTraces } from "../test/fixtures";
 import * as api from "../api/client";
@@ -13,6 +13,12 @@ import { AppShell } from "./AppShell";
 beforeEach(() => {
   vi.spyOn(api, "listTraces").mockResolvedValue({
     traces: sampleTraces, total: sampleTraces.length, limit: 200, offset: 0,
+  });
+  // The switcher reads its own endpoint rather than a page of traces — see
+  // listProjects. Default: the landing project is absent, the fresh-install
+  // case, so the rail falls back to "All projects".
+  vi.spyOn(api, "listProjects").mockResolvedValue({
+    projects: [{ name: "demo", traces: 3, generated: false }],
   });
 });
 afterEach(() => vi.restoreAllMocks());
@@ -24,8 +30,38 @@ describe("AppShell", () => {
     expect(screen.getByRole("link", { name: "Evals" })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Security" })).toBeInTheDocument();
     // The switcher loads distinct project names from the traces endpoint.
-    await waitFor(() => expect(api.listTraces).toHaveBeenCalled());
-    expect(screen.getByText("All projects")).toBeInTheDocument();
+    await waitFor(() => expect(api.listProjects).toHaveBeenCalled());
+    // The fixture holds only "demo" traces, so the landing default is absent
+    // and the switcher falls back — covered in full by the next test.
+    expect(screen.getByLabelText("Project")).toBeInTheDocument();
+  });
+
+  it("names the landing project when that corpus exists", async () => {
+    vi.spyOn(api, "listProjects").mockResolvedValue({
+      projects: [{ name: DEFAULT_PROJECT, traces: 300, generated: true }],
+    });
+
+    renderWithProviders(<AppShell><div>content</div></AppShell>, { route: "/traces" });
+
+    await waitFor(() =>
+      expect(screen.getByText(DEFAULT_PROJECT)).toBeInTheDocument(),
+    );
+  });
+
+  it("falls back to all projects when the default corpus is not present", async () => {
+    // The landing default names a project that a fresh install will not have.
+    // MUI renders a Select whose value is missing from its options as *blank*,
+    // so the page would claim no scope at all while every query below it
+    // silently returned nothing. Falling back is the honest state: an
+    // installation without the seed corpus is looking at all projects.
+    // The default mock lists only "demo" — the landing project is absent,
+    // which is exactly the fresh-install case.
+    renderWithProviders(<AppShell><div>content</div></AppShell>, { route: "/traces" });
+
+    await waitFor(() =>
+      expect(screen.getByText("All projects")).toBeInTheDocument(),
+    );
+    expect(screen.queryByText(DEFAULT_PROJECT)).not.toBeInTheDocument();
   });
 });
 
@@ -33,7 +69,7 @@ describe("AppShell left rail", () => {
   it("shows Overview first in the rail", async () => {
     renderWithProviders(<AppShell><div>content</div></AppShell>, { route: "/" });
     expect(screen.getByRole("link", { name: "Overview" })).toBeInTheDocument();
-    await waitFor(() => expect(api.listTraces).toHaveBeenCalled());
+    await waitFor(() => expect(api.listProjects).toHaveBeenCalled());
   });
 
   it("marks Overview current only on the index route", () => {
@@ -58,7 +94,7 @@ describe("AppShell left rail", () => {
 
   it("keeps the project switcher reachable from the rail", async () => {
     renderWithProviders(<AppShell><div>content</div></AppShell>, { route: "/traces" });
-    await waitFor(() => expect(api.listTraces).toHaveBeenCalled());
+    await waitFor(() => expect(api.listProjects).toHaveBeenCalled());
     expect(screen.getByLabelText("Project")).toBeInTheDocument();
   });
 });
@@ -88,7 +124,7 @@ describe("AppShell responsive rail", () => {
     renderWithProviders(<AppShell><div>content</div></AppShell>, { route: "/traces" });
     expect(screen.getByRole("link", { name: "Traces" })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /open navigation/i })).not.toBeInTheDocument();
-    await waitFor(() => expect(api.listTraces).toHaveBeenCalled());
+    await waitFor(() => expect(api.listProjects).toHaveBeenCalled());
   });
 
   it("exposes a navigation landmark at both viewport sizes", () => {

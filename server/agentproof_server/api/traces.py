@@ -28,6 +28,7 @@ from agentproof_server.db.models import EvalResult as EvalResultModel
 from agentproof_server.db.models import Span as SpanModel
 from agentproof_server.db.models import Trace as TraceModel
 from agentproof_server.db.session import get_db
+from agentproof_server.provenance import exclude_generated_filter, is_generated
 
 router = APIRouter()
 
@@ -233,6 +234,43 @@ async def ingest_trace(
     return _trace_to_dict(trace)
 
 
+def _projects_stmt():
+    """Every project that has traces, with its size.
+
+    Deliberately *not* filtered by provenance. The switcher is a navigation
+    surface: hiding a corpus there would make it unreachable, which is the
+    opposite of the goal — the rule is that a generated corpus must never be
+    *pooled* into an unlabelled figure, not that it must be hidden. Excluding
+    it here was a real regression: deriving the project list from an unscoped
+    trace query made the generated corpus disappear from the switcher the
+    moment aggregates started excluding it.
+    """
+    return (
+        select(
+            TraceModel.project.label("project"),
+            func.count().label("traces"),
+        )
+        .group_by(TraceModel.project)
+        .order_by(TraceModel.project.asc())
+    )
+
+
+@router.get("/projects")
+async def list_projects(db: AsyncSession = Depends(get_db)) -> dict:
+    """Projects available in the switcher, each declaring its provenance."""
+    rows = (await db.execute(_projects_stmt())).all()
+    return {
+        "projects": [
+            {
+                "name": project,
+                "traces": int(traces or 0),
+                "generated": is_generated(project),
+            }
+            for project, traces in rows
+        ]
+    }
+
+
 @router.get("/traces")
 async def list_traces(
     db: AsyncSession = Depends(get_db),
@@ -253,6 +291,10 @@ async def list_traces(
     filters = []
     if project is not None:
         filters.append(TraceModel.project == project)
+    # "All projects" means all *measured* projects, matching every aggregate
+    # surface. Browsing 300 fabricated traces interleaved with 36 measured ones
+    # under an unlabelled heading is the same defect as pooling their means.
+    filters.append(exclude_generated_filter(project))
     if status is not None:
         filters.append(TraceModel.status == status)
     if start_after is not None:

@@ -49,8 +49,11 @@ export function useProjects() {
   return useQuery({
     queryKey: ["projects"],
     queryFn: async () => {
-      const res = await api.listTraces({ limit: 200 });
-      return [...new Set(res.traces.map((t) => t.project))].sort();
+      // Was derived from a page of traces, which broke twice over: it saw only
+      // the first 200 rows, and once aggregates began excluding generated
+      // corpora the generated project disappeared from the switcher entirely.
+      const res = await api.listProjects();
+      return res.projects.map((p) => p.name);
     },
   });
 }

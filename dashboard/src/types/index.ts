@@ -144,12 +144,26 @@ export interface AnalyticsTotals {
   traces: number;
   /** Gap-clustered runs, not distinct `evaluated_at` values. */
   eval_runs: number;
-  /** Traces measured successfully. scored + degraded + pending === traces. */
+  /**
+   * Traces with at least one usable measurement.
+   *
+   * `scored + unmeasurable + pending === traces`, always — the server computes
+   * the three as a partition rather than by subtracting differently-scoped
+   * counts, which is what previously produced a negative `pending`.
+   */
   scored: number;
-  /** Traces whose measurement broke — a judge error or refusal, not a finding. */
-  degraded: number;
+  /** Traces that were measured and whose every measurement broke. */
+  unmeasurable: number;
   /** Traces nobody has evaluated. Not passing; unmeasured. */
   pending: number;
+  /**
+   * Traces with at least one broken measurement.
+   *
+   * Overlaps `scored` deliberately and is never subtracted from it: a trace
+   * can hold a usable measurement and a broken one at the same time, and both
+   * facts are true.
+   */
+  degraded_traces: number;
   /** Null when nothing was measured — distinct from zero cost. */
   tokens: number | null;
   cost_usd: number | null;
@@ -336,6 +350,14 @@ export interface EvalAnalytics {
   /** Window in days; 0 means all history. */
   days: number;
   generated_at: string;
+  /**
+   * Whether these figures were authored rather than measured.
+   *
+   * Sent by the server so the client never has to re-derive provenance from a
+   * project name it keeps in its own list — two lists would eventually
+   * disagree, and the one that disagrees silently is the dangerous one.
+   */
+  generated: boolean;
   totals: AnalyticsTotals;
   trace_volume: TraceVolumeDay[];
   eval_runs: AnalyticsEvalRun[];

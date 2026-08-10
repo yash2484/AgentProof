@@ -116,7 +116,9 @@ export function MetricDetailPage() {
           {" · "}
           {/* Never implicit. Without a project this page pools every project,
             * including a generated one, and that has to be said out loud. */}
-          {project ?? "all projects, including any generated corpus"}
+          {/* "All" excludes generated corpora server-side, so the old warning
+              that this pooled a fabricated corpus is now false. */}
+          {project ?? "all measured projects"}
           {" · "}
           {days === 0 ? "all history" : `last ${days} days`}
         </Typography>

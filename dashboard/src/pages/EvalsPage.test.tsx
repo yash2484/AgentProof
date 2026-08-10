@@ -24,7 +24,9 @@ describe("EvalsPage", () => {
   });
 
   it("puts every metric in the strip as a link to its own page", async () => {
-    renderWithProviders(<EvalsPage />, { route: "/evals" });
+    // Unscoped, so the href carries only the window. A named project rides
+    // along too — covered by the deep-link tests on the detail page.
+    renderWithProviders(<EvalsPage />, { route: "/evals", project: null });
 
     await waitFor(() => expect(screen.getByTestId("metric-strip")).toBeInTheDocument());
     // The window rides along, so the detail page cannot silently widen it.

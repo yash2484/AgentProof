@@ -59,6 +59,8 @@ export function FindingsFeed({ analytics, project }: {
 
   return (
     <Box
+      component="section"
+      aria-label="Where to look"
       data-testid="findings-feed"
       sx={{
         p: `${TILE_PADDING}px`,

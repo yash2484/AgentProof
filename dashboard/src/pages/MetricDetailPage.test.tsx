@@ -194,13 +194,16 @@ describe("MetricDetailPage", () => {
     expect(screen.getByTestId("metric-scope")).toHaveTextContent("last 90 days");
   });
 
-  it("admits when it is pooling every project", () => {
-    // Including a generated one. Silence here is the failure mode.
-    renderWithProviders(<MetricDetailPage />);
+  it("says an unscoped view covers measured projects only", () => {
+    // This used to warn that "all projects" pooled a generated corpus, which
+    // was true and is now false: the server excludes generated corpora from an
+    // unscoped query, so the pooled figure cannot be produced at all. Copy
+    // that describes a fixed defect is its own kind of lie.
+    renderWithProviders(<MetricDetailPage />, { project: null });
 
-    expect(screen.getByTestId("metric-scope")).toHaveTextContent(
-      /all projects, including any generated corpus/i,
-    );
+    const scope = screen.getByTestId("metric-scope");
+    expect(scope).toHaveTextContent(/all measured projects/i);
+    expect(scope).not.toHaveTextContent(/generated/i);
   });
 
   it("marks a generated project on the detail page too", () => {

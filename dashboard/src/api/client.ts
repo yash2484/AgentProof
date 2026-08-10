@@ -63,6 +63,21 @@ export function listTraces(params: {
   return request<TraceListResponse>(`/traces${qs(params)}`);
 }
 
+/**
+ * Projects for the switcher, each declaring its provenance.
+ *
+ * A dedicated endpoint rather than distinct values from `listTraces`, because
+ * that query excludes generated corpora — deriving the switcher from it made
+ * the generated project vanish from the only control that can reach it. The
+ * rule is that generated data must never be *pooled* into an unlabelled
+ * figure, not that it must be hidden.
+ */
+export function listProjects(): Promise<{
+  projects: { name: string; traces: number; generated: boolean }[];
+}> {
+  return request("/projects");
+}
+
 export function getTraceTree(traceId: string): Promise<SpanNode[]> {
   return request<SpanNode[]>(`/traces/${traceId}/tree`);
 }

@@ -10,10 +10,10 @@ from agentproof_server.api.analytics import (
     _analytics_payload,
     _ci_block_by_metric,
     _eval_timeline_stmt,
-    _evaluated_traces_stmt,
     _metric_health_stmt,
     _metric_runs_stmt,
     _score_buckets_stmt,
+    _trace_health_stmt,
     _trace_totals_stmt,
     _trace_volume_stmt,
     _window_start,
@@ -329,7 +329,7 @@ def test_every_statement_scopes_to_the_time_window():
         _eval_timeline_stmt("demo", SINCE),
         _metric_health_stmt("demo", SINCE),
         _score_buckets_stmt("demo", SINCE),
-        _evaluated_traces_stmt("demo", SINCE),
+        _trace_health_stmt("demo", SINCE),
     ):
         assert "2026-07-09" in _sql(stmt)
 
@@ -346,7 +346,7 @@ def test_every_statement_scopes_by_project():
         _eval_timeline_stmt("demo", SINCE),
         _metric_health_stmt("demo", SINCE),
         _score_buckets_stmt("demo", SINCE),
-        _evaluated_traces_stmt("demo", SINCE),
+        _trace_health_stmt("demo", SINCE),
     ):
         assert "traces.project = 'demo'" in _sql(stmt)
 
@@ -361,11 +361,19 @@ def test_eval_statements_reach_the_project_through_the_traces_join():
         assert "join traces" in _sql(stmt)
 
 
-def test_no_project_neither_joins_nor_filters():
+def test_no_project_still_joins_traces_to_exclude_generated_corpora():
+    # This test previously asserted the opposite -- that an unscoped statement
+    # skipped the trace join entirely. That was the bug: the join is the only
+    # route to the project column, so skipping it meant the default "all
+    # projects" view was the one view that *could not* exclude a fabricated
+    # corpus, and it pooled 300 generated traces with 36 measured ones under an
+    # unlabelled heading. The join is now unconditional.
     for stmt in (_metric_health_stmt(None, None), _eval_timeline_stmt(None, None)):
         sql = _sql(stmt)
-        assert "join traces" not in sql
-        assert "traces.project" not in sql
+        assert "join traces" in sql
+        # Filtered by provenance, never pinned to one project.
+        assert "traces.project = " not in sql
+        assert "traces.project not in" in sql
 
 
 def test_trace_volume_buckets_by_day_and_splits_ok_from_error():
@@ -485,10 +493,29 @@ def test_the_judge_only_writes_these_keys_on_failure():
     assert "refusal" not in record
 
 
-def test_evaluated_traces_counts_traces_not_eval_rows():
-    # 31 traces x 8 metrics is 248 rows; measurement health is about traces.
-    sql = _sql(_evaluated_traces_stmt("demo", SINCE))
-    assert "count(distinct eval_results.trace_id)" in sql
+def test_trace_health_counts_traces_not_eval_rows():
+    # 31 traces x 8 metrics is 248 rows; measurement health is about traces,
+    # so the aggregate folds eval rows up per trace before counting.
+    sql = _sql(_trace_health_stmt("demo", SINCE))
+    assert "group by traces.id" in sql
+
+
+def test_trace_health_windows_on_the_trace_not_on_the_evaluation():
+    # The root cause of the negative "pending". Asking "of the traces in this
+    # window, how many are measured?" means the window belongs to the trace;
+    # filtering eval rows by ``evaluated_at`` as well would drop the
+    # measurements of a trace evaluated after the window closed and count it
+    # as never measured.
+    sql = _sql(_trace_health_stmt("demo", SINCE))
+    assert "traces.created_at >=" in sql
+    assert "eval_results.evaluated_at >=" not in sql
+
+
+def test_trace_health_keeps_never_evaluated_traces_via_an_outer_join():
+    # An inner join would make "pending" unrepresentable: a trace with no eval
+    # row would vanish from the aggregate entirely.
+    sql = _sql(_trace_health_stmt("demo", SINCE))
+    assert "left outer join eval_results" in sql
 
 
 # ---------------------------------------------------------------------------
@@ -549,7 +576,7 @@ def _payload(**overrides):
         "timeline_rows": [_tl(i * 4, [f"tr-{i}"]) for i in range(13)],
         "metric_rows": [_metric_row()],
         "bucket_rows": [("faithfulness", 0.2, 1)],
-        "evaluated_row": (30, 1),
+        "trace_health_row": (29, 1, 1, 1),
         "ci_block_by_metric": {"faithfulness": True},
         "metric_run_rows": [],
     }
@@ -661,15 +688,51 @@ def test_run_rows_carry_per_group_means_and_no_pooled_one():
     assert "mean_score" not in run
 
 
-def test_measurement_health_splits_scored_degraded_and_pending():
-    # 31 traces, 30 evaluated of which 1 degraded -> 29 scored, 1 pending.
-    payload = _payload(trace_totals=(31, 9478, 0.31), evaluated_row=(30, 1))
+def test_measurement_health_splits_scored_unmeasurable_and_pending():
+    # 31 traces: 29 produced a usable score, 1 had every measurement break,
+    # 1 was never evaluated.
+    payload = _payload(trace_totals=(31, 9478, 0.31), trace_health_row=(29, 1, 1, 1))
 
     totals = payload["totals"]
     assert totals["scored"] == 29
-    assert totals["degraded"] == 1
+    assert totals["unmeasurable"] == 1
     assert totals["pending"] == 1
-    assert totals["scored"] + totals["degraded"] + totals["pending"] == 31
+
+
+def test_the_three_trace_states_partition_the_corpus():
+    # The invariant that makes the card readable: no trace is in two states and
+    # none is missing, so the three figures always add up to the trace count.
+    payload = _payload(trace_totals=(31, 9478, 0.31), trace_health_row=(29, 1, 1, 1))
+
+    totals = payload["totals"]
+    assert totals["scored"] + totals["unmeasurable"] + totals["pending"] == 31
+
+
+def test_pending_is_never_negative_when_evaluation_outran_the_trace_window():
+    # The defect this replaces. ``pending`` was ``traces - evaluated``, and the
+    # two counts are scoped differently -- traces by ``start_time``, eval rows
+    # by ``evaluated_at``. On the live corpus 19 traces were evaluated inside
+    # the window but started before it, so ``evaluated`` (90) exceeded
+    # ``traces`` (84) and the card rendered "-6 pending".
+    payload = _payload(trace_totals=(84, None, None), trace_health_row=(75, 0, 9, 15))
+
+    totals = payload["totals"]
+    assert totals["pending"] == 9
+    assert totals["pending"] >= 0
+    assert totals["scored"] + totals["unmeasurable"] + totals["pending"] == 84
+
+
+def test_a_trace_with_one_broken_measurement_among_good_ones_still_counts_as_scored():
+    # 15 traces on the live corpus hold both a usable measurement and a broken
+    # one. Counting them wholly as degraded undercounted ``scored`` by 15 and
+    # implied their good measurements did not exist.
+    payload = _payload(trace_totals=(84, None, None), trace_health_row=(75, 0, 9, 15))
+
+    totals = payload["totals"]
+    assert totals["scored"] == 75
+    # Reported alongside, not subtracted: these traces were measured *and*
+    # something broke, and both facts are true at once.
+    assert totals["degraded_traces"] == 15
 
 
 def test_a_degraded_row_is_not_counted_as_a_failure():
@@ -715,15 +778,16 @@ def test_an_empty_project_renders_zeroes_rather_than_erroring():
         timeline_rows=[],
         metric_rows=[],
         bucket_rows=[],
-        evaluated_row=(0, 0),
+        trace_health_row=(0, 0, 0, 0),
     )
 
     assert payload["totals"] == {
         "traces": 0,
         "eval_runs": 0,
         "scored": 0,
-        "degraded": 0,
+        "unmeasurable": 0,
         "pending": 0,
+        "degraded_traces": 0,
         "tokens": None,
         "cost_usd": None,
     }

@@ -4,25 +4,39 @@ import { useEvalAnalytics } from "../hooks/queries";
 import { useProject } from "../context/ProjectContext";
 import { QueryBoundary } from "../components/QueryBoundary";
 import { ScopeBar } from "../components/ScopeBar";
-import { GateVerdictCard } from "../components/GateVerdictCard";
-import { VolumeCard } from "../components/VolumeCard";
-import { MeasurementHealth } from "../components/MeasurementHealth";
-import { MetricHealthPanel } from "../components/MetricHealthPanel";
+import { VerdictBand } from "../components/VerdictBand";
 import { VariancePanel } from "../components/VariancePanel";
+import { TrustBand } from "../components/TrustBand";
 import { FindingsFeed } from "../components/FindingsFeed";
 import { tokens, TILE_GAP, SPACE } from "../theme";
 
 /**
- * Overview, ordered by cost of being wrong.
+ * Overview — triage, not detail.
  *
- * Band 1 is the 60-second read: the gate verdict, how much ran, and whether
- * the measurements themselves held up. Band 2 is the hero — every metric
- * visible, split into the ones that move and the ones that never have. Band 3
- * is run-to-run variance, and Band 5 the findings.
+ * Every other page answers a question. This one answers the question no other
+ * page does:
  *
- * The governing principle throughout: every alarming statement carries a
- * denominator and a time window, every judge number shows its ±0.2 noise, and
- * the screen never launders untested or unmeasured into passing.
+ *   Since last time — did anything get worse, and can I trust today's numbers?
+ *
+ * It used to try to answer a different one ("how is every metric doing?"),
+ * which is `/evals`' job, and it answered it with a worse chart than the one
+ * `/evals/:metric` already had — a 46px track carrying a histogram, a
+ * threshold, a mean and a ±0.2 band with no legend, in which a single data
+ * exfiltration breach rendered 0.45px tall because bar height was normalised
+ * by the tallest bin. Rare events became invisible in proportion to their
+ * rarity. That panel is deleted rather than redesigned; the detail it
+ * duplicated is one click away and correct there.
+ *
+ * Four bands, ordered by what a reader does with them:
+ *
+ *   1. Verdict     — the conclusion, in words, on the page ground.
+ *   2. What changed — run to run, per group, with the noise floor stated.
+ *   3. What you can trust — coverage, broken measurements, provenance.
+ *   4. Where to look — findings, each routing to the page that owns it.
+ *
+ * Hierarchy comes from structure rather than chrome: band 1 is not a card, so
+ * nothing competes with it; bands 2 and 3 are cards; band 4 is a list. Five
+ * bordered boxes of equal weight is what made the old page unreadable.
  */
 export function OverviewPage() {
   const { project } = useProject();
@@ -53,31 +67,12 @@ export function OverviewPage() {
         onRetry={() => analytics.refetch()}
       >
         <Box sx={{ display: "grid", gap: `${TILE_GAP}px` }}>
-          {/* Band 1 — the 60-second read. The gate takes two of three columns
-            * because it is the only card carrying a claim about change. */}
-          <Box
-            sx={{
-              display: "grid",
-              gap: `${TILE_GAP}px`,
-              gridTemplateColumns: "1fr",
-              "@media (min-width:768px)": { gridTemplateColumns: "repeat(2, 1fr)" },
-              "@media (min-width:1024px)": { gridTemplateColumns: "2fr 1fr 1fr" },
-            }}
-          >
-            <Box sx={{ "@media (min-width:768px)": { gridColumn: "span 2" }, "@media (min-width:1024px)": { gridColumn: "span 1" } }}>
-              <GateVerdictCard gate={data?.gate ?? []} />
-            </Box>
-            <VolumeCard analytics={data} />
-            <MeasurementHealth totals={data?.totals} />
-          </Box>
+          <VerdictBand analytics={data} project={project} />
 
-          {/* Band 2 — hero, full width. */}
-          <MetricHealthPanel analytics={data} />
-
-          {/* Band 3 — variance. The slot is reserved at every n. */}
           <VariancePanel runs={data?.eval_runs ?? []} />
 
-          {/* Band 5 — findings. */}
+          <TrustBand analytics={data} />
+
           <FindingsFeed analytics={data} project={project} />
 
           <Typography

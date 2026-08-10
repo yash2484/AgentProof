@@ -161,6 +161,8 @@ export function VariancePanel({ runs }: { runs: AnalyticsEvalRun[] }) {
 
   return (
     <Box
+      component="section"
+      aria-label="What changed between runs"
       data-testid="variance-panel"
       sx={{
         p: `${TILE_PADDING}px`,

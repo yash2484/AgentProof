@@ -42,18 +42,48 @@ deliberate migration, not a patch.
 
 ## Phase A — Overview corrections
 
-### R3. The Overview's visual design and theme — QUEUED (user, 2026-08-09)
-The user cannot read the metric-health distribution bar or tell what to take
-from it: *"its hard for me as someone making the project"*. Deferred by their
-explicit instruction until Evals, Security and Traces are polished.
+### R3. The Overview's visual design and theme — CLOSED (2026-08-10)
+The user could not read the metric-health distribution bar or tell what to take
+from it: *"its hard for me as someone making the project"*.
 
-**Diagnosis:** that bar encodes four things — histogram, threshold line, mean
-marker, ±0.2 judge band — on one 0→1 track with no legend. It is dense rather
-than legible. The fix is to separate the encodings, the way the Evals group
-panels separated the shared axis, not to adjust the existing widget.
+**Resolved by deletion, not redesign.** `MetricDistribution` and
+`MetricHealthPanel` are gone; `/evals` and `/evals/:metric` already rendered
+the same data correctly. Full diagnosis and decisions in
+`docs/overview-redesign-brief.md`. The measured defect worth remembering: bar
+height was normalised by the tallest bin, so `data_exfiltration`'s single
+breach rendered **0.45px tall in a 46px track** — rare events were invisible in
+proportion to their rarity, in a product whose job is catching rare failures.
 
-**Review:** treat as a redesign with its own brief. `MetricDistribution.tsx` is
-the component.
+The Overview is now a triage page: verdict → what changed → what you can trust
+→ where to look. Three server defects surfaced on the way and are fixed
+(negative `pending`, undercounted `scored`, `degraded` labelled "failed").
+
+### R16. The landing project points at the generated corpus — OPEN
+`DEFAULT_PROJECT` in `context/ProjectContext.tsx` is `synthetic-showcase`, set
+at the user's request because it is the only corpus dense enough to read the
+design against (300 traces, 8 runs, against the measured project's 31 and 4).
+
+This cuts against R5. It is safe only while the disclosure holds: the switcher
+badges it, the scope bar badges it, and the trust band states in full sentences
+that every figure was authored by a script.
+
+**Fix before any demo, screenshot, benchmark, or external use:** flip the
+constant to `demo-research-agent`. One line, no other change needed.
+
+### R17. Provenance is a hard-coded set, not a property of the data — OPEN
+`server/agentproof_server/provenance.py` holds `GENERATED_PROJECTS` as a
+frozenset of names, because there is no working migration path in this repo
+(`versions/` is empty) and no column to put it in.
+
+A corpus generated under a different name would be treated as measured, with no
+warning anywhere. The evidence for a better rule already exists —
+`synthetic-showcase` has `raw_judge_output IS NULL` on all 2400 rows while the
+measured project has a payload on all 296 — but inferring provenance from
+missing data is fragile in its own way.
+
+**Review:** decide between a `projects` table with a provenance column (needs a
+migration path) and keeping the explicit list. The list is honest and obvious;
+it just does not scale past corpora someone remembered to add.
 
 ### R4. The variance chart truncates its y-axis — OPEN
 `axisFloor` drops the axis to the tenth below the lowest point so a real drift

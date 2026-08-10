@@ -2,21 +2,25 @@
 
 **Current phase:** Overview analytics — complete, ready for review
 **Branch:** `overview-analytics`
-**Last updated:** 2026-08-09
+**Last updated:** 2026-08-10
 
 ## Last verified working
 
-Full sweep, 2026-08-09, after the Phase C Evals rebuild landed.
+Full sweep, 2026-08-10, after the Overview redesign landed (the last phase).
 
 | Suite | Result | How verified |
 |---|---|---|
-| server (host) | 344 passed, 36 skipped | `python -m pytest -q` **from `server/`** |
-| server DB + pipeline | 29 passed | `docker compose exec -T server python -m pytest tests/integration/test_evals_analytics_db.py tests/integration/test_eval_pipeline.py -q -o asyncio_mode=auto` |
-| dashboard | 318 passed, 31 files | `npx vitest run` |
+| server (host) | 355 passed | `python -m pytest tests/unit -q` **from `server/`** |
+| server DB (container) | 36 passed | `docker compose exec -T server python -m pytest tests/integration -q -o asyncio_mode=auto --ignore=tests/integration/test_trace_pipeline.py` |
+| dashboard | 325 passed, 31 files | `npx vitest run` |
 | lint | All checks passed | `ruff check .` from repo root |
 | types + lint (dashboard) | exit 0 | `npx tsc --noEmit` and `npx eslint src --max-warnings 0` |
-| live endpoint | 200, per-group means | `GET /api/v1/evals/analytics?project=synthetic-showcase&days=0` |
-| page in a browser | renders, 0 console errors | Playwright at 1440px and 390px against the live stack; no horizontal overflow |
+| live endpoint | 200, partition holds | `GET /api/v1/evals/analytics` — `scored + unmeasurable + pending == traces` in every scope |
+| all 5 pages in a browser | 0 overflow, 0 console errors | Playwright at 1440px and 390px against the live stack |
+| contrast (Overview) | every text node passes WCAG AA | computed luminance ratio per node vs its resolved background, in-page |
+
+`ruff format --check` reports 65 files at HEAD as well as on this branch — this
+repo has never used the formatter, so it is not a regression and was not run.
 
 The host skips are DB-backed integration tests (port 5432 conflict, see Known
 issues) plus key-gated judge tests.
@@ -32,6 +36,65 @@ CI 6/6; both regression gates PASS exit 0.
 
 **Repo:** public, `github.com/yash2484/AgentProof`. Tags continuous
 `phase-1` … `phase-8`. Remote branches: `main`, `overview-analytics`.
+
+## Built & verified — the Overview redesign (final phase)
+
+Full diagnosis, decisions and theme rules: `docs/overview-redesign-brief.md`.
+
+**The Overview is now a triage page.** It answers the one question no other
+page does — *since last time, did anything get worse, and can I trust today's
+numbers?* — in four bands: verdict, what changed, what you can trust, where to
+look. All four are `aria-label`led landmarks.
+
+**Deleted rather than redesigned:** `MetricDistribution`, `MetricHealthPanel`,
+`MeasurementHealth`, `VolumeCard`, `GateVerdictCard`. The first two duplicated
+`/evals` and `/evals/:metric` and did it worse. Measured defect: bar height was
+normalised by the tallest bin, so `data_exfiltration`'s single breach rendered
+**0.45px tall in a 46px track**. Rare events were invisible in proportion to
+their rarity. The gate card's one real fact ("no baseline is pinned, so no
+regression verdict is possible") survives as a figure in the trust band.
+
+**Three server defects found by the design work, all fixed:**
+
+1. `totals.pending` rendered **-6** on the live corpus. It was
+   `traces - evaluated`, subtracting two differently-scoped counts — traces
+   filtered on `created_at`, eval rows on `evaluated_at`. 19 traces were
+   evaluated inside the window but created before it. Replaced by
+   `_trace_health_stmt`, a genuine SQL partition where
+   `scored + unmeasurable + pending == traces` at every input.
+2. `scored` undercounted by 15. Traces holding both a usable measurement and a
+   broken one were counted wholly as degraded.
+3. The card labelled `degraded` as **"failed"** — the exact thing that card
+   existed to prevent.
+
+**"All projects" no longer pools a generated corpus** (`provenance.py`).
+337 traces → 37, enforced server-side so the mixed figure cannot be produced by
+the API at all. Consistent across analytics, security and the traces list.
+
+**Provenance replaces the binary badge.** Checked against the database rather
+than assumed: `demo-research-agent` holds 222 measurements computed by code
+from recorded spans, 50 returned by a live judge, and 12 that failed with
+`AuthenticationError: 401`; `synthetic-showcase` has `raw_judge_output IS NULL`
+on all 2400 rows. So a deterministic metric on the demo project is *more*
+trustworthy than a judged one there, which a two-state badge cannot say.
+
+**Two defects found while wiring it up:**
+
+- The switcher rendered **blank** when the landing project was absent (MUI
+  renders a Select whose value is missing from its options as empty). It now
+  falls back to "all projects" and self-heals.
+- Deriving the project list from an unscoped `listTraces` made the generated
+  corpus **vanish from the switcher** the moment aggregates began excluding it.
+  Fixed with `GET /api/v1/projects`, which lists every project with its
+  provenance: the rule is that generated data must never be *pooled*, not that
+  it must be hidden.
+
+New pure modules, both TDD: `lib/verdict.ts` (14 tests) and `lib/provenance.ts`
+(6 tests). `server/provenance.py` has 10.
+
+**Open follow-ups:** R16 (landing default points at the generated corpus — flip
+`DEFAULT_PROJECT` before any demo) and R17 (provenance is a hard-coded set) in
+`docs/review-later.md`.
 
 ## Built & verified this phase — Overview analytics (server)
 
