@@ -33,6 +33,157 @@ router = APIRouter()
 
 
 # ---------------------------------------------------------------------------
+# Eval outcome per trace
+# ---------------------------------------------------------------------------
+#
+# The grid's job is to make a list of traces scannable, and "did anything fail
+# here" is the question it exists to answer. Fetching that per row would be an
+# N+1 over a 200-row page, so it arrives as one aggregate keyed by trace_id.
+#
+# Filtering is a separate concern: it has to happen in the database or paging
+# returns short pages and a wrong total, so the filter uses a subquery joined
+# into the main query rather than trimming the page after the fact.
+
+
+def _degraded():
+    """Mirrors ``analytics._degraded_expr``: a broken judge call, at any depth."""
+    from sqlalchemy import false, literal_column, or_
+
+    return func.coalesce(
+        or_(
+            func.jsonb_path_exists(
+                EvalResultModel.details, literal_column("'$.**.per_span[*].error'")
+            ),
+            func.jsonb_path_exists(
+                EvalResultModel.details, literal_column("'$.**.per_span[*].refusal'")
+            ),
+        ),
+        false(),
+    )
+
+
+def _outcome_subquery():
+    """Per-trace counts, for filtering and joining."""
+    from sqlalchemy import case
+
+    degraded = _degraded()
+    scored = ~degraded
+    return (
+        select(
+            EvalResultModel.trace_id.label("trace_id"),
+            func.sum(case((scored, 1), else_=0)).label("total"),
+            func.sum(case((scored & ~EvalResultModel.passed, 1), else_=0)).label(
+                "failed"
+            ),
+            func.sum(case((degraded, 1), else_=0)).label("degraded"),
+        )
+        .group_by(EvalResultModel.trace_id)
+        .subquery()
+    )
+
+
+def _trace_outcomes_stmt(trace_ids: list[str]):
+    """Outcome detail for one page of traces. ``None`` when the page is empty.
+
+    ``array_agg`` ordered by score carries the worst metric's *name* out of
+    SQL alongside the counts — naming the lowest-scoring metric is what makes
+    the grid scannable, and a second query per row to find it would be the
+    N+1 this avoids.
+    """
+    if not trace_ids:
+        return None
+
+    from sqlalchemy import case
+    from sqlalchemy.dialects.postgresql import aggregate_order_by
+
+    degraded = _degraded()
+    scored = ~degraded
+    return (
+        select(
+            EvalResultModel.trace_id,
+            func.sum(case((scored, 1), else_=0)).label("total"),
+            func.sum(case((scored & ~EvalResultModel.passed, 1), else_=0)).label(
+                "failed"
+            ),
+            func.sum(case((degraded, 1), else_=0)).label("degraded"),
+            func.min(case((scored, EvalResultModel.score))).label("worst_score"),
+            func.array_agg(
+                aggregate_order_by(
+                    EvalResultModel.metric_name, EvalResultModel.score.asc()
+                )
+            ).label("by_score"),
+        )
+        .where(EvalResultModel.trace_id.in_(trace_ids))
+        .group_by(EvalResultModel.trace_id)
+    )
+
+
+def _outcome_payload(row: tuple | None) -> dict:
+    """Shape one trace's outcome.
+
+    ``outcome`` is the single word the grid sorts and filters on, and its
+    order is the Overview's severity rule: a failure outranks a broken
+    measurement, because a degraded row must never mask a real finding. A
+    trace with only broken measurements is *degraded*, not *not_evaluated* —
+    something ran and it broke, which is a different fact from nobody trying.
+    """
+    if row is None:
+        return {
+            "total": 0,
+            "passed": 0,
+            "failed": 0,
+            "degraded": 0,
+            "worst_metric": None,
+            "worst_score": None,
+            "outcome": "not_evaluated",
+        }
+
+    total, failed, degraded, worst_score, by_score = row
+    total = int(total or 0)
+    failed = int(failed or 0)
+    degraded = int(degraded or 0)
+
+    if failed > 0:
+        outcome = "failed"
+    elif degraded > 0:
+        outcome = "degraded"
+    elif total > 0:
+        outcome = "passed"
+    else:
+        outcome = "not_evaluated"
+
+    return {
+        "total": total,
+        "passed": total - failed,
+        "failed": failed,
+        "degraded": degraded,
+        "worst_metric": (by_score or [None])[0],
+        "worst_score": float(worst_score) if worst_score is not None else None,
+        "outcome": outcome,
+    }
+
+
+def _outcome_filters_for(sub) -> dict:
+    """Predicate per filter name, bound to the subquery actually joined.
+
+    Takes the subquery rather than building its own: a predicate referencing a
+    different instance of the same subquery would leave it unjoined and
+    silently produce a cross product.
+    """
+    return {
+        "failed": sub.c.failed > 0,
+        "passed": (sub.c.failed == 0) & (sub.c.degraded == 0) & (sub.c.total > 0),
+        "degraded": (sub.c.degraded > 0) & (sub.c.failed == 0),
+        "not_evaluated": sub.c.trace_id.is_(None),
+    }
+
+
+# The questions this page exists to answer. Used to validate the query
+# parameter; the endpoint rebuilds the predicates against its own subquery.
+OUTCOME_FILTERS = _outcome_filters_for(_outcome_subquery())
+
+
+# ---------------------------------------------------------------------------
 # Endpoints
 # ---------------------------------------------------------------------------
 
@@ -91,8 +242,14 @@ async def list_traces(
     start_before: datetime | None = None,
     limit: int = Query(default=50, le=200),
     offset: int = Query(default=0, ge=0),
+    eval_outcome: str | None = Query(default=None),
 ) -> dict:
-    """List traces (without spans), newest first, with optional filters."""
+    """List traces (without spans), newest first, with optional filters.
+
+    Each trace carries its ``eval_outcome``: how many measurements passed,
+    failed or broke, and which metric scored lowest. That is one aggregate for
+    the whole page, not one query per row.
+    """
     filters = []
     if project is not None:
         filters.append(TraceModel.project == project)
@@ -103,19 +260,50 @@ async def list_traces(
     if start_before is not None:
         filters.append(TraceModel.start_time <= start_before)
 
-    count_stmt = select(func.count()).select_from(TraceModel)
-    for f in filters:
-        count_stmt = count_stmt.where(f)
+    if eval_outcome is not None and eval_outcome not in OUTCOME_FILTERS:
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                f"Unknown eval_outcome '{eval_outcome}'. "
+                f"Expected one of: {', '.join(sorted(OUTCOME_FILTERS))}."
+            ),
+        )
+
+    # The outcome filter joins in the database so paging stays correct:
+    # trimming the page afterwards would return short pages and a wrong total.
+    outcome_sub = _outcome_subquery() if eval_outcome else None
+
+    def _scoped(stmt):
+        if outcome_sub is not None:
+            stmt = stmt.outerjoin(
+                outcome_sub, TraceModel.trace_id == outcome_sub.c.trace_id
+            ).where(_outcome_filters_for(outcome_sub)[eval_outcome])
+        for f in filters:
+            stmt = stmt.where(f)
+        return stmt
+
+    count_stmt = _scoped(select(func.count()).select_from(TraceModel))
     total = (await db.execute(count_stmt)).scalar_one()
 
-    stmt = select(TraceModel)
-    for f in filters:
-        stmt = stmt.where(f)
+    stmt = _scoped(select(TraceModel))
     stmt = stmt.order_by(TraceModel.created_at.desc()).limit(limit).offset(offset)
     rows = (await db.execute(stmt)).scalars().all()
 
+    # One aggregate for the whole page, keyed by trace_id.
+    outcome_stmt = _trace_outcomes_stmt([t.trace_id for t in rows])
+    outcomes: dict[str, tuple] = {}
+    if outcome_stmt is not None:
+        for trace_id, *rest in (await db.execute(outcome_stmt)).all():
+            outcomes[trace_id] = tuple(rest)
+
     return {
-        "traces": [_trace_to_dict(t) for t in rows],
+        "traces": [
+            {
+                **_trace_to_dict(t),
+                "eval_outcome": _outcome_payload(outcomes.get(t.trace_id)),
+            }
+            for t in rows
+        ],
         "total": total,
         "limit": limit,
         "offset": offset,

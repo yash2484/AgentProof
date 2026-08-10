@@ -10,9 +10,9 @@ Full sweep, 2026-08-09, after the Phase C Evals rebuild landed.
 
 | Suite | Result | How verified |
 |---|---|---|
-| server (host) | 331 passed, 36 skipped | `python -m pytest -q` **from `server/`** |
+| server (host) | 344 passed, 36 skipped | `python -m pytest -q` **from `server/`** |
 | server DB + pipeline | 29 passed | `docker compose exec -T server python -m pytest tests/integration/test_evals_analytics_db.py tests/integration/test_eval_pipeline.py -q -o asyncio_mode=auto` |
-| dashboard | 298 passed, 30 files | `npx vitest run` |
+| dashboard | 318 passed, 31 files | `npx vitest run` |
 | lint | All checks passed | `ruff check .` from repo root |
 | types + lint (dashboard) | exit 0 | `npx tsc --noEmit` and `npx eslint src --max-warnings 0` |
 | live endpoint | 200, per-group means | `GET /api/v1/evals/analytics?project=synthetic-showcase&days=0` |
@@ -209,6 +209,39 @@ one 0–1 axis; three of those lines meant different things by "1.0".
    is now a pure function of the score and touches no randomness. Drift
    measured after reseeding: **0.938 → 0.771**.
 
+## Built & verified — analytics depth, Phase E (Traces rebuild)
+
+Design spec §6.3. The grid showed name, status, latency, tokens and cost —
+everything except the thing this product measures.
+
+- [x] **Two columns that make the list scannable:** what a trace's
+  measurements did (`1 of 8 failed`, `8/8 passed`, `not evaluated`) and which
+  metric scored lowest on it (`Faithfulness 0.679`).
+- [x] **One aggregate per page, never N+1.** Outcomes arrive as a single
+  `GROUP BY trace_id` over the page's ids, with `array_agg` ordered by score
+  carrying the worst metric's *name* out of SQL alongside the counts.
+- [x] **The outcome filter runs in the database**, joined as a subquery.
+  Trimming the page client-side would have returned short pages and a wrong
+  total. *Verified: the four outcomes partition the corpus exactly —
+  53 failed + 232 passed + 15 degraded + 0 unevaluated = 300 traces.* An
+  unknown value 422s with the list of valid ones.
+- [x] **An unmeasured trace never renders as a pass.** `0/0` reads as a pass
+  at a glance, so it says `not evaluated`; a trace whose measurements all
+  broke says `degraded`, because something ran and it broke — a different fact
+  from nobody trying.
+- [x] **Selection and filter live in the URL** (`?trace=…&outcome=…`), so both
+  survive a reload and the back button. The panel sits beside the list, not
+  over it.
+- [x] **Delete moved out of the row and behind a typed confirmation.** It was
+  a button on every row guarded by `window.confirm` — one mis-click from
+  destroying a recording.
+
+**One defect the live render found:** the outcome filter was unreachable by
+its accessible name. An `aria-label` passed through `inputProps` lands on
+MUI's hidden input rather than the combobox the user operates, so keyboard and
+screen-reader users had no name for the control. The visible label is now the
+accessible name, pinned by a test that opens the filter through it.
+
 ## Built & verified — analytics depth, Phase D (Security rebuild)
 
 Design spec §6.2. Replaces a wall of one card per security eval row — a layout
@@ -389,6 +422,15 @@ things.
 | **"Framework-agnostic"** | **One adapter (LangGraph). Reword, do not build.** |
 | "50+ adversarial cases, 5 categories" | Actual: 3 categories, 40 patterns, 28 tests |
 
+## Deferred decisions
+
+`docs/review-later.md` carries what was consciously **not** done in each phase,
+and the judgement calls that want a second pair of eyes: metric copy accuracy,
+the deferred Overview redesign, the truncated variance axis, the Budgets margin
+chart, the uncapped-findings disclosure, and the two security metrics that
+record no attempt signal. Read it alongside the gaps list below — gaps are
+defects in shipped behaviour, that file is decisions and deferrals.
+
 ## Known gaps, stated not fixed
 
 1. **6 of 8 metrics still sit flat at 1.000** on the demo corpus — the
@@ -438,8 +480,11 @@ things.
 
 ## Next up
 
-1. **Phase E — Traces** (spec §6.3): eval-outcome and worst-metric columns,
-   row expansion, outcome filter, delete moved out of the grid.
+1. **The Overview's visual design and theme** — the phase the user has been
+   waiting for, deferred by them until C/D/E landed. See `docs/review-later.md`
+   R3 for the diagnosis: the metric-health distribution bar packs four
+   encodings onto one 0→1 track with no legend, and the fix is to separate
+   them the way the Evals group panels separated the shared axis.
 3. **Then the Overview's visual design and theme**, deferred to last at the
    user's instruction (2026-08-09): they cannot read the metric-health
    distribution bars or tell what to take from them. Treat it as a redesign of

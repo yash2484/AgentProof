@@ -7,6 +7,29 @@ export type SpanType =
 
 export type Status = "ok" | "error" | "running" | string;
 
+/**
+ * How a trace's measurements turned out.
+ *
+ * `outcome` is the one word the grid sorts and filters on, ordered by the
+ * same severity rule as the Overview: a failure outranks a broken
+ * measurement, and a trace whose measurements all broke is `degraded` rather
+ * than `not_evaluated` — something ran and it broke, which is different from
+ * nobody trying.
+ */
+export type TraceOutcome = "passed" | "failed" | "degraded" | "not_evaluated";
+
+export interface EvalOutcome {
+  /** Non-degraded eval rows. */
+  total: number;
+  passed: number;
+  failed: number;
+  degraded: number;
+  /** Lowest-scoring metric on this trace — the column that makes it scannable. */
+  worst_metric: string | null;
+  worst_score: number | null;
+  outcome: TraceOutcome;
+}
+
 export interface Trace {
   trace_id: string;
   project: string;
@@ -19,6 +42,8 @@ export interface Trace {
   status: Status;
   tags: Record<string, unknown>;
   created_at: string | null;
+  /** Absent on responses from before the outcome columns shipped. */
+  eval_outcome?: EvalOutcome;
 }
 
 export interface Span {

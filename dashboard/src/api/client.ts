@@ -57,6 +57,8 @@ export function listTraces(params: {
   start_before?: string;
   limit?: number;
   offset?: number;
+  /** "failed" | "passed" | "degraded" | "not_evaluated" — filtered in SQL. */
+  eval_outcome?: string;
 } = {}): Promise<TraceListResponse> {
   return request<TraceListResponse>(`/traces${qs(params)}`);
 }
