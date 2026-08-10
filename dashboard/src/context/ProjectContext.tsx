@@ -13,22 +13,24 @@ const ProjectContext = createContext<ProjectContextValue>({
 /**
  * The project the app lands on.
  *
- * Pointed at the generated corpus at the user's request: it is the only corpus
- * dense enough (300 traces, 8 runs) to read the analytics design against,
- * where the measured project holds 31 traces and 4 runs.
+ * The **measured** corpus. Every figure it holds was produced by a real run:
+ * 222 measurements computed by code from recorded spans, 50 returned by a
+ * live judge, and 12 that failed with `AuthenticationError: 401` and are
+ * shown as broken rather than counted as failures.
  *
- * This is a development convenience and it cuts against `review-later.md` R5,
- * which says a generated corpus must never be read as evidence. It is safe
- * only because the disclosure is unmissable: the switcher badges it, the scope
- * bar badges it, and the Overview's trust band states in full sentences that
- * every figure on screen was authored by a script. **Flip this to the measured
- * project before any demo, screenshot, benchmark, or external use.**
+ * It landed on `synthetic-showcase` throughout the analytics and theme work,
+ * because at 300 traces and 8 runs it was the only corpus dense enough to
+ * read a design against. That was a development convenience and it cut
+ * against `review-later.md` R5 and R16: every one of its 2400 rows has
+ * `raw_judge_output IS NULL`, so no judge was ever called for any of it.
  *
- * Landing on `undefined` ("all projects") is now a safe default too — the
- * server excludes generated corpora from an unscoped query — but it shows 31
- * traces, which reads as an empty product.
+ * **Do not point this back at a generated corpus.** The disclosure is good —
+ * the switcher badges it, the scope bar badges it, and the trust band says
+ * in full sentences that a script authored every figure — but a screenshot
+ * outlives its caption, and this is the one line that decides what a first
+ * screen shows.
  */
-export const DEFAULT_PROJECT = "synthetic-showcase";
+export const DEFAULT_PROJECT = "demo-research-agent";
 
 export function ProjectProvider({
   children,

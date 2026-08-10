@@ -65,6 +65,36 @@ function degradedClause(metrics: MetricHealth[]): string {
   return ` ${plural(broken, "measurement", "measurements")} broke and ${broken === 1 ? "is" : "are"} excluded from every figure here.`;
 }
 
+/**
+ * The regression sentence, in the product's own words.
+ *
+ * The detector short-circuits before the t-test on no-drop, tiny samples and
+ * zero-variance pairs, and hands back its own diagnostic instead —
+ * `Small sample -> absolute-drop floor: drop 1.000 >= 0.05.` That string is
+ * useful on a detail card, where an engineer is asking why the gate fired.
+ * Splicing it into the lede put an ASCII arrow and an inequality into the
+ * largest sentence in the product, on the page a non-operator reads first.
+ *
+ * So the statistics are quoted when they exist, and when they do not the
+ * sentence says what moved rather than how the detector decided.
+ */
+function regressionDetail(worst: GateVerdict): string {
+  const { p_value: p, cohens_d: d, baseline_mean: from, candidate_mean: to } = worst;
+
+  if (p !== null && d !== null) {
+    return `${worst.metric_name}: ${describeGate(worst).statLine}`;
+  }
+  if (typeof from === "number" && typeof to === "number") {
+    return `${worst.metric_name} fell from ${from.toFixed(3)} to ${to.toFixed(3)} against its pinned baseline`;
+  }
+  return `${worst.metric_name} moved against its pinned baseline`;
+}
+
+/** One sentence, one full stop. `gate.reason` arrives already terminated. */
+function sentence(body: string): string {
+  return `${body.replace(/[.\s]+$/, "")}.`;
+}
+
 export function overviewVerdict({ metrics, gate, scored }: VerdictInput): Verdict {
   if (metrics.length === 0 || scored === 0) {
     return {
@@ -84,14 +114,13 @@ export function overviewVerdict({ metrics, gate, scored }: VerdictInput): Verdic
   const regressed = gate.filter((g) => g.is_regression);
   if (regressed.length > 0) {
     const worst = regressed[0];
-    const described = describeGate(worst);
     return {
       tone: "serious",
       headline:
         regressed.length === 1
           ? `${worst.metric_name} regressed against baseline`
           : `${plural(regressed.length, "metric", "metrics")} regressed against baseline`,
-      detail: `${described.statLine}.${degradedClause(metrics)}`,
+      detail: `${sentence(regressionDetail(worst))}${degradedClause(metrics)}`,
       focus: worst.metric_name,
     };
   }

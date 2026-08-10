@@ -80,6 +80,94 @@ describe("a regression against the pinned baseline", () => {
     expect(v.detail).toContain("p=0.001");
     expect(v.detail).toContain("d=0.90");
   });
+
+  it("names the metric, so a multi-metric headline still points somewhere", () => {
+    const v = overviewVerdict({
+      metrics: [metric({ failed: 1 })],
+      gate: [gate({ is_regression: true, p_value: 0.001, cohens_d: 0.9 })],
+      scored: 92,
+    });
+
+    expect(v.detail).toContain("faithfulness");
+  });
+
+  describe("when the detector short-circuits before the t-test", () => {
+    // On a small sample the detector never reaches a p-value and hands back
+    // its own diagnostic — "Small sample -> absolute-drop floor: drop 1.000
+    // >= 0.05." That string is fine on a detail card and belongs nowhere
+    // near the lede, which is the largest sentence in the product.
+    const shortCircuit = gate({
+      is_regression: true,
+      p_value: null,
+      cohens_d: null,
+      reason: "Small sample -> absolute-drop floor: drop 1.000 >= 0.05.",
+      baseline_mean: 1,
+      candidate_mean: 0,
+    });
+
+    it("keeps the detector's own diagnostic out of the sentence", () => {
+      const v = overviewVerdict({
+        metrics: [metric({ failed: 1 })],
+        gate: [shortCircuit],
+        scored: 92,
+      });
+
+      expect(v.detail).not.toContain("->");
+      expect(v.detail).not.toContain(">=");
+      expect(v.detail).not.toContain("absolute-drop floor");
+    });
+
+    it("says what actually happened instead", () => {
+      const v = overviewVerdict({
+        metrics: [metric({ failed: 1 })],
+        gate: [shortCircuit],
+        scored: 92,
+      });
+
+      expect(v.detail).toContain("faithfulness");
+      expect(v.detail).toContain("1.000");
+      expect(v.detail).toContain("0.000");
+    });
+
+    it("still reports a regression it cannot put a number on", () => {
+      const v = overviewVerdict({
+        metrics: [metric({ failed: 1 })],
+        gate: [
+          gate({
+            is_regression: true,
+            p_value: null,
+            cohens_d: null,
+            reason: "zero variance in both samples.",
+            // Absent rather than null: the server omits the means entirely
+            // when it has no pair to compare.
+            baseline_mean: undefined,
+            candidate_mean: undefined,
+          }),
+        ],
+        scored: 92,
+      });
+
+      expect(v.tone).toBe("serious");
+      expect(v.detail).toMatch(/faithfulness/);
+      expect(v.detail).not.toContain("zero variance in both samples");
+    });
+  });
+
+  it("never doubles a full stop, whatever the branch", () => {
+    // gate.reason arrives already terminated, and the verdict appends its
+    // own period — which rendered "…>= 0.05.. 19 measurements broke".
+    for (const g of [
+      gate({ is_regression: true, p_value: 0.001, cohens_d: 0.9 }),
+      gate({ is_regression: true, p_value: null, cohens_d: null, reason: "x." }),
+    ]) {
+      const v = overviewVerdict({
+        metrics: [metric({ failed: 1, degraded: 19 })],
+        gate: [g],
+        scored: 92,
+      });
+      expect(v.detail).not.toContain("..");
+    }
+  });
 });
 
 describe("failures without a baseline", () => {
