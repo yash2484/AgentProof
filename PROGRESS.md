@@ -53,6 +53,50 @@ CI 6/6; both regression gates PASS exit 0.
 **Repo:** public, `github.com/yash2484/AgentProof`. Tags continuous
 `phase-1` … `phase-8`. Remote branches: `main`, `overview-analytics`.
 
+## The measured corpus — `demo-research-agent`
+
+Re-run live 2026-08-10 with a working `ANTHROPIC_API_KEY`. This is the corpus
+the app lands on and the only one that may be shown as evidence.
+
+| | Before the re-run | Now |
+|---|---|---|
+| traces | 32 | **45** |
+| measurements | 312 | **520** |
+| computed by code (deterministic + security) | 195 | **390** |
+| genuine judge verdicts, with reasoning | 60 | **108** |
+| judge calls that failed auth | 12 | **12** (all historical) |
+| evaluation runs in window | 8 | **10** |
+
+The re-run added **13 traces, 208 measurements and 48 genuine verdicts with
+zero auth failures.** The 12 `401 invalid x-api-key` rows are the original
+ones and are kept deliberately: they are the live demonstration that a broken
+measurement is excluded rather than counted as a failure. Total spend on the
+corpus to date is **$0.128** across 37,800 tokens.
+
+**The gate verdict changed, and this matters for the demo.** Before: *"2
+metrics regressed against baseline"*. Now all **8 of 8 metrics are comparable
+and none regressed** — `faithfulness` actually improved (0.911 → 0.925).
+
+What the run bought instead is the **restraint case**, which is the behaviour
+worth leading with (see R26): `relevance` dropped and the gate refused to
+call it —
+
+```
+relevance   base=0.931  cand=0.908   p=0.3877 >= alpha=0.05,  d=0.113 < 0.5
+```
+
+An effect exists, neither the significance nor the effect-size guard clears,
+and the product says so rather than reporting a decline. That is the sentence
+almost nothing else in this category will print.
+
+**Consequence:** there is currently **no regression on the demo corpus**, so
+the "CI run blocks a merge" opening in R26 cannot be shown from this data as
+it stands. Do not manufacture one by re-pinning a baseline — that would be
+fabricating the exact claim the product exists to make honestly. The real
+options are to run a genuinely degraded agent version (a weakened prompt is a
+legitimate change) and let the gate catch it, or to open the demo on the
+restraint case instead.
+
 ## What this product is for
 
 Recorded 2026-08-10. **Judgement, not measurement** — inferred from what the
@@ -698,15 +742,17 @@ are closed: the theme is implemented across all six routes, and
 1. **Merge `overview-analytics`.** ~20 commits ahead of `main`, all gates
    green. Nothing on the branch is half-finished.
 
-2. **Re-run the demo agent against a working `ANTHROPIC_API_KEY`** before the
-   application. 32 traces with 50 real judged measurements is thin, and 19 of
-   the judge calls in the current window are auth failures. They demo *well* —
-   they are live proof that a broken measurement is shown as broken rather
-   than averaged in as a failure — but a clean run would deepen the only
-   corpus that may be shown as evidence. Costs cents. `ANTHROPIC_API_KEY` is
-   in `.env`, gitignored; never print or commit it.
+2. **DONE 2026-08-10 — re-ran the demo agent live.** See *The measured
+   corpus* above: 45 traces, 520 measurements, 108 genuine judge verdicts,
+   zero new auth failures. $0.128 spent.
 
-3. **Re-read *Claims status* end to end** before anything goes on a CV. Every
+3. **Decide the demo opening.** The re-run removed the regression, so the
+   "CI blocks a merge" frame has no data behind it right now. Either produce
+   a genuinely degraded agent version and let the gate catch it, or open on
+   the restraint case (`relevance`, p=0.39, d=0.11, declined). Do not re-pin
+   a baseline to manufacture a regression.
+
+4. **Re-read *Claims status* end to end** before anything goes on a CV. Every
    quantified claim must be traceable to a real run.
 
 No new backend work. The server is complete and verified. Everything below is
