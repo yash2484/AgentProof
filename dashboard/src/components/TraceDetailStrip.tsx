@@ -1,11 +1,23 @@
 import { useState } from "react";
 import { Box, Button, TextField, Typography } from "@mui/material";
 import { Link as RouterLink } from "react-router-dom";
-import { useEvalResultsForTrace } from "../hooks/queries";
+import { useEvalResultsForTrace, useTraceTree } from "../hooks/queries";
 import { metricTitle } from "../lib/metricCopy";
-import { outcomeColor } from "../lib/outcome";
-import { tokens, SPACE, TILE_PADDING, TABULAR_NUMS } from "../theme";
-import type { Trace } from "../types";
+import { outcomeColor, traceSentence } from "../lib/outcome";
+import { MiniWaterfall } from "./MiniWaterfall";
+import { ColumnHead, Prose } from "./Ledger";
+import { tokens, SPACE, TILE_PADDING, DATA, UI, RADIUS } from "../theme";
+import type { EvalOutcome, Trace } from "../types";
+
+const NOT_EVALUATED: EvalOutcome = {
+  total: 0,
+  passed: 0,
+  failed: 0,
+  degraded: 0,
+  worst_metric: null,
+  worst_score: null,
+  outcome: "not_evaluated",
+};
 
 /**
  * The selected trace, beside the list rather than instead of it.
@@ -14,6 +26,12 @@ import type { Trace } from "../types";
  * by a panel next to the grid: the reader sees a trace's measurements without
  * leaving the list, the back button still works, and nothing is trapped
  * behind a modal.
+ *
+ * The panel is a `card` surface — the one raised ground in Ledger — because
+ * it is a thing pulled out of the list rather than another region of it.
+ * Everything in it is mono except one serif sentence, which is what the
+ * document frame buys: a column of figures tells a fluent reader what
+ * happened and tells everyone else nothing.
  */
 export function TraceDetailStrip({
   trace,
@@ -32,15 +50,14 @@ export function TraceDetailStrip({
         data-testid="trace-strip-empty"
         sx={{
           p: `${TILE_PADDING}px`,
-          bgcolor: tokens.surface,
-          border: `1px dashed ${tokens.border}`,
-          borderRadius: 2.5,
+          border: `1px dashed ${tokens.hairStrong}`,
+          borderRadius: `${RADIUS}px`,
         }}
       >
-        <Typography variant="body2" sx={{ color: tokens.muted }}>
+        <Prose sx={{ fontSize: 15, color: tokens.ink2 }}>
           Select a trace to see what was measured on it, without leaving the
           list.
-        </Typography>
+        </Prose>
       </Box>
     );
   }
@@ -50,39 +67,73 @@ export function TraceDetailStrip({
       data-testid="trace-strip"
       sx={{
         p: `${TILE_PADDING}px`,
-        bgcolor: tokens.surface,
-        border: `1px solid ${tokens.border}`,
-        borderRadius: 2.5,
+        bgcolor: tokens.card,
+        border: `1px solid ${tokens.hairStrong}`,
+        borderRadius: `${RADIUS}px`,
         display: "grid",
         gap: `${SPACE.sm}px`,
       }}
     >
-      <Box sx={{ display: "flex", alignItems: "baseline", gap: 1, flexWrap: "wrap" }}>
-        <Typography variant="subtitle1" sx={{ color: tokens.ink, flex: 1 }} noWrap>
+      <Box sx={{ display: "flex", alignItems: "baseline", gap: 1 }}>
+        <Box
+          component="span"
+          sx={{ ...DATA, fontSize: 13, fontWeight: 500, color: tokens.ink, flex: 1, minWidth: 0 }}
+        >
           {trace.name}
-        </Typography>
-        <Button size="small" onClick={onClose} sx={{ color: tokens.muted }}>
+        </Box>
+        <Button size="small" onClick={onClose} sx={{ ...UI, fontSize: 12, color: tokens.dim, minWidth: 0 }}>
           Close
         </Button>
       </Box>
 
-      <Typography variant="caption" sx={{ color: tokens.muted, ...TABULAR_NUMS }}>
+      <Box component="span" sx={{ ...DATA, fontSize: 11, color: tokens.dim, wordBreak: "break-all" }}>
         {trace.trace_id}
-      </Typography>
+      </Box>
+
+      {/* The sentence, before the figures that support it. */}
+      <Prose data-testid="trace-sentence" sx={{ fontSize: 15, color: tokens.ink }}>
+        {traceSentence(trace.eval_outcome ?? NOT_EVALUATED)}
+      </Prose>
+
+      <TraceShape traceId={trace.trace_id} />
 
       <EvalRows traceId={trace.trace_id} />
 
-      <Box sx={{ display: "flex", gap: 1, flexWrap: "wrap", mt: 1 }}>
-        <Box
-          component={RouterLink}
-          to={`/traces/${trace.trace_id}`}
-          sx={{ color: tokens.brand.text, textDecoration: "none", fontSize: 14 }}
-        >
-          Open the full trace →
-        </Box>
+      <Box
+        component={RouterLink}
+        to={`/traces/${trace.trace_id}`}
+        sx={{
+          ...UI,
+          fontSize: 13,
+          color: tokens.link,
+          textDecoration: "none",
+          justifySelf: "start",
+          "&:hover": { textDecoration: "underline" },
+        }}
+      >
+        Open the full trace →
       </Box>
 
       <DeleteTrace trace={trace} onDelete={onDelete} deleting={deleting} />
+    </Box>
+  );
+}
+
+/**
+ * What the agent actually did, as a single track.
+ *
+ * Revives MiniWaterfall, which was built for an Overview tile that has since
+ * been deleted and has sat tested-but-unrendered ever since. Where the spans
+ * went is the first question a reader asks after "did it pass", and this is
+ * the cheapest possible answer to it.
+ */
+function TraceShape({ traceId }: { traceId: string }) {
+  const { data, isLoading } = useTraceTree(traceId);
+  if (isLoading || !data || data.length === 0) return null;
+  return (
+    <Box data-testid="strip-waterfall">
+      <ColumnHead sx={{ display: "block", mb: "5px" }}>Spans</ColumnHead>
+      <MiniWaterfall roots={data} />
     </Box>
   );
 }
@@ -93,49 +144,61 @@ function EvalRows({ traceId }: { traceId: string }) {
 
   if (isLoading) {
     return (
-      <Typography variant="body2" sx={{ color: tokens.muted }}>
-        Loading measurements…
-      </Typography>
+      <Box sx={{ ...DATA, color: tokens.dim }}>Loading measurements…</Box>
     );
   }
   if (rows.length === 0) {
     return (
-      <Typography data-testid="strip-no-evals" variant="body2" sx={{ color: tokens.muted }}>
+      <Prose data-testid="strip-no-evals" sx={{ fontSize: 14.5, color: tokens.ink2 }}>
         Nothing has been measured on this trace. That is not a pass — it is the
         absence of a measurement.
-      </Typography>
+      </Prose>
     );
   }
 
   return (
-    <Box data-testid="strip-evals" sx={{ display: "grid", gap: 0.75 }}>
-      {rows.map((r) => (
-        <Box
-          key={`${r.metric_name}-${r.span_id ?? "trace"}-${r.evaluated_at}`}
-          data-testid={`strip-eval-${r.metric_name}`}
-          sx={{ borderTop: `1px solid ${tokens.border}`, pt: 0.75 }}
-        >
-          <Box sx={{ display: "flex", alignItems: "baseline", gap: 1 }}>
-            <Typography variant="body2" sx={{ color: tokens.ink, flex: 1 }}>
-              {metricTitle(r.metric_name)}
-            </Typography>
-            <Typography
-              variant="body2"
-              sx={{
-                color: outcomeColor(r.passed === false ? "failed" : "passed"),
-                ...TABULAR_NUMS,
-              }}
-            >
-              {r.score === null ? "—" : r.score.toFixed(3)}
-            </Typography>
+    <Box data-testid="strip-evals">
+      <ColumnHead sx={{ display: "block", mb: "5px" }}>Measurements</ColumnHead>
+      <Box
+        sx={{
+          bgcolor: tokens.data,
+          border: `1px solid ${tokens.hair}`,
+          borderRadius: `${RADIUS}px`,
+        }}
+      >
+        {rows.map((r, i) => (
+          <Box
+            key={`${r.metric_name}-${r.span_id ?? "trace"}-${r.evaluated_at}`}
+            data-testid={`strip-eval-${r.metric_name}`}
+            sx={{
+              px: `${SPACE.xs}px`,
+              py: "5px",
+              borderTop: i === 0 ? "none" : `1px solid ${tokens.hair}`,
+            }}
+          >
+            <Box sx={{ display: "flex", alignItems: "baseline", gap: 1 }}>
+              <Box component="span" sx={{ ...DATA, color: tokens.ink, flex: 1, minWidth: 0 }}>
+                {metricTitle(r.metric_name)}
+              </Box>
+              <Box
+                component="span"
+                sx={{
+                  ...DATA,
+                  fontWeight: 500,
+                  color: outcomeColor(r.passed === false ? "failed" : "passed"),
+                }}
+              >
+                {r.score === null ? "—" : r.score.toFixed(3)}
+              </Box>
+            </Box>
+            {r.explanation && (
+              <Box component="span" sx={{ ...DATA, fontSize: 11, color: tokens.dim }}>
+                {r.explanation}
+              </Box>
+            )}
           </Box>
-          {r.explanation && (
-            <Typography variant="caption" sx={{ color: tokens.muted, display: "block" }}>
-              {r.explanation}
-            </Typography>
-          )}
-        </Box>
-      ))}
+        ))}
+      </Box>
     </Box>
   );
 }
@@ -166,7 +229,7 @@ export function DeleteTrace({
         size="small"
         data-testid="delete-start"
         onClick={() => setOpen(true)}
-        sx={{ color: tokens.status.fail, justifySelf: "start", px: 0 }}
+        sx={{ ...UI, fontSize: 13, color: tokens.status.fail, justifySelf: "start", px: 0 }}
       >
         Delete this trace
       </Button>
@@ -175,7 +238,7 @@ export function DeleteTrace({
 
   return (
     <Box data-testid="delete-confirm" sx={{ display: "grid", gap: 1, mt: 1 }}>
-      <Typography variant="body2" sx={{ color: tokens.ink }}>
+      <Typography sx={{ ...UI, fontSize: 13, color: tokens.ink }}>
         Deleting <strong>{trace.name}</strong> removes the trace and every
         measurement taken on it. There is no undo.
       </Typography>
@@ -203,7 +266,7 @@ export function DeleteTrace({
             setOpen(false);
             setTyped("");
           }}
-          sx={{ color: tokens.muted }}
+          sx={{ ...UI, fontSize: 13, color: tokens.dim }}
         >
           Cancel
         </Button>

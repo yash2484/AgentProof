@@ -117,13 +117,20 @@ export function ScopeBar({
         </ToggleButtonGroup>
       )}
 
-      <Box
-        component="span"
-        data-testid="scope-runs"
-        sx={{ ...DATA, color: tokens.dim, whiteSpace: "nowrap" }}
-      >
-        {runs} {runs === 1 ? "run" : "runs"} · {lastEvaluated(runList_)}
-      </Box>
+      {/* Only when runs were actually supplied. Rendering the meta from an
+        * omitted prop printed "0 runs · never evaluated" above a page
+        * showing 300 traces — a page claiming nothing had been measured
+        * because it was never told, which is the exact failure mode this
+        * product exists to remove. Absent is not zero. */}
+      {runList !== undefined && (
+        <Box
+          component="span"
+          data-testid="scope-runs"
+          sx={{ ...DATA, color: tokens.dim, whiteSpace: "nowrap" }}
+        >
+          {runs} {runs === 1 ? "run" : "runs"} · {lastEvaluated(runList_)}
+        </Box>
+      )}
     </Box>
   );
 }

@@ -101,7 +101,15 @@ export const components: Components<Theme> = {
       },
       columnHeaders: { borderBottom: `1px solid ${tokens.hairStrong}` },
       columnHeaderTitle: { ...MICRO, color: tokens.dim },
-      cell: { borderBottom: `1px solid ${tokens.hair}`, color: tokens.ink },
+      cell: {
+        borderBottom: `1px solid ${tokens.hair}`,
+        color: tokens.ink,
+        // The grid rings whichever cell it considers focused, including
+        // after a plain mouse click — which drew a box around an arbitrary
+        // cell of the selected row and read as a stray artefact. Keyboard
+        // users keep their ring; the global :focus-visible rule supplies it.
+        "&:focus, &:focus-within": { outline: "none" },
+      },
       row: {
         "&:hover": { backgroundColor: tokens.card },
         "&.Mui-selected": {

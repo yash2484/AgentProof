@@ -72,18 +72,37 @@ describe("TracesPage", () => {
     );
   });
 
-  it("exposes the outcome filter by its visible label", async () => {
-    // An aria-label passed through inputProps lands on MUI's hidden input,
-    // not the combobox the user operates, leaving the control unreachable by
-    // name for keyboard and screen-reader users.
-    const user = userEvent.setup();
-    renderWithProviders(<TracesPage />, { route: "/traces" });
+  it("exposes every outcome filter as a named, pressable control", async () => {
+    // The filter used to be a select, where an aria-label passed through
+    // inputProps landed on MUI's hidden input rather than the combobox the
+    // user operates, leaving it unreachable by name. As pills the same duty
+    // applies to each option: named, reachable, and reporting its own
+    // pressed state rather than relying on colour to show what is active.
+    renderWithProviders(<TracesPage />, { route: "/traces?outcome=failed" });
 
-    await waitFor(() => expect(screen.getByLabelText("Outcome")).toBeInTheDocument());
-    await user.click(screen.getByLabelText("Outcome"));
+    const group = await screen.findByRole("group", { name: "Outcome" });
+    expect(group).toBeInTheDocument();
+
+    const failed = screen.getByRole("button", { name: "Failed something" });
+    expect(failed).toHaveAttribute("aria-pressed", "true");
     expect(
-      await screen.findByRole("option", { name: "Failed something" }),
-    ).toBeInTheDocument();
+      screen.getByRole("button", { name: "Passed everything" }),
+    ).toHaveAttribute("aria-pressed", "false");
+  });
+
+  it("clears the filter when the active pill is pressed again", async () => {
+    // ToggleButtonGroup hands back null for a deselect. Ignoring it would
+    // leave a pill that can be switched on but never off.
+    const user = userEvent.setup();
+    renderWithProviders(<TracesPage />, { route: "/traces?outcome=failed" });
+
+    await user.click(await screen.findByRole("button", { name: "Failed something" }));
+
+    await waitFor(() =>
+      expect(api.listTraces).toHaveBeenCalledWith(
+        expect.not.objectContaining({ eval_outcome: expect.anything() }),
+      ),
+    );
   });
 
   it("asks the server for the outcome filter rather than trimming the page", async () => {

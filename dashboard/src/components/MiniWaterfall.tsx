@@ -1,10 +1,10 @@
-import { Box, Stack, Typography } from "@mui/material";
+import { Box, Stack } from "@mui/material";
 import { computeWaterfall, MIN_BAR_PX } from "../lib/waterfall";
 import { spanColor } from "../lib/format";
-import { tokens } from "../theme";
+import { tokens, DATA, RADIUS } from "../theme";
 import type { SpanNode } from "../types";
 
-const TRACK_HEIGHT = 28;
+const TRACK_HEIGHT = 26;
 
 /**
  * A compact, non-interactive waterfall for the overview's latest-trace tile.
@@ -19,9 +19,9 @@ export function MiniWaterfall({ roots }: { roots: SpanNode[] }) {
         sx={{
           position: "relative",
           height: TRACK_HEIGHT,
-          bgcolor: tokens.bg,
-          border: `1px solid ${tokens.border}`,
-          borderRadius: 1.5,
+          bgcolor: tokens.data,
+          border: `1px solid ${tokens.hair}`,
+          borderRadius: `${RADIUS}px`,
           overflow: "hidden",
         }}
       >
@@ -36,7 +36,7 @@ export function MiniWaterfall({ roots }: { roots: SpanNode[] }) {
               minWidth: `${MIN_BAR_PX}px`,
               top: 4,
               height: TRACK_HEIGHT - 8,
-              borderRadius: 0.75,
+              borderRadius: "2px",
               bgcolor: spanColor(row.span.span_type),
             }}
           />
@@ -52,16 +52,16 @@ export function MiniWaterfall({ roots }: { roots: SpanNode[] }) {
           >
             <Box
               sx={{
-                width: 8,
-                height: 8,
+                width: 7,
+                height: 7,
                 borderRadius: "2px",
                 bgcolor: spanColor(row.span.span_type),
                 flexShrink: 0,
               }}
             />
-            <Typography variant="caption" sx={{ color: tokens.muted }}>
+            <Box component="span" sx={{ ...DATA, fontSize: 11, color: tokens.dim }}>
               {row.span.name}
-            </Typography>
+            </Box>
           </Stack>
         ))}
       </Stack>

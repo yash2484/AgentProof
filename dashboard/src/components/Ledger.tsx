@@ -244,6 +244,10 @@ export function NoteBlock({
  */
 export const pillGroupSx = {
   gap: "4px",
+  // ToggleButtonGroup is a nowrap flex row by default. Five outcome pills
+  // measure 426px, which pushed a 390px viewport into horizontal scroll —
+  // the exact regression this page has shipped once already.
+  flexWrap: "wrap",
   "& .MuiToggleButton-root": {
     ...MICRO,
     // MICRO uppercases, which is right for a column head and wrong here:

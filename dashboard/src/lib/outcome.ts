@@ -24,6 +24,44 @@ export function outcomeLabel(outcome: EvalOutcome): string {
   return broken ? `${base} · ${broken}` : base;
 }
 
+/**
+ * One sentence saying what this trace's measurements amount to.
+ *
+ * The side panel's only prose, and the thing the document frame buys: a
+ * column of mono figures tells a fluent reader what happened, and tells
+ * everyone else nothing. It obeys the same two rules as every other claim in
+ * the product — an unmeasured trace has not passed, and a measurement that
+ * broke is never counted as a failure.
+ */
+export function traceSentence(outcome: EvalOutcome): string {
+  if (outcome.outcome === "not_evaluated" || outcome.total === 0) {
+    const broken =
+      outcome.degraded > 0
+        ? ` ${outcome.degraded} ${outcome.degraded === 1 ? "measurement" : "measurements"} was attempted and broke.`
+        : "";
+    return `Nothing has been measured on this trace. That is not a pass — it is the absence of a measurement.${broken}`;
+  }
+
+  const alsoBroken =
+    outcome.degraded > 0
+      ? ` ${outcome.degraded} more could not be taken — the judge errored or refused, so ${outcome.degraded === 1 ? "it is" : "they are"} excluded rather than counted against the agent.`
+      : "";
+
+  if (outcome.failed > 0) {
+    const worst =
+      outcome.worst_metric && outcome.worst_score !== null
+        ? ` ${metricTitle(outcome.worst_metric)} scored lowest, at ${outcome.worst_score.toFixed(3)}.`
+        : "";
+    return `${outcome.failed} of ${outcome.total} measurements failed on this trace.${worst}${alsoBroken}`;
+  }
+
+  if (outcome.degraded > 0) {
+    return `Every measurement that completed on this trace passed, but ${outcome.degraded} could not be taken — the judge errored or refused, so this trace is not fully evaluated.`;
+  }
+
+  return `All ${outcome.total} measurements on this trace passed.`;
+}
+
 /** The lowest-scoring metric on the trace, named. */
 export function worstMetricLabel(outcome: EvalOutcome): string {
   if (!outcome.worst_metric || outcome.worst_score === null) return "—";

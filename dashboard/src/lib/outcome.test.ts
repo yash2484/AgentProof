@@ -3,6 +3,7 @@ import {
   OUTCOME_FILTERS,
   outcomeColor,
   outcomeLabel,
+  traceSentence,
   worstMetricLabel,
 } from "./outcome";
 import type { EvalOutcome } from "../types";
@@ -16,6 +17,61 @@ const outcome = (o: Partial<EvalOutcome> = {}): EvalOutcome => ({
   worst_score: 1,
   outcome: "passed",
   ...o,
+});
+
+describe("traceSentence", () => {
+  // The one piece of prose in the side panel. Its job is to say what the
+  // numbers beside it mean, in the register the rest of the product uses for
+  // written things — so the rules it must never break are the product's:
+  // never call unmeasured "passed", never fold degraded into failed.
+
+  it("leads with the failures and names the worst metric", () => {
+    expect(
+      traceSentence(
+        outcome({ failed: 2, passed: 6, outcome: "failed", worst_metric: "faithfulness", worst_score: 0.41 }),
+      ),
+    ).toBe(
+      "2 of 8 measurements failed on this trace. Faithfulness scored lowest, at 0.410.",
+    );
+  });
+
+  it("refuses to call an unmeasured trace passing", () => {
+    const s = traceSentence(
+      outcome({ total: 0, passed: 0, outcome: "not_evaluated", worst_metric: null, worst_score: null }),
+    );
+    expect(s).toMatch(/not a pass/i);
+    expect(s).not.toMatch(/passed \d/);
+  });
+
+  it("keeps a broken measurement out of the failure count", () => {
+    const s = traceSentence(
+      outcome({ total: 8, passed: 7, failed: 0, degraded: 1, outcome: "degraded" }),
+    );
+    expect(s).toMatch(/could not be taken/i);
+    expect(s).not.toMatch(/failed/i);
+  });
+
+  it("still reports a broken measurement alongside real failures", () => {
+    const s = traceSentence(
+      outcome({ total: 8, passed: 5, failed: 2, degraded: 1, outcome: "failed" }),
+    );
+    expect(s).toMatch(/2 of 8 measurements failed/);
+    expect(s).toMatch(/1 more could not be taken/);
+  });
+
+  it("says everything passed only when everything was measured", () => {
+    expect(traceSentence(outcome())).toBe(
+      "All 8 measurements on this trace passed.",
+    );
+  });
+
+  it("omits the worst metric when there is no score to name", () => {
+    expect(
+      traceSentence(
+        outcome({ failed: 1, passed: 7, outcome: "failed", worst_metric: null, worst_score: null }),
+      ),
+    ).toBe("1 of 8 measurements failed on this trace.");
+  });
 });
 
 describe("outcomeLabel", () => {
