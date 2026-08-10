@@ -17,7 +17,9 @@ export function TraceListFilters({
   onChange: (next: TraceFilters) => void;
 }) {
   return (
-    <Stack direction="row" sx={{ gap: `${SPACE.xs}px`, mb: 2 }}>
+    // Wraps: three fixed-width fields side by side measure 452px, which
+    // pushed a 390px viewport into horizontal scroll.
+    <Stack direction="row" sx={{ gap: `${SPACE.xs}px`, mb: 2, flexWrap: "wrap" }}>
       <TextField
         label="Status"
         size="small"
