@@ -2,7 +2,7 @@ import type { TypographyVariantsOptions } from "@mui/material/styles";
 
 /** 11 / 12 / 13 / 15 / 18 / 24 / 32. One family, hierarchy by weight and size. */
 export const FONT_FAMILY = [
-  "Inter",
+  "Inter Variable",
   "system-ui",
   "-apple-system",
   "Segoe UI",
