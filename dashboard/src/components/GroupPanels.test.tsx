@@ -2,9 +2,11 @@ import { describe, it, expect } from "vitest";
 import { screen } from "@testing-library/react";
 import { renderWithProviders } from "../test/utils";
 import { sampleAnalytics } from "../test/fixtures";
-import { BudgetsPanel, QualityPanel, SafetyPanel, lighten, seriesColor } from "./GroupPanels";
+import { BudgetsPanel, QualityPanel, SafetyPanel, shade, seriesColor } from "./GroupPanels";
 import type { MetricHealth } from "../types";
-import { groupColor } from "../lib/groups";
+import { GROUP_ORDER, groupColor } from "../lib/groups";
+import { tokens } from "../theme";
+import { contrastRatio, relativeLuminance } from "../theme/contrast";
 
 const pick = (...names: string[]) =>
   sampleAnalytics.metric_health.filter((m) => names.includes(m.metric_name));
@@ -21,26 +23,49 @@ describe("series colours", () => {
   });
 
   it("separates sibling series by lightness, not by opacity", () => {
-    // On a dark surface a translucent line reads as the same colour dimmed
-    // rather than as a second series. Two magenta lines at 100% and 62%
-    // opacity were indistinguishable at chart scale.
-    const [first, second] = [seriesColor("quality", 0), seriesColor("quality", 1)];
+    // A translucent line reads as the same colour dimmed rather than as a
+    // second series — two lines at 100% and 62% opacity were
+    // indistinguishable at chart scale.
+    const series = [0, 1, 2, 3].map((i) => seriesColor("quality", i));
 
-    expect(second).not.toBe(first);
-    expect(second).not.toContain("rgba");
-    // Mixed toward white, so every channel rises.
-    expect(parseInt(second.slice(1, 3), 16)).toBeGreaterThan(
-      parseInt(first.slice(1, 3), 16),
-    );
+    expect(new Set(series).size).toBe(series.length);
+    for (const color of series) expect(color).not.toContain("rgba");
+  });
+
+  it("gives every series a colour that survives the light ground", () => {
+    // This is the guard the theme flip needed. The old ramp mixed toward
+    // white, which on a dark surface only ever improved legibility and on
+    // paper walks the later series into the background: only one lightening
+    // step clears 3:1 here, so the rest of the ramp darkens instead.
+    for (const group of GROUP_ORDER) {
+      for (let i = 0; i < 4; i += 1) {
+        const color = seriesColor(group, i);
+        for (const ground of [tokens.paper, tokens.data, tokens.card]) {
+          expect(
+            contrastRatio(color, ground),
+            `${group} series ${i} (${color}) on ${ground}`,
+          ).toBeGreaterThanOrEqual(3);
+        }
+      }
+    }
   });
 
   it("keeps giving distinct colours past the end of the ramp", () => {
     expect(seriesColor("safety", 9)).toBe(seriesColor("safety", 3));
   });
 
-  it("mixes to white at full amount and not at all at zero", () => {
-    expect(lighten("#d6409f", 0).toLowerCase()).toBe("#d6409f");
-    expect(lighten("#d6409f", 1)).toBe("#ffffff");
+  it("darkens toward ink and lightens toward paper, and does neither at zero", () => {
+    const base = groupColor("quality");
+    expect(shade(base, 0)).toBe(base);
+    expect(shade(base, -1).toLowerCase()).toBe(tokens.ink.toLowerCase());
+    expect(shade(base, 1).toLowerCase()).toBe(tokens.paper.toLowerCase());
+    // A negative step is darker than the base; a positive step is lighter.
+    expect(relativeLuminance(shade(base, -0.42))).toBeLessThan(
+      relativeLuminance(base),
+    );
+    expect(relativeLuminance(shade(base, 0.18))).toBeGreaterThan(
+      relativeLuminance(base),
+    );
   });
 });
 

@@ -1,9 +1,10 @@
 import { ReactNode } from "react";
 import { Box, Typography } from "@mui/material";
-import { BarChart } from "@mui/x-charts/BarChart";
+import { BarChart, BarChartProps } from "@mui/x-charts/BarChart";
 import { PieChart } from "@mui/x-charts/PieChart";
 import { Link as RouterLink } from "react-router-dom";
-import { tokens, SPACE, TILE_PADDING, TABULAR_NUMS } from "../theme";
+import { tokens, SPACE, TILE_PADDING, DATA, UI, PROSE } from "../theme";
+import { SectionHeading, DataPanel, Prose, CHART_SX } from "./Ledger";
 import { groupColor } from "../lib/groups";
 import { metricTitle } from "../lib/metricCopy";
 import type {
@@ -35,38 +36,24 @@ function Panel({
   [key: string]: unknown;
 }) {
   return (
-    <Box
-      component="section"
-      aria-label={title}
-      sx={{
-        p: `${TILE_PADDING}px`,
-        bgcolor: tokens.surface,
-        border: `1px solid ${tokens.border}`,
-        borderRadius: 2.5,
-      }}
-      {...rest}
-    >
-      <Typography
-        variant="caption"
-        sx={{
-          color: tokens.muted,
-          textTransform: "uppercase",
-          letterSpacing: "0.06em",
-          display: "block",
-          mb: 1,
-        }}
-      >
-        {title}
-      </Typography>
-      {children}
-      {footnote && (
-        <Typography
-          variant="caption"
-          sx={{ color: tokens.muted, display: "block", mt: `${SPACE.sm}px` }}
-        >
-          {footnote}
-        </Typography>
-      )}
+    <Box component="section" aria-label={title} {...rest}>
+      <SectionHeading>{title}</SectionHeading>
+      <DataPanel sx={{ p: `${TILE_PADDING}px` }}>
+        {children}
+        {footnote && (
+          <Typography
+            sx={{
+              ...PROSE,
+              fontSize: 14,
+              maxWidth: "88ch",
+              color: tokens.dim,
+              mt: `${SPACE.sm}px`,
+            }}
+          >
+            {footnote}
+          </Typography>
+        )}
+      </DataPanel>
     </Box>
   );
 }
@@ -107,10 +94,10 @@ export function PostureStrip({ metrics }: { metrics: SecurityMetricPosture[] }) 
   if (metrics.length === 0) {
     return (
       <Panel title="Posture" data-testid="posture-strip">
-        <Typography variant="body2" sx={{ color: tokens.muted }}>
+        <Prose sx={{ fontSize: 15, color: tokens.ink2 }}>
           No security metric has run in this window. Nothing here is a claim
           that the agent is safe — it is the absence of a measurement.
-        </Typography>
+        </Prose>
       </Panel>
     );
   }
@@ -127,7 +114,11 @@ export function PostureStrip({ metrics }: { metrics: SecurityMetricPosture[] }) 
           <Box
             key={m.metric_name}
             data-testid={`posture-${m.metric_name}`}
-            sx={{ py: 1.25, borderTop: `1px solid ${tokens.border}` }}
+            sx={{
+              py: "7px",
+              borderTop: `1px solid ${tokens.hair}`,
+              "&:first-of-type": { borderTop: "none" },
+            }}
           >
             <Box
               sx={{
@@ -138,26 +129,23 @@ export function PostureStrip({ metrics }: { metrics: SecurityMetricPosture[] }) 
                 flexWrap: "wrap",
               }}
             >
-              <Typography variant="body2" sx={{ color: tokens.ink }}>
+              <Box component="span" sx={{ ...DATA, color: tokens.ink }}>
                 {metricTitle(m.metric_name)}
-              </Typography>
-              <Typography
-                variant="body2"
-                sx={{
-                  color: clean ? tokens.muted : tokens.status.fail,
-                  ...TABULAR_NUMS,
-                }}
+              </Box>
+              <Box
+                component="span"
+                sx={{ ...DATA, color: clean ? tokens.dim : tokens.status.fail }}
               >
                 {clean
                   ? `no breaches in ${m.measured} measurements`
                   : `${m.breached} of ${m.measured} measurements breached`}
                 {m.degraded > 0 && ` · ${m.degraded} unmeasurable`}
-              </Typography>
+              </Box>
             </Box>
-            <Typography variant="caption" sx={{ color: tokens.muted, display: "block" }}>
+            <Box component="span" sx={{ ...DATA, fontSize: 11, color: tokens.dim }}>
               {attemptCopy(m)}
               {!m.has_variance && ` · ${varianceCopy(m)}`}
-            </Typography>
+            </Box>
           </Box>
         );
       })}
@@ -181,13 +169,9 @@ export function AttackSurface({
   if (surface.traces === 0) {
     return (
       <Panel title="Attack surface" data-testid="attack-surface">
-        <Typography
-          data-testid="attack-surface-empty"
-          variant="body2"
-          sx={{ color: tokens.muted }}
-        >
+        <Prose data-testid="attack-surface-empty" sx={{ fontSize: 15, color: tokens.ink2 }}>
           No trace carries a security measurement in this window.
-        </Typography>
+        </Prose>
       </Panel>
     );
   }
@@ -201,11 +185,11 @@ export function AttackSurface({
       footnote="A breach count means little without knowing how much of the surface was probed. Traces nobody attacked have not been shown to resist anything."
     >
       {surface.attacked === 0 ? (
-        <Typography variant="body2" sx={{ color: tokens.ink }}>
+        <Prose sx={{ fontSize: 15, color: tokens.ink }}>
           No attack was attempted against any of the {surface.traces} measured
           traces. Their security scores record that nothing tried, not that
           something failed.
-        </Typography>
+        </Prose>
       ) : (
         <Box
           sx={{
@@ -231,28 +215,49 @@ export function AttackSurface({
                     id: 1,
                     value: surface.unattacked,
                     label: "not attacked",
-                    color: tokens.surfaceRaised,
+                    // The unprobed remainder has to read against the panel it
+                    // sits on, which the old raised-surface fill does not on
+                    // a light ground.
+                    color: tokens.hair,
                   },
                 ],
               },
             ]}
           />
-          <Box sx={{ display: "grid", gap: 0.5, ...TABULAR_NUMS }}>
-            <Typography variant="h5" sx={{ color: tokens.ink }}>
-              {surface.attacked}{" "}
-              <Box component="span" sx={{ color: tokens.muted, fontSize: 14 }}>
-                of {surface.traces} traces attacked ({pct.toFixed(1)}%)
-              </Box>
-            </Typography>
-            <Typography variant="body2" sx={{ color: tokens.muted }}>
+          <Box sx={{ display: "grid", gap: "3px", minWidth: 0 }}>
+            <Box
+              component="span"
+              sx={{ ...DATA, fontSize: 20, fontWeight: 500, color: tokens.ink }}
+            >
+              {surface.attacked} of {surface.traces}
+            </Box>
+            <Box component="span" sx={{ ...UI, fontSize: 12.5, color: tokens.dim }}>
+              traces attacked ({pct.toFixed(1)}%)
+            </Box>
+            <Box component="span" sx={{ ...DATA, color: tokens.dim }}>
               {surface.unattacked} were never probed
-            </Typography>
+            </Box>
           </Box>
         </Box>
       )}
     </Panel>
   );
 }
+
+/**
+ * The band axis, plus the two gap ratios its own scale config defines.
+ *
+ * `@mui/x-charts` types `xAxis` as `AxisConfig<keyof AxisScaleConfig>`,
+ * which instantiates the generic with the whole union and so exposes only
+ * the members every scale shares. `categoryGapRatio` and `barGapRatio` are
+ * declared on `AxisScaleConfig['band']` and read at runtime; this widens the
+ * element type to admit them rather than casting the object through
+ * `unknown`, so everything else on the axis stays checked.
+ */
+type BandAxis = NonNullable<BarChartProps["xAxis"]>[number] & {
+  categoryGapRatio?: number;
+  barGapRatio?: number;
+};
 
 /**
  * Breaches by run.
@@ -264,18 +269,33 @@ export function BreachTimeline({ runs }: { runs: SecurityRunPoint[] }) {
   if (runs.length === 0) {
     return (
       <Panel title="Breaches by run" data-testid="breach-timeline">
-        <Typography
-          data-testid="breach-timeline-empty"
-          variant="body2"
-          sx={{ color: tokens.muted }}
-        >
+        <Prose data-testid="breach-timeline-empty" sx={{ fontSize: 15, color: tokens.ink2 }}>
           No evaluation run in this window.
-        </Typography>
+        </Prose>
       </Panel>
     );
   }
 
   const total = runs.reduce((sum, r) => sum + r.breached, 0);
+
+  // Declared here rather than inline: an object literal handed straight to a
+  // prop stays "fresh" and gets excess-property-checked against the narrower
+  // declared type, which rejects the gap ratios even though they are real.
+  const runAxis: BandAxis = {
+    scaleType: "band",
+    // Two runs at the default gap render as two slabs filling half the frame
+    // each, which reads as an area rather than a count. A column should look
+    // like a measurement.
+    categoryGapRatio: 0.7,
+    barGapRatio: 0.2,
+    data: runs.map((_r, i) => `#${i + 1}`),
+    valueFormatter: (label: string, ctx) =>
+      ctx?.location === "tick"
+        ? label
+        : new Date(
+            runs[Number(label.slice(1)) - 1]?.run_at ?? "",
+          ).toLocaleDateString(),
+  };
 
   return (
     <Panel
@@ -291,19 +311,13 @@ export function BreachTimeline({ runs }: { runs: SecurityRunPoint[] }) {
         height={180}
         margin={{ top: 8, right: 16, bottom: 24, left: 32 }}
         slotProps={{ legend: { hidden: true } }}
-        xAxis={[
-          {
-            scaleType: "band",
-            data: runs.map((_r, i) => `#${i + 1}`),
-            valueFormatter: (label: string, ctx) =>
-              ctx?.location === "tick"
-                ? label
-                : new Date(
-                    runs[Number(label.slice(1)) - 1]?.run_at ?? "",
-                  ).toLocaleDateString(),
-          },
-        ]}
-        yAxis={[{ min: 0 }]}
+        grid={{ horizontal: true }}
+        sx={CHART_SX}
+        xAxis={[runAxis]}
+        // Breaches are counted, so the axis is stepped in whole ones. The
+        // default scale labelled a single breach as "0.0 / 0.5 / 1.0", which
+        // invites reading half a breach as a thing that can happen.
+        yAxis={[{ min: 0, tickMinStep: 1 }]}
         series={[
           { data: runs.map((r) => r.breached), label: "breached", color: tokens.status.fail },
         ]}
@@ -320,45 +334,45 @@ export function FindingsList({ findings }: { findings: SecurityFinding[] }) {
       footnote="Only failures are listed. Passing rows are counted above, never enumerated."
     >
       {findings.length === 0 ? (
-        <Typography
-          data-testid="findings-empty"
-          variant="body2"
-          sx={{ color: tokens.muted }}
-        >
+        <Prose data-testid="findings-empty" sx={{ fontSize: 15, color: tokens.ink2 }}>
           No security failure in this window. Read that alongside the attack
           surface above — nothing failed, and much of it was never attacked.
-        </Typography>
+        </Prose>
       ) : (
         <Box sx={{ display: "grid", gap: `${SPACE.md}px` }}>
           {findings.map((f) => (
             <Box
               key={`${f.trace_id}-${f.metric_name}-${f.evaluated_at}`}
               data-testid={`finding-${f.trace_id}`}
-              sx={{ borderTop: `1px solid ${tokens.border}`, pt: 1.5 }}
+              sx={{
+                borderTop: `1px solid ${tokens.hair}`,
+                pt: `${SPACE.sm}px`,
+                "&:first-of-type": { borderTop: "none", pt: 0 },
+              }}
             >
               <Box
                 sx={{ display: "flex", alignItems: "baseline", gap: 1, flexWrap: "wrap" }}
               >
-                <Typography
-                  variant="body2"
-                  sx={{ color: tokens.status.fail, fontWeight: 600 }}
+                <Box
+                  component="span"
+                  sx={{ ...DATA, color: tokens.status.fail, fontWeight: 600 }}
                 >
                   {metricTitle(f.metric_name)}
-                </Typography>
+                </Box>
                 <Box
                   component={RouterLink}
                   to={`/traces/${f.trace_id}`}
                   data-testid={`finding-link-${f.trace_id}`}
                   sx={{
-                    color: tokens.brand.text,
+                    ...DATA,
+                    color: tokens.link,
                     textDecoration: "none",
-                    fontSize: 13,
                     "&:hover": { textDecoration: "underline" },
                   }}
                 >
                   {f.trace_id.slice(0, 12)}… →
                 </Box>
-                <Typography variant="caption" sx={{ color: tokens.muted }}>
+                <Box component="span" sx={{ ...DATA, fontSize: 11, color: tokens.dim }}>
                   {f.attempted === true
                     ? "attack attempted"
                     : f.attempted === false
@@ -366,28 +380,26 @@ export function FindingsList({ findings }: { findings: SecurityFinding[] }) {
                       : "attack status not recorded"}
                   {f.evaluated_at &&
                     ` · ${new Date(f.evaluated_at).toLocaleString()}`}
-                </Typography>
+                </Box>
               </Box>
               {f.explanation && (
-                <Typography variant="body2" sx={{ color: tokens.ink, mt: 0.5 }}>
+                <Box component="div" sx={{ ...DATA, color: tokens.ink, mt: "4px" }}>
                   {f.explanation}
-                </Typography>
+                </Box>
               )}
               {f.reasoning.map((r, i) => (
-                <Typography
+                <Prose
                   key={`${r.span_id}-${i}`}
-                  variant="body2"
                   sx={{
-                    color: r.error ? tokens.status.watch : tokens.muted,
-                    mt: 0.5,
+                    color: r.error ? tokens.status.watch : tokens.ink,
+                    mt: `${SPACE.xs}px`,
                     whiteSpace: "pre-wrap",
-                    maxWidth: "72ch",
-                    borderLeft: `1px solid ${tokens.border}`,
-                    pl: 1.5,
+                    borderLeft: `2px solid ${r.error ? tokens.status.watch : tokens.hairStrong}`,
+                    pl: `${SPACE.sm}px`,
                   }}
                 >
                   {r.error ?? r.reasoning}
-                </Typography>
+                </Prose>
               ))}
             </Box>
           ))}

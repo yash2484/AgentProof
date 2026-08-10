@@ -232,6 +232,27 @@ export function NoteBlock({
 }
 
 /**
+ * Chart chrome on a light ground.
+ *
+ * A faint horizontal grid only: vertical rules would imply the x-axis is
+ * continuous, and on every chart in this product it is a sequence of runs.
+ * Axis labels are mono because they are measured values, and the axis line
+ * is `hairStrong` so the frame reads as a rule rather than as data.
+ *
+ * `@mui/x-charts` inherits MUI's palette and defaults to a dark-on-dark
+ * stroke set, so this has to be stated rather than assumed.
+ */
+export const CHART_SX = {
+  "& .MuiChartsAxis-line, & .MuiChartsAxis-tick": { stroke: tokens.hairStrong },
+  "& .MuiChartsAxis-tickLabel": {
+    fill: tokens.dim,
+    fontFamily: DATA.fontFamily,
+    fontSize: 11,
+  },
+  "& .MuiChartsGrid-line": { stroke: tokens.hair },
+} as const;
+
+/**
  * The pill treatment for a ToggleButtonGroup.
  *
  * Filters read as pills rather than a select because the set is small and

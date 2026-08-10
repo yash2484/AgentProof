@@ -1,7 +1,8 @@
 import { ReactNode } from "react";
 import { Box, Typography } from "@mui/material";
 import { LineChart } from "@mui/x-charts/LineChart";
-import { tokens, SPACE, TILE_PADDING, TABULAR_NUMS } from "../theme";
+import { tokens, SPACE, TILE_PADDING, DATA, UI, PROSE, H3 } from "../theme";
+import { DataPanel, Prose, CHART_SX } from "./Ledger";
 import { JUDGE_NOISE, groupColor, groupLabel, groupQuestion } from "../lib/groups";
 import { metricTitle } from "../lib/metricCopy";
 import { axisFloor } from "./VariancePanel";
@@ -21,15 +22,20 @@ import type { AnalyticsEvalRun, MetricGroup, MetricHealth } from "../types";
  */
 
 /**
- * Series colours within a group: the group hue, stepped by lightness.
+ * Series steps within a group: the group hue, moved along lightness.
  *
- * Lightness rather than opacity. On a dark surface a translucent line reads
- * as the same colour dimmed, not as a second series — two magenta lines at
- * 100% and 62% opacity were indistinguishable at chart scale. Mixing toward
- * white separates them while keeping the group legible as one family, and
- * every series carries its name in the key regardless.
+ * Lightness rather than opacity. A translucent line reads as the same colour
+ * dimmed, not as a second series — two lines at 100% and 62% opacity were
+ * indistinguishable at chart scale.
+ *
+ * Negative steps darken toward ink, positive steps lighten toward paper. On
+ * the old dark ground every step went toward white and got *more* legible;
+ * on paper that same ramp walks the last three series into the background.
+ * Only one lightening step survives the 3:1 non-text floor here, so the rest
+ * of the ramp goes the other way. `GroupPanels.test.tsx` asserts the floor
+ * for every step of every group hue.
  */
-const SERIES_LIGHTEN = [0, 0.45, 0.7, 0.85];
+const SERIES_STEPS = [0, -0.42, 0.18, -0.72];
 
 function PanelShell({
   group,
@@ -45,14 +51,8 @@ function PanelShell({
       component="section"
       data-testid={`group-panel-${group}`}
       aria-label={groupLabel(group)}
-      sx={{
-        p: `${TILE_PADDING}px`,
-        bgcolor: tokens.surface,
-        border: `1px solid ${tokens.border}`,
-        borderRadius: 2.5,
-      }}
     >
-      <Box sx={{ display: "flex", alignItems: "baseline", gap: 1, flexWrap: "wrap" }}>
+      <Box sx={{ display: "flex", alignItems: "center", gap: 1, mb: "2px" }}>
         <Box
           aria-hidden
           sx={{
@@ -60,25 +60,37 @@ function PanelShell({
             height: 8,
             borderRadius: "50%",
             bgcolor: groupColor(group),
-            alignSelf: "center",
+            flexShrink: 0,
           }}
         />
-        <Typography variant="subtitle1" sx={{ color: tokens.ink }}>
+        <Typography component="h2" sx={{ ...H3, color: tokens.ink }}>
           {groupLabel(group)}
         </Typography>
-        <Typography variant="body2" sx={{ color: tokens.muted }}>
-          {groupQuestion(group)}
-        </Typography>
       </Box>
-      <Box sx={{ mt: `${SPACE.sm}px` }}>{children}</Box>
-      {footnote && (
-        <Typography
-          variant="caption"
-          sx={{ color: tokens.muted, display: "block", mt: `${SPACE.sm}px` }}
-        >
-          {footnote}
-        </Typography>
-      )}
+      {/* The question the group answers, in serif. It is the one line on this
+        * page written for someone who does not run evals, and the panel leads
+        * with it on purpose — the statistic underneath means nothing without
+        * knowing what was being asked. */}
+      <Prose sx={{ fontSize: 15, color: tokens.ink2, mb: `${SPACE.xs}px` }}>
+        {groupQuestion(group)}
+      </Prose>
+
+      <DataPanel sx={{ p: `${TILE_PADDING}px` }}>
+        {children}
+        {footnote && (
+          <Typography
+            sx={{
+              ...PROSE,
+              fontSize: 14,
+              maxWidth: "88ch",
+              color: tokens.dim,
+              mt: `${SPACE.sm}px`,
+            }}
+          >
+            {footnote}
+          </Typography>
+        )}
+      </DataPanel>
     </Box>
   );
 }
@@ -88,8 +100,7 @@ function EmptyGroup({ group, body }: { group: MetricGroup; body: string }) {
     <PanelShell group={group}>
       <Typography
         data-testid={`group-empty-${group}`}
-        variant="body2"
-        sx={{ color: tokens.muted }}
+        sx={{ ...PROSE, fontSize: 15, color: tokens.ink2 }}
       >
         {body}
       </Typography>
@@ -104,9 +115,9 @@ function MetricKey({ name, color }: { name: string; color: string }) {
         aria-hidden
         sx={{ width: 8, height: 8, borderRadius: "50%", bgcolor: color, flexShrink: 0 }}
       />
-      <Typography variant="caption" sx={{ color: tokens.ink }}>
+      <Box component="span" sx={{ ...UI, fontSize: 12.5, color: tokens.ink2 }}>
         {metricTitle(name)}
-      </Typography>
+      </Box>
     </Box>
   );
 }
@@ -170,6 +181,8 @@ export function QualityPanel({
           height={200}
           margin={{ top: 8, right: 16, bottom: 24, left: 40 }}
           slotProps={{ legend: { hidden: true } }}
+          grid={{ horizontal: true }}
+          sx={CHART_SX}
           xAxis={[
             {
               data: points.map((_p, i) => i),
@@ -184,7 +197,7 @@ export function QualityPanel({
           series={series}
         />
       ) : (
-        <Typography variant="body2" sx={{ color: tokens.muted }}>
+        <Typography sx={{ ...PROSE, fontSize: 15, color: tokens.ink2 }}>
           One run so far. A second is what turns a score into a movement.
         </Typography>
       )}
@@ -209,25 +222,23 @@ function PrevalenceRow({ metric }: { metric: MetricHealth }) {
         justifyContent: "space-between",
         gap: 1,
         flexWrap: "wrap",
-        py: 1,
-        borderTop: `1px solid ${tokens.border}`,
+        py: "6px",
+        borderTop: `1px solid ${tokens.hair}`,
+        "&:first-of-type": { borderTop: "none" },
       }}
     >
-      <Typography variant="body2" sx={{ color: tokens.ink }}>
+      <Box component="span" sx={{ ...DATA, color: tokens.ink }}>
         {metricTitle(metric.metric_name)}
-      </Typography>
-      <Typography
-        variant="body2"
-        sx={{
-          color: clean ? tokens.muted : tokens.status.fail,
-          ...TABULAR_NUMS,
-        }}
+      </Box>
+      <Box
+        component="span"
+        sx={{ ...DATA, color: clean ? tokens.dim : tokens.status.fail }}
       >
         {clean
           ? `no breaches in ${metric.count} measurements`
           : `${breached} of ${metric.count} measurements breached`}
         {metric.degraded > 0 && ` · ${metric.degraded} unmeasurable`}
-      </Typography>
+      </Box>
     </Box>
   );
 }
@@ -282,7 +293,11 @@ function ComplianceRow({ metric }: { metric: MetricHealth }) {
   return (
     <Box
       data-testid={`compliance-${metric.metric_name}`}
-      sx={{ py: 1, borderTop: `1px solid ${tokens.border}` }}
+      sx={{
+        py: "6px",
+        borderTop: `1px solid ${tokens.hair}`,
+        "&:first-of-type": { borderTop: "none" },
+      }}
     >
       <Box
         sx={{
@@ -293,21 +308,22 @@ function ComplianceRow({ metric }: { metric: MetricHealth }) {
           flexWrap: "wrap",
         }}
       >
-        <Typography variant="body2" sx={{ color: tokens.ink }}>
+        <Box component="span" sx={{ ...DATA, color: tokens.ink }}>
           {metricTitle(metric.metric_name)}
-        </Typography>
-        <Typography variant="body2" sx={{ color: tokens.muted, ...TABULAR_NUMS }}>
+        </Box>
+        <Box component="span" sx={{ ...DATA, color: tokens.dim }}>
           {within} of {metric.count} within limit
           {rate !== null && ` · ${rate.toFixed(1)}%`}
-        </Typography>
+        </Box>
       </Box>
       <Box
         aria-hidden
         sx={{
-          mt: 0.75,
-          height: 6,
-          borderRadius: 1,
-          bgcolor: tokens.surfaceRaised,
+          mt: "5px",
+          height: 5,
+          borderRadius: "2px",
+          // The track is the shortfall, so it must read against the panel.
+          bgcolor: tokens.hair,
           overflow: "hidden",
         }}
       >
@@ -353,24 +369,28 @@ export function BudgetsPanel({ metrics }: { metrics: MetricHealth[] }) {
 }
 
 /**
- * `#RRGGBB` mixed toward white, for stepping one hue across a group's series.
+ * `#RRGGBB` moved along lightness: negative toward ink, positive toward paper.
  *
- * Exported for the contrast check: every step must stay above the 3:1
- * non-text floor against the surface, which mixing toward white on a dark
- * theme only improves.
+ * Exported for the contrast check — every step must stay above the 3:1
+ * non-text floor against the ground it is drawn on, which no longer comes
+ * for free the way mixing toward white did on a dark theme.
  */
-export function lighten(hex: string, amount: number): string {
-  if (amount <= 0) return hex;
-  const value = parseInt(hex.slice(1), 16);
-  const channels = [(value >> 16) & 255, (value >> 8) & 255, value & 255];
-  const mixed = channels.map((c) => Math.round(c + (255 - c) * amount));
+export function shade(hex: string, amount: number): string {
+  if (amount === 0) return hex;
+  const target = amount < 0 ? tokens.ink : tokens.paper;
+  const weight = Math.min(Math.abs(amount), 1);
+  const read = (s: string) =>
+    [1, 3, 5].map((i) => parseInt(s.slice(i, i + 2), 16));
+  const from = read(hex);
+  const to = read(target);
+  const mixed = from.map((c, i) => Math.round(c * (1 - weight) + to[i] * weight));
   return `#${mixed.map((c) => c.toString(16).padStart(2, "0")).join("")}`;
 }
 
 /** The colour for the nth series inside a group. */
 export function seriesColor(group: MetricGroup, index: number): string {
-  return lighten(
+  return shade(
     groupColor(group),
-    SERIES_LIGHTEN[Math.min(index, SERIES_LIGHTEN.length - 1)],
+    SERIES_STEPS[Math.min(index, SERIES_STEPS.length - 1)],
   );
 }

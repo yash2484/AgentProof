@@ -8,7 +8,7 @@ import {
   groupLabel,
   presentGroups,
 } from "../lib/groups";
-import { SectionHeading, DataPanel } from "./Ledger";
+import { SectionHeading, DataPanel, CHART_SX } from "./Ledger";
 import type { AnalyticsEvalRun, MetricGroup } from "../types";
 
 /** At this many runs a line stops being an extrapolation invitation. */
@@ -229,19 +229,7 @@ export function VariancePanel({ runs }: { runs: AnalyticsEvalRun[] }) {
               // A faint horizontal grid only. Vertical rules would imply the
               // x-axis is continuous, and it is a sequence of runs.
               grid={{ horizontal: true }}
-              sx={{
-                "& .MuiChartsAxis-line, & .MuiChartsAxis-tick": {
-                  stroke: tokens.hairStrong,
-                },
-                "& .MuiChartsAxis-tickLabel": {
-                  fill: tokens.dim,
-                  fontFamily: DATA.fontFamily,
-                  fontSize: 11,
-                },
-                "& .MuiChartsGrid-line": { stroke: tokens.hair },
-                // The last point is where the reader's question actually is.
-                "& .MuiMarkElement-root": { strokeWidth: 1.5 },
-              }}
+              sx={CHART_SX}
               xAxis={[
                 {
                   data: points.map((_p, i) => i),

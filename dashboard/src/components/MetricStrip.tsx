@@ -1,6 +1,7 @@
 import { Box, Typography } from "@mui/material";
 import { Link as RouterLink } from "react-router-dom";
-import { tokens, SPACE, TABULAR_NUMS } from "../theme";
+import { tokens, SPACE, DATA, UI, RADIUS, H3 } from "../theme";
+
 import { GROUP_ORDER, groupColor, groupLabel, groupQuestion } from "../lib/groups";
 import { metricTitle } from "../lib/metricCopy";
 import { metricSeverity } from "../lib/analytics";
@@ -77,19 +78,15 @@ function MetricTile({
       data-testid={`metric-tile-${metric.metric_name}`}
       sx={{
         display: "block",
-        minWidth: 208,
-        flex: "1 1 208px",
+        minWidth: 196,
+        flex: "1 1 196px",
         p: `${SPACE.sm}px`,
-        borderRadius: 2,
-        bgcolor: tokens.surface,
-        border: `1px solid ${tokens.border}`,
+        borderRadius: `${RADIUS}px`,
+        bgcolor: tokens.data,
+        border: `1px solid ${tokens.hair}`,
         textDecoration: "none",
-        transition: "background-color 120ms ease-out, border-color 120ms ease-out",
-        "&:hover": { bgcolor: tokens.surfaceRaised, borderColor: tokens.muted },
-        "&:focus-visible": {
-          outline: `2px solid ${tokens.brand.solid}`,
-          outlineOffset: 2,
-        },
+        transition: "background-color 150ms ease-out, border-color 150ms ease-out",
+        "&:hover": { bgcolor: tokens.card, borderColor: tokens.hairStrong },
       }}
     >
       <Box sx={{ display: "flex", alignItems: "center", gap: 0.75, mb: 0.5 }}>
@@ -103,27 +100,31 @@ function MetricTile({
             flexShrink: 0,
           }}
         />
-        <Typography variant="body2" sx={{ color: tokens.ink, flex: 1 }} noWrap>
+        <Box
+          component="span"
+          sx={{ ...DATA, color: tokens.ink, flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}
+        >
           {metricTitle(metric.metric_name)}
-        </Typography>
+        </Box>
         <SeverityChip severity={severity} />
       </Box>
 
-      <Typography variant="h5" sx={{ color: tokens.ink, ...TABULAR_NUMS }}>
+      <Box
+        component="div"
+        sx={{ ...DATA, fontSize: 19, fontWeight: 500, lineHeight: 1.2, color: tokens.ink }}
+      >
         {metric.mean_score === null ? "—" : metric.mean_score.toFixed(3)}
-      </Typography>
+      </Box>
 
       <Typography
         data-testid={`metric-delta-${metric.metric_name}`}
-        variant="caption"
-        sx={{ color: tokens.muted, display: "block", ...TABULAR_NUMS }}
+        sx={{ ...DATA, fontSize: 11, color: tokens.dim, display: "block", mt: "3px" }}
       >
         {deltaCopy(delta)}
       </Typography>
 
       <Typography
-        variant="caption"
-        sx={{ color: tokens.muted, display: "block", ...TABULAR_NUMS }}
+        sx={{ ...DATA, fontSize: 11, color: tokens.dim, display: "block" }}
       >
         {metric.failed} of {metric.count} flagged
         {metric.degraded > 0 ? ` · ${metric.degraded} degraded` : ""}
@@ -194,13 +195,21 @@ function GroupCluster({
 }) {
   return (
     <Box component="section" aria-label={groupLabel(group)}>
-      <Typography variant="subtitle1" sx={{ color: tokens.ink }}>
+      <Typography component="h2" sx={{ ...H3, color: tokens.ink }}>
         {groupLabel(group)}
       </Typography>
-      <Typography variant="body2" sx={{ color: tokens.muted, mb: 1 }}>
+      {/* Sans, not serif. The group panels further down lead with this same
+        * question and are the place it is argued; here it is a signpost over
+        * a row of tiles. Setting both in serif prose put the identical
+        * sentence on screen twice in the same voice, which read as a stutter
+        * rather than as reinforcement. */}
+      <Box
+        component="p"
+        sx={{ ...UI, fontSize: 13, color: tokens.dim, mb: "6px" }}
+      >
         {groupQuestion(group)} · {members.length}{" "}
         {members.length === 1 ? "metric" : "metrics"}
-      </Typography>
+      </Box>
       <Box sx={{ display: "flex", flexWrap: "wrap", gap: `${SPACE.sm}px` }}>
         {children}
       </Box>

@@ -16,6 +16,7 @@ import {
   FigureRow,
   Prose,
   NoteBlock,
+  CHART_SX,
 } from "../components/Ledger";
 import {
   tokens,
@@ -341,17 +342,7 @@ function History({
               margin={{ top: 8, right: 16, bottom: 24, left: 40 }}
               slotProps={{ legend: { hidden: true } }}
               grid={{ horizontal: true }}
-              sx={{
-                "& .MuiChartsAxis-line, & .MuiChartsAxis-tick": {
-                  stroke: tokens.hairStrong,
-                },
-                "& .MuiChartsAxis-tickLabel": {
-                  fill: tokens.dim,
-                  fontFamily: DATA.fontFamily,
-                  fontSize: 11,
-                },
-                "& .MuiChartsGrid-line": { stroke: tokens.hair },
-              }}
+              sx={CHART_SX}
               xAxis={[
                 {
                   data: points.map((_p, i) => i),
