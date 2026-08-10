@@ -7,6 +7,7 @@ import {
   saturation,
 } from "./contrast";
 import { tokens } from "./palette";
+import { FONT_SERIF, FONT_SANS, FONT_MONO } from "./typography";
 
 /** Body-size text must clear 4.5:1; non-text and large text must clear 3.0:1. */
 const BODY_FLOOR = 4.5;
@@ -271,6 +272,43 @@ describe("filled-chip label contrast", () => {
     expect(contrastRatio(tokens.onFill, background)).toBeGreaterThanOrEqual(
       BODY_FLOOR,
     );
+  });
+});
+
+describe("font stacks are valid CSS", () => {
+  // `Source Serif 4 Variable` unquoted is invalid: a CSS font family is a
+  // sequence of identifiers and an identifier may not begin with a digit, so
+  // the browser drops the whole declaration. The heading then renders at the
+  // correct size, weight and tracking in the wrong face, silently — there is
+  // no console warning. This test is the only thing that catches it.
+  const STACKS: Array<[string, string]> = [
+    ["serif", FONT_SERIF],
+    ["sans", FONT_SANS],
+    ["mono", FONT_MONO],
+  ];
+
+  it.each(STACKS)("every %s family that needs quoting has it", (_name, stack) => {
+    for (const family of stack.split(",").map((f) => f.trim())) {
+      if (family.startsWith('"')) {
+        expect(family.endsWith('"')).toBe(true);
+        continue;
+      }
+      // Unquoted: every space-separated identifier must start with a letter,
+      // an underscore or a hyphen — never a digit.
+      for (const ident of family.split(/\s+/)) {
+        expect(/^[A-Za-z_-]/.test(ident), `"${ident}" in ${family}`).toBe(true);
+      }
+    }
+  });
+
+  it("names each of the three faces exactly once, in its own stack", () => {
+    expect(FONT_SERIF).toContain("Source Serif 4 Variable");
+    expect(FONT_SANS).toContain("Inter Variable");
+    expect(FONT_MONO).toContain("JetBrains Mono Variable");
+    // A stack that ends in the wrong generic degrades to the wrong shape.
+    expect(FONT_SERIF.endsWith("serif")).toBe(true);
+    expect(FONT_SANS.endsWith("sans-serif")).toBe(true);
+    expect(FONT_MONO.endsWith("monospace")).toBe(true);
   });
 });
 

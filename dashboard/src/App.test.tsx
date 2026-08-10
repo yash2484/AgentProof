@@ -19,20 +19,13 @@ afterEach(() => vi.restoreAllMocks());
 describe("App", () => {
   it("renders the shell and lands on the overview", () => {
     renderWithProviders(<App />, { route: "/" });
-    // The brand renders as "Agent" + a nested <span>Proof</span>. RTL's
-    // default getByText only reads an element's own direct text-node
-    // children (not full textContent), so neither the outer h6 nor the span
-    // matches "AgentProof" on its own — a plain string query, or one scoped
-    // with `selector`, both report "no match". A function matcher reading
-    // textContent directly is the correct fix for text split across
-    // elements.
-    expect(
-      screen.getByText(
-        (_, element) =>
-          element?.tagName.toLowerCase() === "h6" &&
-          element.textContent === "AgentProof",
-      ),
-    ).toBeInTheDocument();
+    // Ledger's wordmark is one serif text node. It used to render as
+    // "Agent" + a nested <span>Proof</span>, which RTL could not match with
+    // a plain string query because getByText reads an element's own direct
+    // text children rather than its textContent — hence the function matcher
+    // this replaces. Spending the brand accent on a word nobody clicks was
+    // the reason for the split, and it is gone.
+    expect(screen.getByText("AgentProof")).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Overview" })).toBeInTheDocument();
     expect(screen.getByRole("link", { name: "Traces" })).toBeInTheDocument();
   });

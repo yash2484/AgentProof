@@ -1,7 +1,8 @@
 import { Box, Typography, ToggleButton, ToggleButtonGroup } from "@mui/material";
-import { tokens, SPACE, TABULAR_NUMS } from "../theme";
+import { tokens, SPACE, DATA } from "../theme";
 import { isSyntheticProject } from "../lib/analytics";
 import { SyntheticBadge } from "./SeverityChip";
+import { pillGroupSx } from "./Ledger";
 
 export const WINDOWS = [
   { days: 7, label: "7d" },
@@ -22,32 +23,49 @@ function lastEvaluated(runs: ScopeRun[]): string {
 }
 
 /**
- * Sticky scope bar: project, window, last evaluation, run count.
+ * The top line of every page: title, scope, and the window it all applies to.
  *
- * Scope is visible before any value it scopes. Every alarming statement on
- * this page carries a denominator and a time window, and this is where the
- * time window lives — a figure whose scope has scrolled out of view is a
- * figure that can be misread.
+ * Scope is visible before any value it scopes. Every alarming statement in
+ * this product carries a denominator and a time window, and this is where
+ * the time window lives — a figure whose scope has scrolled out of view is a
+ * figure that can be misread, which is why the bar sticks.
+ *
+ * The title is serif and the scope is mono, on one line over a `hairStrong`
+ * rule. That single line is the whole register in miniature: the name of the
+ * thing is written, and everything qualifying it was measured.
+ *
+ * The spec's ⌘K affordance is deliberately absent. No command palette exists
+ * in this app, and an affordance advertising a shortcut that does nothing is
+ * worse than no affordance at all.
  */
 export function ScopeBar({
+  title,
   project,
   days,
   onDaysChange,
   runs: runList,
+  children,
 }: {
+  /** The page name. The one piece of serif on this line. */
+  title: string;
   project: string | null | undefined;
-  days: number;
-  onDaysChange: (days: number) => void;
+  /** Omitted by pages that are not scoped to a time window. */
+  days?: number;
+  onDaysChange?: (days: number) => void;
   /**
    * The runs in scope. Taken as a plain list rather than a whole analytics
    * payload so every page can supply it — the Security page has its own
    * shape, and passing `undefined` made the bar report "0 runs · never
    * evaluated" above a page showing nine runs of data.
    */
-  runs: ScopeRun[] | undefined;
+  runs?: ScopeRun[] | undefined;
+  /** Page-specific controls that belong on the scope line. */
+  children?: React.ReactNode;
 }) {
   const runList_ = runList ?? [];
   const runs = runList_.length;
+  const showWindow = days !== undefined && onDaysChange !== undefined;
+
   return (
     <Box
       data-testid="scope-bar"
@@ -57,50 +75,55 @@ export function ScopeBar({
         zIndex: 2,
         display: "flex",
         flexWrap: "wrap",
-        alignItems: "center",
-        gap: `${SPACE.sm}px`,
-        py: 1.5,
-        mb: `${SPACE.md}px`,
-        bgcolor: tokens.bg,
-        borderBottom: `1px solid ${tokens.border}`,
+        alignItems: "baseline",
+        columnGap: `${SPACE.sm}px`,
+        rowGap: "6px",
+        pt: "2px",
+        pb: `${SPACE.xs}px`,
+        mb: `${SPACE.lg}px`,
+        bgcolor: tokens.paper,
+        borderBottom: `1px solid ${tokens.hairStrong}`,
       }}
     >
-      <Typography variant="subtitle1" sx={{ color: tokens.ink }}>
-        {project ?? "All projects"}
+      <Typography variant="h4" component="h1" sx={{ color: tokens.ink, mr: "2px" }}>
+        {title}
       </Typography>
+
+      <Box component="span" sx={{ ...DATA, color: tokens.dim }}>
+        {project ?? "all projects"}
+      </Box>
       {isSyntheticProject(project) && <SyntheticBadge />}
 
-      <ToggleButtonGroup
-        size="small"
-        exclusive
-        value={days}
-        onChange={(_e, value) => value !== null && onDaysChange(value)}
-        aria-label="time range"
-        sx={{
-          "& .MuiToggleButton-root": {
-            color: tokens.muted,
-            borderColor: tokens.border,
-            px: 1.25,
-            py: 0.25,
-            fontSize: 12,
-          },
-          "& .Mui-selected": { color: `${tokens.ink} !important` },
-        }}
-      >
-        {WINDOWS.map((w) => (
-          <ToggleButton key={w.days} value={w.days} aria-label={w.label}>
-            {w.label}
-          </ToggleButton>
-        ))}
-      </ToggleButtonGroup>
+      {/* Pushes the controls to the trailing edge on a wide viewport and
+          collapses to nothing once the line wraps. */}
+      <Box sx={{ flex: "1 1 auto", minWidth: 0 }} />
 
-      <Typography
-        variant="body2"
+      {children}
+
+      {showWindow && (
+        <ToggleButtonGroup
+          size="small"
+          exclusive
+          value={days}
+          onChange={(_e, value) => value !== null && onDaysChange(value)}
+          aria-label="time range"
+          sx={pillGroupSx}
+        >
+          {WINDOWS.map((w) => (
+            <ToggleButton key={w.days} value={w.days} aria-label={w.label}>
+              {w.label}
+            </ToggleButton>
+          ))}
+        </ToggleButtonGroup>
+      )}
+
+      <Box
+        component="span"
         data-testid="scope-runs"
-        sx={{ color: tokens.muted, ...TABULAR_NUMS }}
+        sx={{ ...DATA, color: tokens.dim, whiteSpace: "nowrap" }}
       >
         {runs} {runs === 1 ? "run" : "runs"} · {lastEvaluated(runList_)}
-      </Typography>
+      </Box>
     </Box>
   );
 }

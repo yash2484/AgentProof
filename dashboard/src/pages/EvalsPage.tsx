@@ -31,11 +31,8 @@ export function EvalsPage() {
 
   return (
     <Box>
-      <Typography variant="h4" sx={{ color: tokens.ink, mb: "4px" }}>
-        Evals
-      </Typography>
-
       <ScopeBar
+        title="Evals"
         project={project}
         days={days}
         onDaysChange={setDays}

@@ -16,7 +16,7 @@ beforeEach(() => {
   });
   // The switcher reads its own endpoint rather than a page of traces — see
   // listProjects. Default: the landing project is absent, the fresh-install
-  // case, so the rail falls back to "All projects".
+  // case, so the rail falls back to "all projects".
   vi.spyOn(api, "listProjects").mockResolvedValue({
     projects: [{ name: "demo", traces: 3, generated: false }],
   });
@@ -58,8 +58,10 @@ describe("AppShell", () => {
     // which is exactly the fresh-install case.
     renderWithProviders(<AppShell><div>content</div></AppShell>, { route: "/traces" });
 
+    // Lower case because the switcher is a mono data surface and its other
+    // values are project ids, which are lower case too.
     await waitFor(() =>
-      expect(screen.getByText("All projects")).toBeInTheDocument(),
+      expect(screen.getByText("all projects")).toBeInTheDocument(),
     );
     expect(screen.queryByText(DEFAULT_PROJECT)).not.toBeInTheDocument();
   });

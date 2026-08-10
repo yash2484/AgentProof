@@ -44,17 +44,29 @@ export function useMetrics() {
   return useQuery({ queryKey: queryKeys.metrics(), queryFn: () => api.listMetrics() });
 }
 
-/** Distinct project names, derived from recent traces (no dedicated endpoint). */
+/**
+ * Every project with its trace count and whether it is generated.
+ *
+ * Was derived from a page of traces, which broke twice over: it saw only the
+ * first 200 rows, and once aggregates began excluding generated corpora the
+ * generated project disappeared from the switcher entirely.
+ */
+export function useProjectSummaries() {
+  return useQuery({
+    queryKey: ["projects"],
+    queryFn: async () => (await api.listProjects()).projects,
+  });
+}
+
+/**
+ * Just the names. Shares `useProjectSummaries`' cache entry rather than
+ * fetching again — the rail needs both shapes on every page.
+ */
 export function useProjects() {
   return useQuery({
     queryKey: ["projects"],
-    queryFn: async () => {
-      // Was derived from a page of traces, which broke twice over: it saw only
-      // the first 200 rows, and once aggregates began excluding generated
-      // corpora the generated project disappeared from the switcher entirely.
-      const res = await api.listProjects();
-      return res.projects.map((p) => p.name);
-    },
+    queryFn: async () => (await api.listProjects()).projects,
+    select: (projects) => projects.map((p) => p.name),
   });
 }
 

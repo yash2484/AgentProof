@@ -5,11 +5,12 @@ import {
 } from "@mui/material";
 import MenuIcon from "@mui/icons-material/Menu";
 import { Link as RouterLink, useLocation } from "react-router-dom";
-import { useProjects } from "../hooks/queries";
+import { useProjectSummaries } from "../hooks/queries";
 import { useProject } from "../context/ProjectContext";
 import { isSyntheticProject } from "../lib/analytics";
 import { SyntheticBadge } from "./SeverityChip";
-import { tokens, SPACE } from "../theme";
+import { ColumnHead } from "./Ledger";
+import { tokens, SPACE, DATA, UI } from "../theme";
 
 const NAV = [
   { label: "Overview", to: "/", exact: true },
@@ -18,11 +19,15 @@ const NAV = [
   { label: "Security", to: "/security", exact: false },
 ];
 
-const RAIL_WIDTH = 208;
+/**
+ * 178px. The old 208px held four links and a select, and the extra 30px was
+ * empty on every screen — width the data surfaces to its right can use.
+ */
+const RAIL_WIDTH = 178;
 
 /**
- * Below this the rail's fixed 208px costs more than it gives: at 375px it
- * would leave 119px of content. Matches the Overview grid's own
+ * Below this the rail's fixed width costs more than it gives: at 375px it
+ * would leave under 200px of content. Matches the Overview grid's own
  * single-column breakpoint, so the rail leaves exactly when the grid folds.
  */
 export const RAIL_BREAKPOINT = 768;
@@ -36,8 +41,21 @@ function isCurrent(pathname: string, to: string, exact: boolean): boolean {
 export function AppShell({ children }: { children: ReactNode }) {
   const { pathname } = useLocation();
   const { project, setProject } = useProject();
-  const projects = useProjects();
+  const projects = useProjectSummaries();
   const isNarrow = useMediaQuery(NARROW);
+
+  const summaries = projects.data ?? [];
+  /**
+   * The scope the count describes. With no project selected the rail is
+   * showing every project, so the honest figure is their sum rather than a
+   * blank — "all projects" still has a denominator.
+   */
+  const current = summaries.length
+    ? (summaries.find((p) => p.name === project) ?? {
+        name: "all",
+        traces: summaries.reduce((sum, p) => sum + p.traces, 0),
+      })
+    : undefined;
 
   // The app lands on a named project (see DEFAULT_PROJECT), which a fresh
   // install will not have. MUI renders a Select whose value is absent from its
@@ -47,7 +65,7 @@ export function AppShell({ children }: { children: ReactNode }) {
   // than requiring the reader to notice.
   const known = projects.data;
   useEffect(() => {
-    if (project !== undefined && known && !known.includes(project)) {
+    if (project !== undefined && known && !known.some((p) => p.name === project)) {
       setProject(undefined);
     }
   }, [project, known, setProject]);
@@ -63,11 +81,15 @@ export function AppShell({ children }: { children: ReactNode }) {
 
   const railContent = (
     <>
+      {/* The wordmark is the product's own name, so it is written: serif,
+        * one weight, no colour. The old two-tone "AgentProof" spent the
+        * brand accent on a word nobody clicks. */}
       <Typography
-        variant="h6"
-        sx={{ px: `${SPACE.xs}px`, color: tokens.ink, letterSpacing: "-0.01em" }}
+        variant="h5"
+        component="div"
+        sx={{ px: `${SPACE.xs}px`, color: tokens.ink }}
       >
-        Agent<Box component="span" sx={{ color: tokens.brand.text }}>Proof</Box>
+        AgentProof
       </Typography>
 
       <List sx={{ display: "flex", flexDirection: "column", gap: "2px", py: 0 }}>
@@ -81,18 +103,19 @@ export function AppShell({ children }: { children: ReactNode }) {
               selected={current}
               aria-current={current ? "page" : undefined}
               onClick={() => setOpen(false)}
-              sx={{ py: "6px" }}
+              sx={{ py: "5px", px: `${SPACE.xs}px` }}
             >
-              <ListItemText primary={item.label} primaryTypographyProps={{ variant: "body1" }} />
+              <ListItemText
+                primary={item.label}
+                primaryTypographyProps={{ sx: { ...UI, fontWeight: current ? 600 : 400 } }}
+              />
             </ListItemButton>
           );
         })}
       </List>
 
       <Box sx={{ mt: "auto", px: `${SPACE.xs}px` }}>
-        <Typography variant="caption" sx={{ color: tokens.muted, display: "block", mb: "4px" }}>
-          Project
-        </Typography>
+        <ColumnHead sx={{ display: "block", mb: "5px" }}>Project</ColumnHead>
         <Select
           size="small"
           displayEmpty
@@ -100,18 +123,32 @@ export function AppShell({ children }: { children: ReactNode }) {
           value={project ?? ""}
           onChange={(e) => setProject(e.target.value || undefined)}
           inputProps={{ "aria-label": "Project" }}
-          sx={{ bgcolor: tokens.bg }}
+          sx={{
+            ...DATA,
+            bgcolor: tokens.card,
+            "& .MuiOutlinedInput-notchedOutline": { borderColor: tokens.hair },
+            "& .MuiSelect-select": { py: "6px" },
+          }}
         >
-          <MenuItem value="">All projects</MenuItem>
-          {(projects.data ?? []).map((p) => (
-            <MenuItem key={p} value={p} sx={{ gap: 1 }}>
-              {p}
+          <MenuItem value="" sx={{ ...DATA }}>
+            all projects
+          </MenuItem>
+          {summaries.map((p) => (
+            <MenuItem key={p.name} value={p.name} sx={{ ...DATA, gap: 1 }}>
+              {p.name}
               {/* Marked at the point of selection, not only after: the choice
                 * between a recording and a fabrication is made here. */}
-              {isSyntheticProject(p) && <SyntheticBadge compact />}
+              {isSyntheticProject(p.name) && <SyntheticBadge compact />}
             </MenuItem>
           ))}
         </Select>
+
+        {/* The count is the scope of everything the rail links to. It comes
+          * from the same request that fills the switcher, so naming it here
+          * costs nothing and stops "Traces" being an unqualified promise. */}
+        <Box sx={{ ...DATA, color: tokens.dim, mt: "6px" }}>
+          {current ? `${current.traces.toLocaleString()} traces` : " "}
+        </Box>
       </Box>
     </>
   );
@@ -119,8 +156,10 @@ export function AppShell({ children }: { children: ReactNode }) {
   const paperSx = {
     width: RAIL_WIDTH,
     boxSizing: "border-box" as const,
-    bgcolor: tokens.surface,
-    borderRight: `1px solid ${tokens.border}`,
+    // The rail is the coolest, darkest ground in the theme: it is furniture,
+    // and everything to its right is the document.
+    bgcolor: tokens.rail,
+    borderRight: `1px solid ${tokens.hair}`,
     borderRadius: 0,
     px: `${SPACE.xs}px`,
     py: `${SPACE.md}px`,
@@ -130,7 +169,7 @@ export function AppShell({ children }: { children: ReactNode }) {
   };
 
   return (
-    <Box sx={{ display: "flex", minHeight: "100vh", bgcolor: tokens.bg }}>
+    <Box sx={{ display: "flex", minHeight: "100vh", bgcolor: tokens.paper }}>
       {isNarrow ? (
         <Drawer
           variant="temporary"
@@ -158,7 +197,10 @@ export function AppShell({ children }: { children: ReactNode }) {
         </Drawer>
       )}
 
-      <Box component="main" sx={{ flexGrow: 1, p: `${SPACE.lg}px`, minWidth: 0, bgcolor: tokens.bg }}>
+      <Box
+        component="main"
+        sx={{ flexGrow: 1, p: `${SPACE.lg}px`, pt: `${SPACE.md}px`, minWidth: 0, bgcolor: tokens.paper }}
+      >
         {isNarrow && (
           <IconButton
             aria-label="Open navigation"

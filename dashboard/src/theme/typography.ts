@@ -11,8 +11,17 @@ import type { TypographyVariantsOptions } from "@mui/material/styles";
  * first and falls back to the platform's own face in the same class, so a
  * font that fails to load degrades to the right shape rather than to Times.
  */
+/**
+ * Family names are quoted, and that is load-bearing rather than tidy.
+ *
+ * An unquoted CSS font family is a sequence of identifiers, and an
+ * identifier may not begin with a digit — so `Source Serif 4 Variable`
+ * parses as invalid and the browser drops the *entire* declaration. The
+ * symptom is a heading that renders at the right size, weight and tracking
+ * in the wrong face, with no console warning anywhere. Quote them.
+ */
 export const FONT_SERIF = [
-  "Source Serif 4 Variable",
+  '"Source Serif 4 Variable"',
   "Literata",
   "Georgia",
   "Cambria",
@@ -20,16 +29,16 @@ export const FONT_SERIF = [
 ].join(", ");
 
 export const FONT_SANS = [
-  "Inter Variable",
+  '"Inter Variable"',
   "system-ui",
   "-apple-system",
-  "Segoe UI",
+  '"Segoe UI"',
   "Roboto",
   "sans-serif",
 ].join(", ");
 
 export const FONT_MONO = [
-  "JetBrains Mono Variable",
+  '"JetBrains Mono Variable"',
   "ui-monospace",
   "SFMono-Regular",
   "Consolas",

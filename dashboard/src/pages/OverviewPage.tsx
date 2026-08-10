@@ -48,11 +48,8 @@ export function OverviewPage() {
 
   return (
     <Box>
-      <Typography variant="h4" sx={{ color: tokens.ink, mb: "4px" }}>
-        Overview
-      </Typography>
-
       <ScopeBar
+        title="Overview"
         project={project}
         days={days}
         onDaysChange={setDays}

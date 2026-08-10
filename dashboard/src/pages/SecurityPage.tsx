@@ -29,11 +29,8 @@ export function SecurityPage() {
 
   return (
     <Box>
-      <Typography variant="h4" sx={{ color: tokens.ink, mb: "4px" }}>
-        Security
-      </Typography>
-
       <ScopeBar
+        title="Security"
         project={project}
         days={days}
         onDaysChange={setDays}

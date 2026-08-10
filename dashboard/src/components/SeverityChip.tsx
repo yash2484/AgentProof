@@ -1,19 +1,21 @@
 import { Box } from "@mui/material";
-import { tokens, TABULAR_NUMS } from "../theme";
+import { tokens, MICRO, DATA } from "../theme";
 import type { Severity } from "../lib/analytics";
 
 /**
  * The one severity->colour map.
  *
- * `degraded` is deliberately muted grey and never borrows security language:
- * a judge that timed out is a broken measurement, not a breach. Making it
- * alarming is the exact failure this page exists to correct.
+ * `degraded` is deliberately neutral grey and never borrows security
+ * language: a judge that timed out is a broken measurement, not a breach.
+ * Making it alarming is the exact failure this page exists to correct.
  *
- * Fill colours use the `.solid` tokens, which clear the 3.0 non-text contrast
- * floor. Text uses the `.text` variants, which clear 4.5.
+ * Ledger's `watch` covers "flagged, or a broken measurement" as a *token*,
+ * but the broken case is marked where it is explained — the provenance note
+ * — rather than on a chip, where amber next to a metric name would read as
+ * a verdict on that metric.
  */
 export const SEVERITY_COLOR: Record<Severity, { fill: string; text: string }> = {
-  degraded: { fill: tokens.muted, text: tokens.muted },
+  degraded: { fill: tokens.dim, text: tokens.dim },
   clear: { fill: tokens.status.pass, text: tokens.status.pass },
   watch: { fill: tokens.status.watch, text: tokens.status.watch },
   serious: { fill: tokens.status.fail, text: tokens.status.fail },
@@ -26,7 +28,14 @@ const LABEL: Record<Severity, string> = {
   serious: "Serious",
 };
 
-/** A small tier badge. The tier is always accompanied by its fraction in copy. */
+/**
+ * A small tier badge. The tier is always accompanied by its fraction in copy.
+ *
+ * Outlined rather than filled. A tinted fill was measured against all four
+ * Ledger grounds and the label fell under 4.5:1 on two of them for `clear`
+ * and `degraded`; keeping the label on the page's own ground keeps every
+ * chip legible on every surface, which a fill cannot promise.
+ */
 export function SeverityChip({ severity }: { severity: Severity }) {
   const color = SEVERITY_COLOR[severity];
   return (
@@ -37,20 +46,19 @@ export function SeverityChip({ severity }: { severity: Severity }) {
         display: "inline-flex",
         alignItems: "center",
         gap: 0.75,
-        px: 1,
-        py: 0.25,
-        borderRadius: 1,
+        px: 0.875,
+        py: 0.125,
+        borderRadius: "3px",
         border: `1px solid ${color.fill}`,
         color: color.text,
         fontSize: 12,
         lineHeight: 1.6,
-        letterSpacing: "0.02em",
         whiteSpace: "nowrap",
       }}
     >
       <Box
         component="span"
-        sx={{ width: 6, height: 6, borderRadius: "50%", bgcolor: color.fill }}
+        sx={{ width: 5, height: 5, borderRadius: "50%", bgcolor: color.fill }}
       />
       {LABEL[severity]}
     </Box>
@@ -63,6 +71,9 @@ export function SeverityChip({ severity }: { severity: Severity }) {
  * Deliberately neutral, not a warning: generated data is legitimate for
  * evaluating a design, and the only failure mode is mistaking it for a
  * measurement. So it states the fact and nothing more.
+ *
+ * The dashed border is the one piece of ornament in Ledger that earns its
+ * place — it reads as "provisional" before the word is read.
  */
 export function SyntheticBadge({ compact = false }: { compact?: boolean }) {
   return (
@@ -71,15 +82,13 @@ export function SyntheticBadge({ compact = false }: { compact?: boolean }) {
       data-testid="synthetic-badge"
       title="Generated data — not a measurement"
       sx={{
+        ...MICRO,
         display: "inline-block",
         px: 0.75,
         py: 0.125,
-        borderRadius: 1,
-        border: `1px dashed ${tokens.muted}`,
-        color: tokens.muted,
-        fontSize: 11,
-        letterSpacing: "0.04em",
-        textTransform: "uppercase",
+        borderRadius: "3px",
+        border: `1px dashed ${tokens.dim}`,
+        color: tokens.dim,
         whiteSpace: "nowrap",
       }}
     >
@@ -104,14 +113,14 @@ export function CountChip({ n, label = "measurements" }: { n: number; label?: st
       component="span"
       data-testid="count-chip"
       sx={{
+        ...DATA,
         display: "inline-block",
         px: 0.75,
         py: 0.125,
-        borderRadius: 1,
-        bgcolor: tokens.surfaceRaised,
-        color: tokens.muted,
-        fontSize: 12,
-        ...TABULAR_NUMS,
+        borderRadius: "3px",
+        bgcolor: tokens.data,
+        border: `1px solid ${tokens.hair}`,
+        color: tokens.dim,
       }}
     >
       n={n} {label}

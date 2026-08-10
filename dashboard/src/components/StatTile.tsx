@@ -1,5 +1,5 @@
-import { Box, Typography } from "@mui/material";
-import { tokens, TILE_PADDING, TABULAR_NUMS } from "../theme";
+import { tokens } from "../theme";
+import { Figure } from "./Ledger";
 
 export type Tone = "neutral" | "pass" | "fail" | "warn";
 
@@ -11,7 +11,21 @@ export const TONE_COLOR: Record<Tone, string> = {
   warn: tokens.status.watch,
 };
 
-/** A small bento tile: one figure, its label, and optional context beneath. */
+const FIGURE_TONE = {
+  neutral: "neutral",
+  pass: "pass",
+  fail: "fail",
+  warn: "watch",
+} as const;
+
+/**
+ * One figure and its label.
+ *
+ * Ledger has no bento tiles: this no longer draws its own box, because the
+ * panel it sits in is what says the figure was measured. Drawing a border
+ * here as well produced the nested-card look the redesign exists to remove.
+ * Put these inside a `FigureRow`.
+ */
 export function StatTile({
   label,
   value,
@@ -24,41 +38,14 @@ export function StatTile({
   tone?: Tone;
 }) {
   return (
-    <Box
-      sx={{
-        height: "100%",
-        p: `${TILE_PADDING}px`,
-        bgcolor: tokens.surface,
-        border: `1px solid ${tokens.border}`,
-        borderRadius: 2.5,
-        display: "flex",
-        flexDirection: "column",
-        justifyContent: "space-between",
-        gap: 1,
-      }}
-    >
-      <Typography
-        variant="caption"
-        sx={{ color: tokens.muted, textTransform: "uppercase", letterSpacing: "0.06em" }}
-      >
-        {label}
-      </Typography>
-      <Typography
-        data-testid="stat-tile-value"
-        variant="h5"
-        sx={{ color: TONE_COLOR[tone], ...TABULAR_NUMS }}
-      >
-        {value}
-      </Typography>
-      {sublabel && (
-        <Typography
-          data-testid="stat-tile-sublabel"
-          variant="body2"
-          sx={{ color: tokens.muted, ...TABULAR_NUMS }}
-        >
-          {sublabel}
-        </Typography>
-      )}
-    </Box>
+    <Figure
+      label={label}
+      value={value}
+      note={sublabel}
+      tone={FIGURE_TONE[tone]}
+      data-testid="stat-tile"
+      valueTestId="stat-tile-value"
+      noteTestId="stat-tile-sublabel"
+    />
   );
 }
