@@ -1,0 +1,205 @@
+name: "AgentProof regression gate"
+description: >-
+  Evaluate an agent's traces against a pinned baseline and fail the build when a
+  metric regresses beyond noise (Welch's t-test + Cohen's d), not merely below a
+  threshold.
+author: "AgentProof"
+
+branding:
+  icon: "shield"
+  color: "purple"
+
+inputs:
+  baseline:
+    description: "Path to the pinned baseline JSON, relative to the workspace."
+    required: true
+  config:
+    description: >-
+      Path to the eval config used when no API key is supplied. This config must
+      contain no llm_judge metrics — see the note on `anthropic-api-key`.
+    required: true
+  judged-config:
+    description: >-
+      Optional eval config used *only* when `anthropic-api-key` is supplied. Add
+      your llm_judge metrics here. Without a key this file is never selected.
+    required: false
+    default: ""
+  traces:
+    description: >-
+      Path to the trace corpus JSON to evaluate. If `capture-command` is set,
+      this is where the gate expects that command to write; otherwise the file
+      must already exist.
+    required: true
+  capture-command:
+    description: >-
+      Optional shell command that produces the `traces` file — normally your
+      agent running its scenarios. Runs with ANTHROPIC_API_KEY exported when one
+      is supplied, so live capture works.
+    required: false
+    default: ""
+  extra-install:
+    description: >-
+      Optional extra arguments appended to a `pip install` call, for whatever
+      your `capture-command` needs. Example: "-e ./sdk -e ./my_agent".
+    required: false
+    default: ""
+  anthropic-api-key:
+    description: >-
+      Optional Anthropic key that enables judged metrics. When absent the gate
+      runs `config` and reports only measured metrics; it never runs a judged
+      config unkeyed, because an unkeyed judge scores 0.0 and would manufacture
+      a regression out of a missing secret.
+    required: false
+    default: ""
+  python-version:
+    description: "Python version used to run the gate."
+    required: false
+    default: "3.11"
+  fail-on-regression:
+    description: >-
+      Set to "false" to report the verdict without failing the job. The gate
+      still exits non-zero internally; only the step outcome is softened.
+    required: false
+    default: "true"
+
+outputs:
+  passed:
+    description: '"true" when no ci_block metric regressed, "false" otherwise.'
+    value: ${{ steps.gate.outputs.passed }}
+  config-used:
+    description: "The config path the gate actually selected."
+    value: ${{ steps.select.outputs.config }}
+  judged:
+    description: '"true" when judged metrics were enabled by a supplied key.'
+    value: ${{ steps.select.outputs.judged }}
+  report:
+    description: "Path to the regression report text."
+    value: ${{ steps.gate.outputs.report }}
+
+runs:
+  using: "composite"
+  steps:
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: ${{ inputs.python-version }}
+
+    - name: Install the gate
+      shell: bash
+      run: |
+        set -euo pipefail
+        # GITHUB_ACTION_PATH is this action's own checkout, so the engine comes
+        # from the same commit as the action.yml being used — whether that is a
+        # local `uses: ./` or a stranger's `uses: owner/AgentProof@v1`.
+        pip install --quiet "${GITHUB_ACTION_PATH}/server"
+        if [ -n "${EXTRA_INSTALL}" ]; then
+          pip install --quiet ${EXTRA_INSTALL}
+        fi
+      env:
+        EXTRA_INSTALL: ${{ inputs.extra-install }}
+
+    - name: Select the eval config
+      id: select
+      shell: bash
+      env:
+        # Presence only. The value is never printed, compared in shell, or
+        # written to an output.
+        HAS_KEY: ${{ inputs.anthropic-api-key != '' }}
+        KEYFREE_CONFIG: ${{ inputs.config }}
+        JUDGED_CONFIG: ${{ inputs.judged-config }}
+      run: |
+        set -euo pipefail
+        python - <<'PY' >> "$GITHUB_OUTPUT"
+        import os
+        import sys
+
+        import yaml
+
+        has_key = os.environ["HAS_KEY"] == "true"
+        keyfree = os.environ["KEYFREE_CONFIG"]
+        judged = os.environ["JUDGED_CONFIG"]
+
+        chosen = judged if (has_key and judged) else keyfree
+        if not os.path.isfile(chosen):
+            sys.exit(f"::error::eval config not found: {chosen}")
+
+        metrics = yaml.safe_load(open(chosen, encoding="utf-8")).get("metrics") or []
+        judged_names = [m["name"] for m in metrics if m.get("type") == "llm_judge"]
+
+        # An unkeyed judge does not error; it scores 0.0 and every judged metric
+        # reads as a total collapse against its baseline. Refuse rather than
+        # report a regression that is really a missing secret.
+        if judged_names and not has_key:
+            sys.exit(
+                f"::error::{chosen} declares judged metrics "
+                f"({', '.join(judged_names)}) but no anthropic-api-key was "
+                "supplied. An unkeyed judge scores 0.0 and would report a false "
+                "regression. Pass the key, or point `config` at a config with no "
+                "llm_judge metrics."
+            )
+
+        measured = len(metrics) - len(judged_names)
+        print(f"config={chosen}")
+        print(f"judged={'true' if judged_names else 'false'}")
+        print(
+            f"::notice::AgentProof gate using {chosen} "
+            f"({measured} measured metric(s), {len(judged_names)} judged)",
+            file=sys.stderr,
+        )
+        PY
+
+    - name: Capture traces
+      if: inputs.capture-command != ''
+      shell: bash
+      env:
+        ANTHROPIC_API_KEY: ${{ inputs.anthropic-api-key }}
+        CAPTURE_COMMAND: ${{ inputs.capture-command }}
+      run: |
+        set -euo pipefail
+        bash -c "${CAPTURE_COMMAND}"
+
+    - name: Gate against the pinned baseline
+      id: gate
+      shell: bash
+      env:
+        ANTHROPIC_API_KEY: ${{ inputs.anthropic-api-key }}
+        TRACES: ${{ inputs.traces }}
+        BASELINE: ${{ inputs.baseline }}
+        CONFIG: ${{ steps.select.outputs.config }}
+        FAIL_ON_REGRESSION: ${{ inputs.fail-on-regression }}
+      run: |
+        set -uo pipefail
+        report="${RUNNER_TEMP}/agentproof-regression.txt"
+
+        if [ ! -f "${TRACES}" ]; then
+          echo "::error::trace corpus not found: ${TRACES}"
+          exit 1
+        fi
+
+        set +e
+        python -m agentproof_server.eval_engine.cli regression \
+          --traces "${TRACES}" \
+          --baseline "${BASELINE}" \
+          --config "${CONFIG}" 2>&1 | tee "${report}"
+        status=${PIPESTATUS[0]}
+        set -e
+
+        passed=$([ "${status}" -eq 0 ] && echo true || echo false)
+        echo "passed=${passed}" >> "$GITHUB_OUTPUT"
+        echo "report=${report}" >> "$GITHUB_OUTPUT"
+
+        {
+          echo "### AgentProof regression gate"
+          echo
+          echo "Config: \`${CONFIG}\` · Baseline: \`${BASELINE}\`"
+          echo
+          echo '```'
+          cat "${report}"
+          echo '```'
+        } >> "$GITHUB_STEP_SUMMARY"
+
+        if [ "${status}" -ne 0 ] && [ "${FAIL_ON_REGRESSION}" != "true" ]; then
+          echo "::warning::Regression detected; fail-on-regression is false."
+          exit 0
+        fi
+        exit "${status}"
