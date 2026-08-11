@@ -204,6 +204,12 @@ def cmd_regression(args) -> int:
         candidate.setdefault(r.metric_name, []).append(r.score)
 
     ci_block = {m.name for m in config.metrics if m.ci_block}
+    # A metric may declare its own practical floor; noise is per-metric.
+    floors = {
+        m.name: m.min_mean_drop
+        for m in config.metrics
+        if m.min_mean_drop is not None
+    }
     results = []
     for name, baseline in baselines.items():
         scores = candidate.get(name, [])
@@ -213,9 +219,17 @@ def cmd_regression(args) -> int:
             # rather than treat a missing sample as a 0.0 drop / false regression.
             print(f"note: metric '{name}' has no candidate scores in this run — skipped")
             continue
+        metric_cfg = (
+            cfg.model_copy(update={"min_mean_drop": floors[name]})
+            if name in floors
+            else cfg
+        )
         results.append(
             detect_regression(
-                baseline, scores, cfg, candidate_by_key=candidate_by_key.get(name)
+                baseline,
+                scores,
+                metric_cfg,
+                candidate_by_key=candidate_by_key.get(name),
             )
         )
     regressed = [r.metric_name for r in results if r.is_regression]

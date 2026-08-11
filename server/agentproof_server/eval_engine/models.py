@@ -67,6 +67,13 @@ class MetricConfig(BaseModel):
     threshold: float = 0.7
     regression_alert: bool = True
     ci_block: bool = True
+    # Per-metric practical-significance floor, overriding RegressionConfig's
+    # global one. Noise is a property of the metric, not of the run: measured
+    # across two evaluations of an identical corpus, faithfulness moved with a
+    # per-scenario sd of 0.034 while relevance moved with 0.144. A single global
+    # floor cannot sit above the noise of the second without being far above
+    # anything worth catching in the first.
+    min_mean_drop: float | None = None
 
     # llm_judge
     rubric: str | None = None

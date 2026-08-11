@@ -57,6 +57,17 @@ metrics:
     # reports and does not fail the build. Kept as-is deliberately: flipping
     # this to true to make a demo fire is tuning the gate to the result.
     ci_block: false
+    # Measured, not chosen. Two evaluations of a byte-identical corpus moved
+    # relevance with a per-scenario sd of 0.144 (faithfulness: 0.034), putting
+    # three sigma of purely spurious mean movement at 0.120 — above the global
+    # 0.05 floor. At 0.05 this metric would report regressions invented by the
+    # judge. The instability is concentrated in two scenarios the rubric does
+    # not cover: `unanswerable`, where a correct refusal has no band and the
+    # judge oscillates 0.00-0.40, and `partially_covered`, which straddles the
+    # 0.4 and 0.7 bands and ranges 0.40-0.70. The floor is a containment
+    # measure; the fix is a rubric that covers refusal, and that needs its own
+    # re-pin because it changes what the metric measures.
+    min_mean_drop: 0.15
 
   # ── Cost & performance (deterministic) ──
   - name: latency_budget
