@@ -38,8 +38,12 @@ const SMALL_SAMPLE = 10;
 /** A serious rate, when at least two measurements are affected on a blocking metric. */
 const SERIOUS_RATE = 0.1;
 const SERIOUS_AFFECTED = 2;
-/** Mirrors RegressionConfig.min_effect_size on the server. */
-const MIN_EFFECT_SIZE = 0.5;
+// A mirrored copy of RegressionConfig.min_effect_size lived here and was used
+// to decide whether the two guards disagreed. Removed rather than updated: the
+// threshold now differs per metric, and paired comparisons are scored with
+// Cohen's d_z, a different quantity on a different scale. A client re-deriving
+// a server decision from a hardcoded constant is drift waiting to happen, so
+// the server sends `is_warning` and this file reads it.
 
 /**
  * Metrics whose scores vary get the full distribution; the rest go to the
@@ -169,9 +173,17 @@ export function describeGate(gate: GateVerdict | undefined): GateDescription {
   // reason through rather than inventing one.
   if (p === null || d === null) {
     return {
-      headline: gate.is_regression ? "Regression detected" : "Not flagged",
+      headline: gate.is_regression
+        ? "Regression detected"
+        : gate.is_warning
+          ? "Could not tell"
+          : "Not flagged",
       statLine: gate.reason,
-      severity: gate.is_regression ? "serious" : "clear",
+      severity: gate.is_regression
+        ? "serious"
+        : gate.is_warning
+          ? "watch"
+          : "clear",
     };
   }
 
@@ -185,13 +197,20 @@ export function describeGate(gate: GateVerdict | undefined): GateDescription {
       severity: "serious",
     };
   }
-  // "but" only when the two guards disagree — the effect cleared and
-  // significance did not. When both fell short they agree, and "but" would
-  // manufacture a tension the numbers do not contain.
-  const conjunction = Math.abs(d) >= MIN_EFFECT_SIZE ? "but" : "and";
+  // The guards disagreed: the effect cleared and significance did not. That is
+  // not a clean pass, and rendering it as one is how a real 0.109 faithfulness
+  // drop sat unremarked next to metrics pinned at 1.000 on 2026-08-11. The
+  // server decides this now — see `is_warning` on GateVerdict.
+  if (gate.is_warning) {
+    return {
+      headline: "Could not tell",
+      statLine: `effect is ${effectSizeLabel(d)} (${dText}) but not statistically significant at this sample size (${pText}) — material, unconfirmed`,
+      severity: "watch",
+    };
+  }
   return {
     headline: "Not flagged",
-    statLine: `effect is ${effectSizeLabel(d)} (${dText}) ${conjunction} not statistically significant at this sample size (${pText})`,
+    statLine: `effect is ${effectSizeLabel(d)} (${dText}) and not statistically significant at this sample size (${pText})`,
     severity: "clear",
   };
 }

@@ -303,3 +303,45 @@ describe("wording discipline", () => {
     expect(v.detail).toMatch(/19 of 92/);
   });
 });
+
+describe("a material drop the sample cannot confirm", () => {
+  it("never falls through to a clear verdict", () => {
+    // The 2026-08-11 failure, at the level a reader actually sees. The metric
+    // moved, the effect cleared, significance did not, and the page reported
+    // an all-clear. "We could not tell" rendered as "all clear" is the exact
+    // laundering this product exists to catch.
+    const v = overviewVerdict({
+      metrics: [metric({ failed: 0, count: 13 })],
+      gate: [gate({ is_warning: true, baseline_mean: 0.911, candidate_mean: 0.802 })],
+      scored: 13,
+    });
+
+    expect(v.tone).toBe("watch");
+    expect(v.headline.toLowerCase()).not.toMatch(/clear|healthy|no regression/);
+    expect(v.focus).toBe("faithfulness");
+  });
+
+  it("outranks raw failure counts, because it is a claim about change", () => {
+    const v = overviewVerdict({
+      metrics: [metric({ metric_name: "relevance", failed: 7, count: 40 })],
+      gate: [gate({ is_warning: true })],
+      scored: 40,
+    });
+
+    expect(v.focus).toBe("faithfulness");
+  });
+
+  it("still yields to a confirmed regression", () => {
+    const v = overviewVerdict({
+      metrics: [metric({ failed: 0, count: 13 })],
+      gate: [
+        gate({ metric_name: "relevance", is_warning: true }),
+        gate({ metric_name: "faithfulness", is_regression: true }),
+      ],
+      scored: 13,
+    });
+
+    expect(v.tone).toBe("serious");
+    expect(v.focus).toBe("faithfulness");
+  });
+});

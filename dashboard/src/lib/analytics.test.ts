@@ -32,6 +32,11 @@ function gate(overrides: Partial<GateVerdict> = {}): GateVerdict {
   return {
     metric_name: "faithfulness",
     is_regression: false,
+    // The drop here is 0.044, below the 0.05 practical floor, so the server
+    // does not flag this as unresolved: a large effect size on a negligible
+    // absolute drop is what a tiny variance produces, and we have decided we
+    // do not care at that magnitude.
+    is_warning: false,
     comparable: true,
     baseline_mean: 0.911,
     candidate_mean: 0.867,
@@ -39,6 +44,9 @@ function gate(overrides: Partial<GateVerdict> = {}): GateVerdict {
     p_value: 0.116,
     cohens_d: 0.607,
     t_statistic: -1.52,
+    method: "welch",
+    cohens_dz: null,
+    paired_n: null,
     baseline_n: 9,
     candidate_n: 9,
     reason: "p=0.1161 >= alpha=0.05, d=0.607 >= 0.5.",
@@ -252,15 +260,42 @@ describe("effectSizeLabel", () => {
 });
 
 describe("describeGate", () => {
-  it("explains its silence when the effect cleared but significance did not", () => {
+  it("explains its silence when the drop was below the practical floor", () => {
     // The restraint case. A system that explains why it stayed quiet is more
     // trustworthy than one that only speaks when alarmed.
+    //
+    // A large effect size on a 0.044 drop is what tiny variance produces, not
+    // a finding. Below the floor both guards agree there is nothing to act on,
+    // so the sentence reads "and" — "but" would manufacture a tension the
+    // numbers do not contain.
     const d = describeGate(gate());
     expect(d.severity).toBe("clear");
     expect(d.headline).toBe("Not flagged");
     expect(d.statLine).toBe(
-      "effect is medium (d=0.61) but not statistically significant at this sample size (p=0.116)",
+      "effect is medium (d=0.61) and not statistically significant at this sample size (p=0.116)",
     );
+  });
+
+  it("says it could not tell when the movement was material but unconfirmed", () => {
+    // The state that let a real 0.109 faithfulness drop sit unremarked next to
+    // metrics pinned at 1.000 on 2026-08-11. It is not a pass, and the card
+    // must not render it as one.
+    const d = describeGate(gate({ is_warning: true }));
+    expect(d.severity).toBe("watch");
+    expect(d.headline).toBe("Could not tell");
+    expect(d.statLine).toContain("material, unconfirmed");
+    expect(d.statLine).toContain("but not statistically significant");
+  });
+
+  it("takes the unresolved state from the server rather than re-deriving it", () => {
+    // The client used to infer this by comparing cohens_d against a hardcoded
+    // 0.5. That threshold now differs per metric and is a different quantity
+    // entirely for paired comparisons, so a client-side copy would drift.
+    const large = describeGate(gate({ cohens_d: 0.9, is_warning: false }));
+    expect(large.severity).toBe("clear");
+
+    const small = describeGate(gate({ cohens_d: 0.1, is_warning: true }));
+    expect(small.severity).toBe("watch");
   });
 
   it("does not manufacture tension when neither guard was close", () => {

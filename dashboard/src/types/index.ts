@@ -234,6 +234,17 @@ export interface ScoreBucket {
 export interface GateVerdict {
   metric_name: string;
   is_regression: boolean;
+  /**
+   * The movement looks material but the sample cannot confirm it: the drop
+   * cleared the practical floor and the effect-size guard, and only
+   * significance failed. Never true alongside `is_regression`.
+   *
+   * Decided server-side rather than re-derived here. The client used to infer
+   * this by comparing `cohens_d` against a hardcoded 0.5, which duplicated a
+   * threshold that now lives in config, differs per metric, and is a different
+   * quantity entirely for paired comparisons.
+   */
+  is_warning: boolean;
   /** False when the baseline had no candidate scores this run. */
   comparable: boolean;
   baseline_mean: number;
@@ -243,6 +254,18 @@ export interface GateVerdict {
   p_value: number | null;
   cohens_d: number | null;
   t_statistic: number | null;
+  /**
+   * Which comparison produced this verdict. `paired` compares each scenario
+   * against itself; `welch` is the two-sample fallback when the corpus carries
+   * no stable identity; `floor` means the sample was too small or too
+   * degenerate for either test. They have very different minimum detectable
+   * effects, so a verdict cannot be read without it. Null when not assessed.
+   */
+  method: "paired" | "welch" | "floor" | null;
+  /** Paired effect size (mean delta over sd of deltas). Null when unpaired. */
+  cohens_dz: number | null;
+  /** Scenarios matched on both sides. Null when unpaired. */
+  paired_n: number | null;
   baseline_n: number;
   candidate_n: number;
   reason: string;

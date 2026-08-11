@@ -125,6 +125,25 @@ export function overviewVerdict({ metrics, gate, scored }: VerdictInput): Verdic
     };
   }
 
+  // A metric that moved materially but could not be confirmed outranks raw
+  // failure counts, for the same reason a regression does: it is a statement
+  // about change against a baseline. It must never fall through to the clear
+  // branch, because "we could not tell" reported as "all clear" is the exact
+  // failure this state was added to remove.
+  const unresolved = gate.filter((g) => g.is_warning);
+  if (unresolved.length > 0) {
+    const worst = unresolved[0];
+    return {
+      tone: "watch",
+      headline:
+        unresolved.length === 1
+          ? `${worst.metric_name} moved, and the sample cannot say whether it matters`
+          : `${plural(unresolved.length, "metric", "metrics")} moved without enough evidence to judge`,
+      detail: `${sentence(regressionDetail(worst))}${degradedClause(metrics)}`,
+      focus: worst.metric_name,
+    };
+  }
+
   const flagged = ranked.filter((m) => m.failed > 0);
   if (flagged.length > 0) {
     const worst = flagged[0];
