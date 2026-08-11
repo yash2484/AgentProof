@@ -35,6 +35,10 @@ services:
       # process CWD, which is /app. The config lives at the repo root, so mount
       # it in or every /api/v1/evals/* call 500s with FileNotFoundError.
       - ./agentproof.yaml:/app/agentproof.yaml:ro
+      # Same reasoning for settings.baselines_path. The gate verdict on
+      # /evals/analytics recomputes from these files per request, so without
+      # the mount the card silently reports "no baseline" for every metric.
+      - ./baselines:/app/baselines:ro
     command: uvicorn agentproof_server.main:app --host 0.0.0.0 --port 8000 --reload
 
   dashboard:

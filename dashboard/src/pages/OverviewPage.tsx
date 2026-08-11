@@ -1,144 +1,98 @@
-import { Box, Typography } from "@mui/material";
-import { Link as RouterLink } from "react-router-dom";
-import { useEvalSummary, useTraces, useTraceTree } from "../hooks/queries";
+import { useState } from "react";
+import { Box } from "@mui/material";
+import { useEvalAnalytics } from "../hooks/queries";
 import { useProject } from "../context/ProjectContext";
 import { QueryBoundary } from "../components/QueryBoundary";
-import { VerdictTile } from "../components/VerdictTile";
-import { StatTile } from "../components/StatTile";
-import { MiniWaterfall } from "../components/MiniWaterfall";
-import { EmptyState } from "../components/EmptyState";
-import { gateStatus, formatPct } from "../lib/overview";
-import { formatDuration } from "../lib/format";
-import { tokens, TILE_GAP, TILE_PADDING, SPACE } from "../theme";
+import { ScopeBar } from "../components/ScopeBar";
+import { VerdictBand } from "../components/VerdictBand";
+import { VariancePanel } from "../components/VariancePanel";
+import { TrustBand } from "../components/TrustBand";
+import { FindingsFeed } from "../components/FindingsFeed";
+import { tokens, SPACE, DATA } from "../theme";
 
 /**
- * Bento overview. Tile size encodes importance: the security verdict gets
- * 2x2, latency and the gate get 1x1. The 2x2 goes full-width at the smallest
- * breakpoint rather than shrinking into illegibility.
+ * Overview — triage, not detail.
+ *
+ * Every other page answers a question. This one answers the question no other
+ * page does:
+ *
+ *   Since last time — did anything get worse, and can I trust today's numbers?
+ *
+ * It used to try to answer a different one ("how is every metric doing?"),
+ * which is `/evals`' job, and it answered it with a worse chart than the one
+ * `/evals/:metric` already had — a 46px track carrying a histogram, a
+ * threshold, a mean and a ±0.2 band with no legend, in which a single data
+ * exfiltration breach rendered 0.45px tall because bar height was normalised
+ * by the tallest bin. Rare events became invisible in proportion to their
+ * rarity. That panel is deleted rather than redesigned; the detail it
+ * duplicated is one click away and correct there.
+ *
+ * Four bands, ordered by what a reader does with them:
+ *
+ *   1. Verdict     — the conclusion, in words, on the page ground.
+ *   2. What changed — run to run, per group, with the noise floor stated.
+ *   3. What you can trust — coverage, broken measurements, provenance.
+ *   4. Where to look — findings, each routing to the page that owns it.
+ *
+ * Hierarchy comes from structure rather than chrome. Band 1 sits directly on
+ * paper in serif, so it reads as the page speaking; bands 2 to 4 are tinted
+ * data panels under serif headings, so they read as evidence for it. Five
+ * bordered boxes of equal weight is what made the old page unreadable, and
+ * the fix is not a better border — it is that written things and measured
+ * things stop looking alike.
  */
 export function OverviewPage() {
   const { project } = useProject();
-  const summary = useEvalSummary(project);
-  const latest = useTraces({ project, limit: 1 });
-  const latestTrace = latest.data?.traces[0];
-  const tree = useTraceTree(latestTrace?.trace_id ?? "");
+  const [days, setDays] = useState(30);
+  const analytics = useEvalAnalytics(project, days);
 
-  const gate = gateStatus(summary.data);
-  const isEmpty =
-    !summary.isLoading &&
-    (summary.data?.trace_count ?? 0) === 0 &&
-    (latest.data?.traces.length ?? 0) === 0;
+  const data = analytics.data;
+  const isEmpty = !analytics.isLoading && (data?.totals.traces ?? 0) === 0;
 
   return (
     <Box>
-      <Typography variant="h4" sx={{ color: tokens.ink, mb: "4px" }}>
-        Overview
-      </Typography>
-      <Typography variant="body1" sx={{ color: tokens.muted, mb: `${SPACE.lg}px` }}>
-        {project ?? "All projects"}
-      </Typography>
+      <ScopeBar
+        title="Overview"
+        project={project}
+        days={days}
+        onDaysChange={setDays}
+        runs={data?.eval_runs}
+      />
 
       <QueryBoundary
-        isLoading={summary.isLoading || latest.isLoading}
-        isError={summary.isError || latest.isError}
+        isLoading={analytics.isLoading}
+        isError={analytics.isError}
         isEmpty={isEmpty}
-        emptyMessage="No traces yet — run the demo agent, or POST a trace to /api/v1/traces."
-        onRetry={() => {
-          summary.refetch();
-          latest.refetch();
-        }}
+        emptyMessage="No traces in this window — widen the range, run the demo agent, or POST a trace to /api/v1/traces."
+        onRetry={() => analytics.refetch()}
       >
-        {/* The spec's breakpoints (3 cols >=1024px, 2 >=768px, 1 below) don't
-          * line up with MUI's default sm/lg keys (600px/1200px) and this repo
-          * defines no custom breakpoints, so these scoped media queries express
-          * the spec exactly without a global override.
-          *
-          * Known inconsistency: SecurityPage folds at MUI's `md` (900px), so the
-          * app currently changes layout at 768, 900 and 1024. Reconciling the
-          * three onto one scale is tracked follow-up work.
-          */}
-        <Box
-          sx={{
-            display: "grid",
-            gap: `${TILE_GAP}px`,
-            gridTemplateColumns: "1fr",
-            "@media (min-width:768px)": { gridTemplateColumns: "repeat(2, 1fr)" },
-            "@media (min-width:1024px)": { gridTemplateColumns: "repeat(3, 1fr)" },
-          }}
-        >
+        {/* Section gap, not tile gap. The bands are chapters of one document
+          * rather than tiles on a board, and 24px is what stops a heading
+          * belonging visually to the panel above it. */}
+        <Box sx={{ display: "grid", gap: `${SPACE.lg}px` }}>
+          <VerdictBand analytics={data} project={project} />
+
+          <VariancePanel runs={data?.eval_runs ?? []} />
+
+          <TrustBand analytics={data} />
+
+          <FindingsFeed analytics={data} project={project} />
+
+          {/* The colophon: what the whole page was computed from. Mono,
+            * because every figure in it was counted. */}
           <Box
+            component="p"
             sx={{
-              gridColumn: "span 1",
-              gridRow: "auto",
-              "@media (min-width:768px)": {
-                gridColumn: "span 2",
-                gridRow: "span 2",
-                minHeight: 240,
-              },
+              ...DATA,
+              color: tokens.dim,
+              mb: `${SPACE.md}px`,
+              pt: `${SPACE.xs}px`,
+              borderTop: `1px solid ${tokens.hair}`,
             }}
           >
-            <VerdictTile summary={summary.data} />
-          </Box>
-
-          <StatTile
-            label="Gate"
-            value={gate.passed ? "PASS" : "FAIL"}
-            sublabel={gate.label}
-            tone={gate.passed ? "pass" : "fail"}
-          />
-
-          <StatTile
-            label="p99 latency"
-            value={formatDuration(summary.data?.p99_latency_ms ?? null)}
-            sublabel={`${summary.data?.trace_count ?? 0} traces`}
-          />
-
-          <StatTile
-            label="Overall pass rate"
-            value={formatPct(summary.data?.overall_pass_rate ?? null)}
-            sublabel={`${summary.data?.metrics.length ?? 0} metrics`}
-          />
-
-          <Box
-            sx={{
-              gridColumn: "1 / -1",
-              p: `${TILE_PADDING}px`,
-              bgcolor: tokens.surface,
-              border: `1px solid ${tokens.border}`,
-              borderRadius: 2.5,
-            }}
-          >
-            <Typography
-              variant="caption"
-              sx={{
-                color: tokens.muted,
-                textTransform: "uppercase",
-                letterSpacing: "0.06em",
-                display: "block",
-                mb: 1,
-              }}
-            >
-              Latest trace
-            </Typography>
-            {latestTrace ? (
-              <>
-                <Typography variant="subtitle1" sx={{ mb: 1.5 }}>
-                  <Box
-                    component={RouterLink}
-                    to={`/traces/${latestTrace.trace_id}`}
-                    sx={{ color: tokens.brand.text, textDecoration: "none" }}
-                  >
-                    {latestTrace.name}
-                  </Box>
-                </Typography>
-                <MiniWaterfall roots={tree.data ?? []} />
-              </>
-            ) : (
-              <EmptyState
-                title="No traces yet"
-                body="Run the demo agent to populate this view."
-              />
-            )}
+            {data
+              ? `${data.outcome_split.passed} passed · ${data.outcome_split.failed} failed · ${data.outcome_split.degraded} degraded measurements, across ${data.totals.eval_runs} ${data.totals.eval_runs === 1 ? "run" : "runs"} ${days === 0 ? "over all history" : `in the last ${days} days`}.`
+              : null}
           </Box>
         </Box>
       </QueryBoundary>

@@ -49,7 +49,7 @@ export function Waterfall({
                   bgcolor: spanColor(row.span.span_type),
                   outline:
                     row.span.status === "error"
-                      ? `2px solid ${tokens.status.fail.solid}`
+                      ? `2px solid ${tokens.status.fail}`
                       : "none",
                   display: "flex",
                   alignItems: "center",

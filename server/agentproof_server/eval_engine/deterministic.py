@@ -72,9 +72,13 @@ class LatencyBudgetEvaluator(DeterministicEvaluator):
 
 class CostBudgetEvaluator(DeterministicEvaluator):
     def _score(self, trace_dict: dict, spans: list[dict]) -> EvalScore:
-        return _budget_score(
-            trace_dict.get("total_cost_usd"), "total_cost_usd", self.config.max_cost_usd
-        )
+        cost = trace_dict.get("total_cost_usd")
+        score = _budget_score(cost, "total_cost_usd", self.config.max_cost_usd)
+        # Stable key, matching LatencyBudgetEvaluator above. Without it the
+        # same quantity arrived under different names per metric, and a reader
+        # written against one spelling silently returned nothing for the other.
+        score.details["cost_usd"] = cost
+        return score
 
 
 class TokenBudgetEvaluator(DeterministicEvaluator):

@@ -1,26 +1,38 @@
 import { describe, it, expect } from "vitest";
-import { contrastRatio, relativeLuminance } from "./contrast";
+import {
+  contrastRatio,
+  relativeLuminance,
+  hue,
+  hueDistance,
+  saturation,
+} from "./contrast";
 import { tokens } from "./palette";
+import { FONT_SERIF, FONT_SANS, FONT_MONO } from "./typography";
 
 /** Body-size text must clear 4.5:1; non-text and large text must clear 3.0:1. */
 const BODY_FLOOR = 4.5;
 const NON_TEXT_FLOOR = 3.0;
 
-/** Both page backgrounds — text sits on each, so each must be checked. */
-const BACKGROUNDS = [tokens.bg, tokens.surface];
+/**
+ * Every ground text can land on. Ledger has four rather than the two the
+ * dark theme had, and a token that clears on paper can still fail on the
+ * rail — which is a real regression this suite exists to catch.
+ */
+const GROUNDS: Record<string, string> = {
+  paper: tokens.paper,
+  card: tokens.card,
+  data: tokens.data,
+  rail: tokens.rail,
+};
 
 const BODY_TOKENS: Record<string, string> = {
   ink: tokens.ink,
-  muted: tokens.muted,
-  "brand.text": tokens.brand.text,
+  ink2: tokens.ink2,
+  dim: tokens.dim,
+  link: tokens.link,
   "status.pass": tokens.status.pass,
-  "status.fail.text": tokens.status.fail.text,
-  "status.warn": tokens.status.warn,
-};
-
-const NON_TEXT_TOKENS: Record<string, string> = {
-  "brand.solid": tokens.brand.solid,
-  "status.fail.solid": tokens.status.fail.solid,
+  "status.watch": tokens.status.watch,
+  "status.fail": tokens.status.fail,
 };
 
 describe("relativeLuminance", () => {
@@ -39,65 +51,209 @@ describe("contrastRatio", () => {
   it("returns 1 for a colour against itself", () => {
     expect(contrastRatio(tokens.ink, tokens.ink)).toBeCloseTo(1, 5);
   });
+
+  it("rejects anything that is not a 6-digit hex", () => {
+    expect(() => contrastRatio("red", "#FFFFFF")).toThrow();
+    expect(() => contrastRatio("#FFF", "#FFFFFF")).toThrow();
+  });
+});
+
+describe("hue, saturation and hueDistance", () => {
+  it("reads the primary hues", () => {
+    expect(hue("#FF0000")).toBe(0);
+    expect(hue("#00FF00")).toBe(120);
+    expect(hue("#0000FF")).toBe(240);
+  });
+
+  it("reports zero saturation for grey, where hue means nothing", () => {
+    expect(saturation("#808080")).toBe(0);
+    expect(saturation("#FFFFFF")).toBe(0);
+    expect(saturation("#FF0000")).toBeCloseTo(1, 5);
+  });
+
+  it("takes the short way round the wheel", () => {
+    expect(hueDistance(350, 10)).toBe(20);
+    expect(hueDistance(10, 350)).toBe(20);
+    expect(hueDistance(0, 180)).toBe(180);
+    expect(hueDistance(0, 200)).toBe(160);
+  });
 });
 
 describe("palette contrast floors", () => {
   it.each(Object.entries(BODY_TOKENS))(
-    "%s clears 4.5:1 on every background",
-    (_name, hex) => {
-      for (const bg of BACKGROUNDS) {
-        expect(contrastRatio(hex, bg)).toBeGreaterThanOrEqual(BODY_FLOOR);
+    "%s clears 4.5:1 on every ground",
+    (name, hex) => {
+      for (const [ground, bg] of Object.entries(GROUNDS)) {
+        expect(contrastRatio(hex, bg), `${name} on ${ground}`).toBeGreaterThanOrEqual(
+          BODY_FLOOR,
+        );
       }
     },
   );
 
-  it.each(Object.entries(NON_TEXT_TOKENS))(
-    "%s clears 3.0:1 on every background",
-    (_name, hex) => {
-      for (const bg of BACKGROUNDS) {
-        expect(contrastRatio(hex, bg)).toBeGreaterThanOrEqual(NON_TEXT_FLOOR);
+  it.each(Object.entries(tokens.category))(
+    "category.%s clears 4.5:1 on every ground",
+    (name, hex) => {
+      // Category colours label chart series and legends, so they carry text
+      // weight rather than merely being marks.
+      for (const [ground, bg] of Object.entries(GROUNDS)) {
+        expect(
+          contrastRatio(hex, bg),
+          `category.${name} on ${ground}`,
+        ).toBeGreaterThanOrEqual(BODY_FLOOR);
       }
     },
   );
 
-  it("keeps solid tokens below the body floor, so the split stays justified", () => {
-    // If a solid token ever clears 4.5 the split into solid/text is dead
-    // weight and should be removed rather than left to rot.
-    expect(contrastRatio(tokens.brand.solid, tokens.surface)).toBeLessThan(BODY_FLOOR);
-    expect(contrastRatio(tokens.status.fail.solid, tokens.surface)).toBeLessThan(BODY_FLOOR);
+  it.each(Object.entries(tokens.spanTypes))(
+    "a white label on the %s fill clears 4.5:1",
+    (_name, hex) => {
+      // Waterfall bars carry their label inside the fill. The same hex is
+      // therefore both a background and a foreground, and has to clear both.
+      expect(contrastRatio(tokens.onFill, hex)).toBeGreaterThanOrEqual(BODY_FLOOR);
+    },
+  );
+
+  it("steel clears the non-text floor on the data ground it is drawn on", () => {
+    // Histogram bars are non-text. Steel is deliberately lighter than any
+    // label colour so that the flagged bars stay the only thing in the
+    // figure that pulls the eye.
+    expect(contrastRatio(tokens.steel, tokens.data)).toBeGreaterThanOrEqual(
+      NON_TEXT_FLOOR,
+    );
+    expect(contrastRatio(tokens.steel, tokens.data)).toBeLessThan(BODY_FLOOR);
+  });
+
+  it("hairlines stay below text weight, because a rule is not a word", () => {
+    for (const rule of [tokens.hair, tokens.hairStrong]) {
+      expect(contrastRatio(rule, tokens.paper)).toBeLessThan(NON_TEXT_FLOOR);
+    }
+    // ...but the section rule must still be visibly stronger than the row rule.
+    expect(contrastRatio(tokens.hairStrong, tokens.paper)).toBeGreaterThan(
+      contrastRatio(tokens.hair, tokens.paper),
+    );
   });
 });
 
-describe("span-type fills", () => {
-  it("each fill clears 3.0:1 against the surface it sits on", () => {
-    for (const hex of Object.values(tokens.spanTypes)) {
-      expect(contrastRatio(hex, tokens.surface)).toBeGreaterThanOrEqual(NON_TEXT_FLOOR);
+describe("the ground is biased blue, and stays that way", () => {
+  // Warm cream is the single most saturated AI-generated default there is.
+  // The spec bans the whole warm-neutral band by name; this is the guard
+  // that makes a future edit warming the ground fail rather than ship.
+  const WARM_BAND: [number, number] = [40, 100];
+  const TINTED = {
+    paper: tokens.paper,
+    data: tokens.data,
+    rail: tokens.rail,
+    hair: tokens.hair,
+    hairStrong: tokens.hairStrong,
+  };
+
+  it.each(Object.entries(TINTED))("%s is cool, never warm", (name, hex) => {
+    const h = hue(hex);
+    expect(h >= WARM_BAND[0] && h <= WARM_BAND[1], `${name} is hue ${h}`).toBe(false);
+    // Cool means the blue quadrant, not merely "not warm".
+    expect(h, `${name} is hue ${h}`).toBeGreaterThan(180);
+    expect(h, `${name} is hue ${h}`).toBeLessThan(260);
+  });
+
+  it("leaves the card surface a true neutral", () => {
+    expect(saturation(tokens.card)).toBe(0);
+  });
+
+  it("keeps the grounds ordered card > paper > data > rail in lightness", () => {
+    // The tint that means "measured" only reads if the data surface is
+    // actually a step down from the page it sits on.
+    expect(relativeLuminance(tokens.card)).toBeGreaterThan(
+      relativeLuminance(tokens.paper),
+    );
+    expect(relativeLuminance(tokens.paper)).toBeGreaterThan(
+      relativeLuminance(tokens.data),
+    );
+    expect(relativeLuminance(tokens.data)).toBeGreaterThan(
+      relativeLuminance(tokens.rail),
+    );
+  });
+});
+
+describe("a category never wears a verdict's colour", () => {
+  /** The reserved bands. Everything else on the wheel is available. */
+  const VERDICT_HUES: Record<string, number> = {
+    pass: hue(tokens.status.pass),
+    watch: hue(tokens.status.watch),
+    fail: hue(tokens.status.fail),
+  };
+  const MIN_SEPARATION = 25;
+  /** Below this the colour is a neutral and has no hue to clash with. */
+  const CHROMATIC = 0.15;
+
+  it("puts the verdict hues where the spec says they are", () => {
+    expect(VERDICT_HUES.pass).toBeGreaterThan(130); // green
+    expect(VERDICT_HUES.pass).toBeLessThan(170);
+    expect(VERDICT_HUES.watch).toBeGreaterThan(25); // amber
+    expect(VERDICT_HUES.watch).toBeLessThan(50);
+    expect(VERDICT_HUES.fail).toBeLessThan(15); // red
+  });
+
+  it.each(Object.entries(tokens.category))(
+    "category.%s stays clear of every verdict band",
+    (name, hex) => {
+      if (saturation(hex) < CHROMATIC) return;
+      for (const [verdict, verdictHue] of Object.entries(VERDICT_HUES)) {
+        expect(
+          hueDistance(hue(hex), verdictHue),
+          `category.${name} vs ${verdict}`,
+        ).toBeGreaterThanOrEqual(MIN_SEPARATION);
+      }
+    },
+  );
+
+  it("keeps the chromatic categories separable from each other", () => {
+    const chromatic = Object.values(tokens.category)
+      .filter((hex) => saturation(hex) >= CHROMATIC)
+      .map(hue);
+    expect(chromatic.length).toBeGreaterThanOrEqual(4);
+    for (let i = 0; i < chromatic.length; i += 1) {
+      for (let j = i + 1; j < chromatic.length; j += 1) {
+        expect(hueDistance(chromatic[i], chromatic[j])).toBeGreaterThanOrEqual(30);
+      }
     }
   });
 
-  it("the on-fill label colour clears 4.5:1 against every fill", () => {
-    for (const hex of Object.values(tokens.spanTypes)) {
-      expect(contrastRatio(tokens.onFill, hex)).toBeGreaterThanOrEqual(BODY_FLOOR);
+  it("retires magenta, including as a category", () => {
+    // The old brand hue was 322°. Nothing in Ledger may sit in that band —
+    // the spec retires it completely, not just as the Answer-quality hue.
+    for (const hex of Object.values(tokens.category)) {
+      if (saturation(hex) < CHROMATIC) continue;
+      expect(hueDistance(hue(hex), 322)).toBeGreaterThanOrEqual(20);
     }
+  });
+
+  it("gives every span type a distinct fill", () => {
+    const fills = Object.values(tokens.spanTypes);
+    expect(new Set(fills).size).toBe(fills.length);
   });
 });
 
 describe("measured ratios match the approved design spec", () => {
-  // Exact values from docs/superpowers/specs/2026-08-02-dashboard-redesign-design.md.
-  // A change here means the palette moved — update the spec, don't loosen the test.
+  // Exact values from docs/design/2026-08-10-ledger-design-system.md, all
+  // against `paper`. A change here means the palette moved — update the
+  // spec, don't loosen the test.
   const EXPECTED: Array<[string, string, number]> = [
-    ["ink", tokens.ink, 15.06],
-    ["muted", tokens.muted, 5.22],
-    ["brand.solid", tokens.brand.solid, 4.13],
-    ["brand.text", tokens.brand.text, 4.97],
-    ["status.pass", tokens.status.pass, 8.54],
-    ["status.fail.solid", tokens.status.fail.solid, 4.35],
-    ["status.fail.text", tokens.status.fail.text, 5.18],
-    ["status.warn", tokens.status.warn, 7.73],
+    ["ink", tokens.ink, 16.74],
+    ["ink2", tokens.ink2, 8.57],
+    ["dim", tokens.dim, 5.08],
+    ["link", tokens.link, 6.67],
+    ["status.pass", tokens.status.pass, 5.0],
+    ["status.watch", tokens.status.watch, 5.57],
+    ["status.fail", tokens.status.fail, 6.15],
+    ["category.teal", tokens.category.teal, 6.29],
+    ["category.blue", tokens.category.blue, 6.26],
+    ["category.violet", tokens.category.violet, 6.43],
+    ["category.plum", tokens.category.plum, 6.34],
   ];
 
-  it.each(EXPECTED)("%s measures %#s against surface", (_name, hex, expected) => {
-    expect(contrastRatio(hex, tokens.surface)).toBeCloseTo(expected as number, 1);
+  it.each(EXPECTED)("%s measures %#s against paper", (_name, hex, expected) => {
+    expect(contrastRatio(hex, tokens.paper)).toBeCloseTo(expected as number, 1);
   });
 });
 
@@ -107,12 +263,73 @@ describe("filled-chip label contrast", () => {
   // every one of these, so each pairing is real and must clear the body floor.
   const FILLED: Array<[string, string]> = [
     ["success", tokens.status.pass],
-    ["error", tokens.status.fail.solid],
-    ["warning", tokens.status.warn],
-    ["primary", tokens.brand.solid],
+    ["error", tokens.status.fail],
+    ["warning", tokens.status.watch],
+    ["primary", tokens.link],
   ];
 
   it.each(FILLED)("onFill on %s.main clears 4.5:1", (_tone, background) => {
-    expect(contrastRatio(tokens.onFill, background)).toBeGreaterThanOrEqual(4.5);
+    expect(contrastRatio(tokens.onFill, background)).toBeGreaterThanOrEqual(
+      BODY_FLOOR,
+    );
+  });
+});
+
+describe("font stacks are valid CSS", () => {
+  // `Source Serif 4 Variable` unquoted is invalid: a CSS font family is a
+  // sequence of identifiers and an identifier may not begin with a digit, so
+  // the browser drops the whole declaration. The heading then renders at the
+  // correct size, weight and tracking in the wrong face, silently — there is
+  // no console warning. This test is the only thing that catches it.
+  const STACKS: Array<[string, string]> = [
+    ["serif", FONT_SERIF],
+    ["sans", FONT_SANS],
+    ["mono", FONT_MONO],
+  ];
+
+  it.each(STACKS)("every %s family that needs quoting has it", (_name, stack) => {
+    for (const family of stack.split(",").map((f) => f.trim())) {
+      if (family.startsWith('"')) {
+        expect(family.endsWith('"')).toBe(true);
+        continue;
+      }
+      // Unquoted: every space-separated identifier must start with a letter,
+      // an underscore or a hyphen — never a digit.
+      for (const ident of family.split(/\s+/)) {
+        expect(/^[A-Za-z_-]/.test(ident), `"${ident}" in ${family}`).toBe(true);
+      }
+    }
+  });
+
+  it("names each of the three faces exactly once, in its own stack", () => {
+    expect(FONT_SERIF).toContain("Source Serif 4 Variable");
+    expect(FONT_SANS).toContain("Inter Variable");
+    expect(FONT_MONO).toContain("JetBrains Mono Variable");
+    // A stack that ends in the wrong generic degrades to the wrong shape.
+    expect(FONT_SERIF.endsWith("serif")).toBe(true);
+    expect(FONT_SANS.endsWith("sans-serif")).toBe(true);
+    expect(FONT_MONO.endsWith("monospace")).toBe(true);
+  });
+});
+
+describe("the Graphite & Magenta vocabulary is gone", () => {
+  // The compatibility aliases (bg, surface, surfaceRaised, border, muted,
+  // brand) carried the migration and were deleted once the last surface
+  // moved. This asserts they cannot come back by habit: a re-added `muted`
+  // would let a component drift out of the token set silently.
+  it("exposes no deprecated alias", () => {
+    const retired = ["bg", "surface", "surfaceRaised", "border", "muted", "brand"];
+    for (const name of retired) {
+      expect(Object.keys(tokens), `tokens.${name} is retired`).not.toContain(name);
+    }
+  });
+
+  it("names every token the pages actually use", () => {
+    for (const name of [
+      "paper", "card", "data", "rail", "hair", "hairStrong",
+      "ink", "ink2", "dim", "link", "onFill", "steel",
+    ]) {
+      expect(Object.keys(tokens)).toContain(name);
+    }
   });
 });

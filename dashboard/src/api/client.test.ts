@@ -1,5 +1,12 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { listTraces, runEval, deleteTrace, getEvalSummary, ApiError } from "./client";
+import {
+  listTraces,
+  runEval,
+  deleteTrace,
+  getEvalSummary,
+  getEvalAnalytics,
+  ApiError,
+} from "./client";
 
 function mockFetch(body: unknown, ok = true, status = 200) {
   return vi.fn().mockResolvedValue({
@@ -82,5 +89,22 @@ describe("api client", () => {
     await getEvalSummary({});
     const url = (fetch as unknown as ReturnType<typeof vi.fn>).mock.calls[0][0] as string;
     expect(url).not.toContain("project=");
+  });
+
+  it("GETs analytics with the project and window", async () => {
+    vi.stubGlobal("fetch", mockFetch({ totals: { traces: 25 } }));
+    const analytics = await getEvalAnalytics({ project: "demo", days: 7 });
+    const url = (fetch as unknown as ReturnType<typeof vi.fn>).mock.calls[0][0] as string;
+    expect(url).toContain("/evals/analytics?");
+    expect(url).toContain("project=demo");
+    expect(url).toContain("days=7");
+    expect(analytics.totals.traces).toBe(25);
+  });
+
+  it("sends days=0 rather than dropping it, since 0 means all history", async () => {
+    vi.stubGlobal("fetch", mockFetch({ totals: { traces: 0 } }));
+    await getEvalAnalytics({ days: 0 });
+    const url = (fetch as unknown as ReturnType<typeof vi.fn>).mock.calls[0][0] as string;
+    expect(url).toContain("days=0");
   });
 });

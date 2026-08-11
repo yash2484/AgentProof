@@ -4,6 +4,9 @@ import type {
   EvalResultsResponse,
   MetricsResponse,
   EvalSummary,
+  EvalAnalytics,
+  MetricDetail,
+  SecurityAnalytics,
 } from "../types";
 
 export class ApiError extends Error {
@@ -54,8 +57,25 @@ export function listTraces(params: {
   start_before?: string;
   limit?: number;
   offset?: number;
+  /** "failed" | "passed" | "degraded" | "not_evaluated" — filtered in SQL. */
+  eval_outcome?: string;
 } = {}): Promise<TraceListResponse> {
   return request<TraceListResponse>(`/traces${qs(params)}`);
+}
+
+/**
+ * Projects for the switcher, each declaring its provenance.
+ *
+ * A dedicated endpoint rather than distinct values from `listTraces`, because
+ * that query excludes generated corpora — deriving the switcher from it made
+ * the generated project vanish from the only control that can reach it. The
+ * rule is that generated data must never be *pooled* into an unlabelled
+ * figure, not that it must be hidden.
+ */
+export function listProjects(): Promise<{
+  projects: { name: string; traces: number; generated: boolean }[];
+}> {
+  return request("/projects");
 }
 
 export function getTraceTree(traceId: string): Promise<SpanNode[]> {
@@ -96,4 +116,38 @@ export function getEvalSummary(
   params: { project?: string } = {},
 ): Promise<EvalSummary> {
   return request<EvalSummary>(`/evals/summary${qs(params)}`);
+}
+
+/**
+ * Everything the Overview needs, aggregated server-side.
+ *
+ * `days` defaults to 30 on the server; pass 0 for all history. One call, not
+ * seven: every figure is already reduced in SQL, so there is nothing left for
+ * the client to aggregate over a truncated page of rows.
+ */
+export function getEvalAnalytics(
+  params: { project?: string; days?: number } = {},
+): Promise<EvalAnalytics> {
+  return request<EvalAnalytics>(`/evals/analytics${qs(params)}`);
+}
+
+/** Security posture: prevalence first, findings second. */
+export function getSecurityAnalytics(
+  params: { project?: string; days?: number } = {},
+): Promise<SecurityAnalytics> {
+  return request<SecurityAnalytics>(`/security/analytics${qs(params)}`);
+}
+
+/**
+ * One metric in depth. 404s when the metric has no rows in scope, which the
+ * page surfaces as "no such metric" rather than an empty state — a rotted
+ * link and a metric that passed are different things.
+ */
+export function getMetricDetail(
+  metricName: string,
+  params: { project?: string; days?: number; worst?: number } = {},
+): Promise<MetricDetail> {
+  return request<MetricDetail>(
+    `/evals/metric/${encodeURIComponent(metricName)}${qs(params)}`,
+  );
 }

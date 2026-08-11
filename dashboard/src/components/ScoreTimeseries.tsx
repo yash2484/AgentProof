@@ -110,7 +110,7 @@ export function ScoreTimeseries({
             y={t}
             label={`threshold ${t}`}
             lineStyle={{
-              stroke: tokens.status.fail.solid,
+              stroke: tokens.status.fail,
               strokeDasharray: "4 4",
             }}
           />

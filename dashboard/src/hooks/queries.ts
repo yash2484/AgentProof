@@ -8,6 +8,12 @@ export const queryKeys = {
   evalResults: (params: unknown) => ["evalResults", "list", params] as const,
   metrics: () => ["metrics"] as const,
   evalSummary: (project: string | undefined) => ["evalSummary", project] as const,
+  evalAnalytics: (project: string | undefined, days: number) =>
+    ["evalAnalytics", project, days] as const,
+  metricDetail: (name: string, project: string | undefined, days: number) =>
+    ["metricDetail", name, project, days] as const,
+  securityAnalytics: (project: string | undefined, days: number) =>
+    ["securityAnalytics", project, days] as const,
 };
 
 export function useTraces(params: Parameters<typeof api.listTraces>[0] = {}) {
@@ -38,14 +44,29 @@ export function useMetrics() {
   return useQuery({ queryKey: queryKeys.metrics(), queryFn: () => api.listMetrics() });
 }
 
-/** Distinct project names, derived from recent traces (no dedicated endpoint). */
+/**
+ * Every project with its trace count and whether it is generated.
+ *
+ * Was derived from a page of traces, which broke twice over: it saw only the
+ * first 200 rows, and once aggregates began excluding generated corpora the
+ * generated project disappeared from the switcher entirely.
+ */
+export function useProjectSummaries() {
+  return useQuery({
+    queryKey: ["projects"],
+    queryFn: async () => (await api.listProjects()).projects,
+  });
+}
+
+/**
+ * Just the names. Shares `useProjectSummaries`' cache entry rather than
+ * fetching again — the rail needs both shapes on every page.
+ */
 export function useProjects() {
   return useQuery({
     queryKey: ["projects"],
-    queryFn: async () => {
-      const res = await api.listTraces({ limit: 200 });
-      return [...new Set(res.traces.map((t) => t.project))].sort();
-    },
+    queryFn: async () => (await api.listProjects()).projects,
+    select: (projects) => projects.map((p) => p.name),
   });
 }
 
@@ -72,5 +93,38 @@ export function useEvalSummary(project?: string) {
   return useQuery({
     queryKey: queryKeys.evalSummary(project),
     queryFn: () => api.getEvalSummary({ project }),
+  });
+}
+
+/**
+ * The Overview's single data source.
+ *
+ * `days` is part of the key: the scope bar shows the window above every figure
+ * it scopes, so changing it must refetch rather than re-label stale numbers.
+ */
+export function useEvalAnalytics(project?: string, days = 30) {
+  return useQuery({
+    queryKey: queryKeys.evalAnalytics(project, days),
+    queryFn: () => api.getEvalAnalytics({ project, days }),
+  });
+}
+
+/** The Security page's single data source. */
+export function useSecurityAnalytics(project?: string, days = 30) {
+  return useQuery({
+    queryKey: queryKeys.securityAnalytics(project, days),
+    queryFn: () => api.getSecurityAnalytics({ project, days }),
+  });
+}
+
+/** One metric in depth, behind `/evals/:metric`. */
+export function useMetricDetail(name: string, project?: string, days = 30) {
+  return useQuery({
+    queryKey: queryKeys.metricDetail(name, project, days),
+    queryFn: () => api.getMetricDetail(name, { project, days }),
+    enabled: !!name,
+    // A 404 here means the metric does not exist in this window. Retrying
+    // asks the same question three more times and delays the answer.
+    retry: false,
   });
 }

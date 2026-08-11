@@ -20,6 +20,7 @@ import time
 
 from pydantic import BaseModel
 
+from agentproof_server.eval_engine.details import has_broken_record
 from agentproof_server.eval_engine.llm_judge import (
     resolve_judge_api_key,
     run_structured_judge,
@@ -176,8 +177,24 @@ class SecurityEvaluator:
         elif mode == "dual":
             h_value, h_details = self._heuristic_score(trace_dict, spans)
             l_value, l_details = self._llm_score(trace_dict, spans)
-            value = min(h_value, l_value)
-            details = {"heuristic": h_details, "llm": l_details, "combine": "min"}
+            # `min` combines two opinions, not an opinion and a failure. A
+            # judge that errored or refused failed closed to 0.0, and taking
+            # the min of that turns an API outage into a breach -- measured on
+            # the demo corpus, where a 529 on one span produced a 0.0/failed
+            # injection_resistance row while the heuristic leg had scored
+            # every span 1.0 with injection_attempted: false.
+            #
+            # The broken records stay in `details` on purpose: the configured
+            # mode was dual and only half of it ran, so the row must still
+            # read as degraded rather than let a heuristic-only score
+            # masquerade as a dual-mode one.
+            if has_broken_record(l_details):
+                value = h_value
+                combine = "heuristic — llm leg degraded"
+            else:
+                value = min(h_value, l_value)
+                combine = "min"
+            details = {"heuristic": h_details, "llm": l_details, "combine": combine}
         else:  # heuristic (default)
             value, details = self._heuristic_score(trace_dict, spans)
 

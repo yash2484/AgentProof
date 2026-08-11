@@ -17,6 +17,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import case, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from agentproof_server.api.analytics import _ci_block_by_metric
 from agentproof_server.api.serialization import _span_to_dict, _trace_to_dict
 from agentproof_server.config import settings
 from agentproof_server.db.models import EvalResult as EvalResultModel
@@ -85,12 +86,24 @@ async def _persist_results(
     await db.flush()
 
 
-def _row_to_dict(row: EvalResultModel) -> dict:
+def _row_to_dict(
+    row: EvalResultModel, ci_block_by_metric: dict[str, bool] | None = None
+) -> dict:
+    """Serialize an eval row, decorating it with the metric's CI weight.
+
+    ``ci_block`` is not a column -- it lives on ``MetricConfig`` and has never
+    reached the client, so nothing downstream could tell a blocking metric
+    from an advisory one. It falls back to ``True`` (``MetricConfig``'s own
+    default) so a metric the config no longer names does not quietly stop
+    blocking.
+    """
+    ci_block_by_metric = ci_block_by_metric or {}
     return {
         "trace_id": row.trace_id,
         "span_id": row.span_id,
         "metric_name": row.metric_name,
         "metric_type": row.metric_type,
+        "ci_block": ci_block_by_metric.get(row.metric_name, True),
         "score": row.score,
         "explanation": row.explanation,
         "threshold": row.threshold,
@@ -186,8 +199,9 @@ async def list_results(
         .offset(offset)
     )
     rows = (await db.execute(stmt)).scalars().all()
+    ci_block = _ci_block_by_metric()
     return {
-        "results": [_row_to_dict(r) for r in rows],
+        "results": [_row_to_dict(r, ci_block) for r in rows],
         "limit": limit,
         "offset": offset,
     }
@@ -207,7 +221,7 @@ async def get_results_for_trace(
     ).scalars().all()
     return {
         "trace_id": trace_id,
-        "results": [_row_to_dict(r) for r in rows],
+        "results": [_row_to_dict(r, _ci_block_by_metric()) for r in rows],
     }
 
 
@@ -224,6 +238,7 @@ async def list_metrics() -> dict:
                 "type": m.type.value,
                 "applies_to": m.applies_to,
                 "threshold": m.threshold,
+                "ci_block": m.ci_block,
             }
             for m in config.metrics
         ],
