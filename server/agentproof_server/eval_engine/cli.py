@@ -105,6 +105,48 @@ def regression_metric_names(config) -> set[str]:
     return {m.name for m in config.metrics if m.regression_alert}
 
 
+# The trace tag carrying a stable scenario identity. A captured trace has a
+# fresh UUID and a shared trace name, so without this the corpus cannot be
+# compared to itself across runs.
+PAIR_KEY_TAG = "scenario"
+
+
+def pair_keys(traces: list[dict], tag: str = PAIR_KEY_TAG) -> dict[str, str]:
+    """Map ``trace_id -> scenario key``, or ``{}`` if the corpus cannot pair.
+
+    All-or-nothing on purpose. Pairing a subset of the corpus would silently
+    change the population under test between runs, and pairing on a duplicated
+    key would drop a scenario without saying so. Either the whole corpus has a
+    unique key per trace or the comparison falls back to unpaired, which is
+    less sensitive but never wrong about what it compared.
+    """
+    keys: dict[str, str] = {}
+    seen: set[str] = set()
+    for trace in traces:
+        key = (trace.get("tags") or {}).get(tag)
+        if not key or key in seen:
+            return {}
+        seen.add(key)
+        keys[str(trace["trace_id"])] = str(key)
+    return keys
+
+
+def _scores_by_key(
+    report, keys_by_trace: dict[str, str]
+) -> dict[str, dict[str, float]]:
+    """Per-metric ``scenario -> score``, omitting metrics that cannot pair."""
+    keyed: dict[str, dict[str, float]] = {}
+    unpairable: set[str] = set()
+    for r in report.results:
+        key = keys_by_trace.get(r.trace_id)
+        slot = keyed.setdefault(r.metric_name, {})
+        if key is None or key in slot:
+            unpairable.add(r.metric_name)
+        else:
+            slot[key] = r.score
+    return {k: v for k, v in keyed.items() if k not in unpairable}
+
+
 def format_regression_report(report: RegressionReport) -> str:
     """Render a per-metric regression report."""
     lines = ["Regression report:"]
@@ -123,23 +165,39 @@ def format_regression_report(report: RegressionReport) -> str:
 def cmd_baseline(args) -> int:
     """Build pinned baselines from a trace file and write them to JSON."""
     config = load_config(args.config)
-    report = EvalRunner(config).evaluate_batch(load_traces(args.traces))
+    traces = load_traces(args.traces)
+    report = EvalRunner(config).evaluate_batch(traces)
     names = regression_metric_names(config)
-    baselines = build_baselines_from_report(report, args.project, names)
+    keys = pair_keys(traces)
+    baselines = build_baselines_from_report(
+        report, args.project, names, keys_by_trace=keys
+    )
     Path(args.out).write_text(baselines_to_json(baselines))
+    paired = sum(1 for b in baselines if b.scores_by_key)
     print(
         f"Wrote {len(baselines)} baseline(s) for project "
         f"'{args.project}' to {args.out}"
     )
+    if paired:
+        print(f"  {paired} carry per-scenario scores and support paired detection.")
+    else:
+        print(
+            "  note: no per-scenario identity in this corpus — these baselines "
+            "only support the less sensitive unpaired comparison."
+        )
     return 0
 
 
 def cmd_regression(args) -> int:
     """Evaluate a trace file and compare it to a pinned baseline file."""
     config = load_config(args.config)
-    report = EvalRunner(config).evaluate_batch(load_traces(args.traces))
+    traces = load_traces(args.traces)
+    report = EvalRunner(config).evaluate_batch(traces)
     baselines = baselines_from_json(Path(args.baseline).read_text())
     cfg = RegressionConfig()
+
+    keys = pair_keys(traces)
+    candidate_by_key = _scores_by_key(report, keys) if keys else {}
 
     candidate: dict[str, list[float]] = {}
     for r in report.results:
@@ -155,7 +213,11 @@ def cmd_regression(args) -> int:
             # rather than treat a missing sample as a 0.0 drop / false regression.
             print(f"note: metric '{name}' has no candidate scores in this run — skipped")
             continue
-        results.append(detect_regression(baseline, scores, cfg))
+        results.append(
+            detect_regression(
+                baseline, scores, cfg, candidate_by_key=candidate_by_key.get(name)
+            )
+        )
     regressed = [r.metric_name for r in results if r.is_regression]
     blocking = [n for n in regressed if n in ci_block]
     report_out = RegressionReport(
