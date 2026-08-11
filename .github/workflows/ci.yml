@@ -5,6 +5,12 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
+  # Weekly, so a break that arrives from a dependency release rather than a
+  # commit surfaces on its own schedule. A build backend once started rejecting
+  # a two-month-old config line, and the first push after it carried the blame.
+  schedule:
+    - cron: "0 6 * * 1"
+  workflow_dispatch:
 
 jobs:
   lint:
@@ -14,8 +20,13 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
-      - run: pip install ruff
-      - run: ruff check sdk/ server/
+      # Pinned deliberately. ruff is pre-1.0 and ships new rules in ordinary
+      # releases, so an unpinned linter fails the build on code nobody touched.
+      # Bump it as a commit, so the new findings land in a reviewable diff.
+      - run: pip install ruff==0.15.16
+      # Matches the scope the README claims is clean. scripts/ holds the visual
+      # gates and went unlinted here for months.
+      - run: ruff check sdk/ server/ demo_agent/ scripts/
 
   test-sdk:
     runs-on: ubuntu-latest
