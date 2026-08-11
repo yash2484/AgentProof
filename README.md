@@ -301,6 +301,55 @@ instrumented = instrument_langgraph(graph, ap)
 result = instrumented.invoke({"question": "What are multi-agent systems?"})
 ```
 
+## Gate it in your CI
+
+The gate ships as a composite action at the root of this repository. Point it at
+a trace corpus, a pinned baseline, and a config:
+
+```yaml
+- uses: yash2484/AgentProof@main
+  with:
+    traces: corpus.json
+    baseline: baselines/my-agent.json
+    config: agentproof.yaml
+```
+
+The step fails when a metric regresses beyond noise. It needs no database and no
+API key, and the engine is installed from the same commit as the action, so the
+gate you run is the gate you pinned.
+
+If your corpus is produced by running your agent rather than committed, hand the
+action the command and let it capture first:
+
+```yaml
+- uses: yash2484/AgentProof@main
+  with:
+    extra-install: -e ./sdk -e ./my_agent
+    capture-command: python -m my_agent capture --out "${RUNNER_TEMP}/corpus.json"
+    traces: ${{ runner.temp }}/corpus.json
+    baseline: baselines/my-agent.json
+    config: agentproof-ci.yaml
+```
+
+### Judged metrics are opt-in, and refuse to run half-configured
+
+Add `anthropic-api-key` and a `judged-config` to gate on `faithfulness` and
+`relevance` as well:
+
+```yaml
+    config: fixtures/regression_config.yaml            # no key -> this one
+    judged-config: fixtures/regression_config_judged.yaml
+    anthropic-api-key: ${{ secrets.ANTHROPIC_API_KEY }}
+```
+
+Without the secret the action selects `config` and reports only measured
+metrics. It will not run a judged config unkeyed. That is a deliberate refusal
+rather than a convenience: an unkeyed judge does not raise, it scores every span
+`0.0`, so the report would read `faithfulness 0.911 -> 0.000` and blame your pull
+request for a missing secret. A gate that invents a regression is worse than no
+gate. Forks, which never receive secrets, skip the judged job instead of failing
+it.
+
 ## Status
 
 Phases 0–8 complete and merged, tags `phase-1` … `phase-8`, plus a hardening
@@ -344,13 +393,16 @@ pass and the Ledger dashboard rework on top.
   is not.
 - **Regression detector** — pinned-baseline Welch's t-test with the effect-size
   guard and small-sample floor described above. File-based and DB-free.
-- **CI gates** — two jobs on every pull request, both key-free and DB-free.
+- **CI gates** — three jobs on every pull request, all DB-free, and all of them
+  consuming the same composite action a stranger would add via `uses:`. There is
+  no hand-rolled copy of the gate in this repository's own workflow; if the
+  action breaks, this repository's pull requests break with it.
   `fixture-gate` exercises the t-test path against a corpus with known variance.
   `agent-gate` runs the demo agent *on that commit*, captures the traces it
-  produces, and gates them against a pinned baseline. Because CI runs the agent
-  in deterministic replay, this catches structural and harness regressions;
-  behavioural changes to the model itself are covered by the judge tests, which
-  need a key.
+  produces, and gates them against a pinned baseline, key-free. `judge-gate`
+  adds `faithfulness` and `relevance`, which are the only two metrics on this
+  corpus with the variance to produce a t-test rather than a threshold check,
+  and it skips cleanly when no key is present.
 - **Dashboard** — Vite + React + MUI across four top-level routes plus trace and
   metric detail views: overview with a gate verdict and run-to-run variance,
   traces with a span waterfall and a run-eval action, evals grouped by metric
