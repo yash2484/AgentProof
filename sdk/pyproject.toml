@@ -5,8 +5,10 @@ build-backend = "hatchling.build"
 [project]
 name = "agentproof"
 version = "0.1.0"
-description = "Framework-agnostic eval, observability, and security harness for multi-agent systems"
-readme = "../README.md"
+description = "Collector SDK for AgentProof — a CI regression gate for teams shipping an agent as a product"
+# Must be inside the project directory — hatchling rejects a path outside it,
+# and a file above the package root would not ship in the sdist anyway.
+readme = "README.md"
 license = "MIT"
 requires-python = ">=3.11"
 authors = [
