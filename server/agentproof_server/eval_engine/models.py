@@ -121,6 +121,12 @@ class Baseline(BaseModel):
     project: str
     metric_name: str
     scores: list[float]
+    # The same scores, identified. Pairing needs to know which score belongs to
+    # which scenario; a bare list only supports treating N scenarios as N draws
+    # from one distribution, which makes between-scenario difficulty look like
+    # measurement noise. Optional so baselines pinned before this existed keep
+    # working — they simply fall back to the unpaired path.
+    scores_by_key: dict[str, float] | None = None
     mean: float
     std: float
     sample_size: int
@@ -132,6 +138,22 @@ class RegressionConfig(BaseModel):
 
     alpha: float = 0.05
     min_effect_size: float = 0.5
+    # Paired comparisons are scored with Cohen's d_z (mean delta / sd of the
+    # deltas), which is a different quantity on a different scale from the
+    # unpaired d -- so it gets its own knob rather than silently inheriting one.
+    # 0.5 was chosen by working the cases, not by copying the value above:
+    #   one scenario collapsing by 0.85, twelve unmoved -> d_z 0.28, rejected
+    #   two scenarios dropping 0.50, eleven unmoved     -> d_z 0.41, rejected
+    #   five scenarios dropping 0.28, eight unmoved     -> d_z 0.76, caught
+    # Its job is breadth: it stops one cratering scenario from convicting the
+    # whole suite, which is the paired analogue of the outlier that made the
+    # unpaired path blind.
+    min_effect_size_paired: float = 0.5
+    # Practical significance. Statistical significance answers "is it real",
+    # never "does it matter". Pairing drops the noise floor to roughly the 0.008
+    # measured between two identical runs, so without this a paired test would
+    # confidently report drops nobody would act on. Necessary (not sufficient)
+    # on the statistical paths; sufficient on the fallback paths below.
     min_mean_drop: float = 0.05
     # Below this many samples per group, Welch's t-test has too little power to
     # be trusted and the absolute-drop floor decides instead. Empirically, a
@@ -153,6 +175,13 @@ class RegressionResult(BaseModel):
     cohens_d: float | None
     is_regression: bool
     reason: str
+    # Which comparison actually ran. "paired" when both sides carried matching
+    # keys, "welch" for the two-sample fallback, "floor" when the sample was too
+    # small or too degenerate for either test. Reported so a verdict can never
+    # be read without knowing how it was reached.
+    method: Literal["paired", "welch", "floor"] = "welch"
+    cohens_dz: float | None = None
+    paired_n: int | None = None
 
 
 class RegressionReport(BaseModel):
