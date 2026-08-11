@@ -9,10 +9,18 @@ a pinned baseline and returns a verdict carrying a p-value and an effect size.
 
 ## Install
 
+Not on PyPI yet. Install from the repository:
+
 ```bash
-pip install agentproof
-pip install "agentproof[langgraph]"   # with the LangGraph adapter
+git clone https://github.com/yash2484/AgentProof
+pip install -e ./AgentProof/sdk
+pip install -e "./AgentProof/sdk[langgraph]"   # with the LangGraph adapter
 ```
+
+When it is published the distribution will be **`agentproof-sdk`**. The import
+stays `agentproof` either way — plain `agentproof` on PyPI is an unrelated
+project, so `pip install agentproof` gets you someone else's package, not this
+one.
 
 ## Instrument anything
 

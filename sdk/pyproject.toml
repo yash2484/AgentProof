@@ -3,7 +3,10 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "agentproof"
+# Distribution name only. The import stays `agentproof` (see tool.hatch below),
+# the way `pip install python-dateutil` gives you `import dateutil`.
+# Plain `agentproof` on PyPI belongs to an unrelated project in the same niche.
+name = "agentproof-sdk"
 version = "0.1.0"
 description = "Collector SDK for AgentProof — a CI regression gate for teams shipping an agent as a product"
 # Must be inside the project directory — hatchling rejects a path outside it,
