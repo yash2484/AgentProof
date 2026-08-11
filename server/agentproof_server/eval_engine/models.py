@@ -181,6 +181,12 @@ class RegressionResult(BaseModel):
     p_value: float | None
     cohens_d: float | None
     is_regression: bool
+    # The movement looks material but the sample cannot confirm it: the drop
+    # cleared the practical floor and the effect-size guard, and only
+    # significance failed. Distinct from ``is_regression=False`` alone, which
+    # otherwise conflates "we looked and it is fine" with "we looked and could
+    # not tell". Never true at the same time as ``is_regression``.
+    is_warning: bool = False
     reason: str
     # Which comparison actually ran. "paired" when both sides carried matching
     # keys, "welch" for the two-sample fallback, "floor" when the sample was too

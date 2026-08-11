@@ -518,6 +518,7 @@ def _gate_payload(
                 {
                     "metric_name": name,
                     "is_regression": False,
+                    "is_warning": False,
                     "comparable": False,
                     "baseline_mean": baseline.mean,
                     "candidate_mean": None,
@@ -549,6 +550,9 @@ def _gate_payload(
             {
                 "metric_name": name,
                 "is_regression": result.is_regression,
+                # Material but unconfirmed. The card must be able to say
+                # "could not tell" rather than showing this as a clean pass.
+                "is_warning": result.is_warning,
                 "comparable": True,
                 "baseline_mean": result.baseline_mean,
                 "candidate_mean": result.candidate_mean,

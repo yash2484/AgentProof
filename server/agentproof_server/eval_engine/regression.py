@@ -174,15 +174,24 @@ def _detect_paired(
         )
 
     is_reg = (p < cfg.alpha) and (dz >= cfg.min_effect_size_paired)
+    # Material by every measure except the one that decides. Reaching here at
+    # all means the drop already cleared the practical floor.
+    is_warning = (
+        not is_reg and dz >= cfg.min_effect_size_paired and p >= cfg.alpha
+    )
+    reason = (
+        f"paired over {len(keys)} scenarios: drop {mean_delta:.3f}, "
+        f"p={p:.4f} {'<' if p < cfg.alpha else '>='} alpha={cfg.alpha}, "
+        f"d_z={dz:.3f} {'>=' if dz >= cfg.min_effect_size_paired else '<'} "
+        f"{cfg.min_effect_size_paired}."
+    )
+    if is_warning:
+        reason += (
+            f" Material but not significant — underpowered at a sample of "
+            f"n={len(keys)}. Not blocking, and not clean either."
+        )
     return RegressionResult(
-        **fields,
-        is_regression=is_reg,
-        reason=(
-            f"paired over {len(keys)} scenarios: drop {mean_delta:.3f}, "
-            f"p={p:.4f} {'<' if p < cfg.alpha else '>='} alpha={cfg.alpha}, "
-            f"d_z={dz:.3f} {'>=' if dz >= cfg.min_effect_size_paired else '<'} "
-            f"{cfg.min_effect_size_paired}."
-        ),
+        **fields, is_regression=is_reg, is_warning=is_warning, reason=reason
     )
 
 
@@ -289,6 +298,16 @@ def detect_regression(
         and (d >= cfg.min_effect_size)
         and (drop >= cfg.min_mean_drop)
     )
+    # Material by every measure except the one that decides: the drop clears
+    # the practical floor and the effect-size guard, and only significance
+    # fails. Reporting that as plain "ok", indistinguishable from a metric that
+    # never moved, is what let a real 0.109 drop pass unremarked on 2026-08-11.
+    is_warning = (
+        not is_reg
+        and drop >= cfg.min_mean_drop
+        and d >= cfg.min_effect_size
+        and p >= cfg.alpha
+    )
     reason = (
         f"p={p:.4f} {'<' if p < cfg.alpha else '>='} alpha={cfg.alpha}, "
         f"d={d:.3f} {'>=' if d >= cfg.min_effect_size else '<'} "
@@ -298,4 +317,11 @@ def detect_regression(
         reason += (
             f" Drop {drop:.3f} < practical floor {cfg.min_mean_drop}."
         )
-    return RegressionResult(**fields, is_regression=is_reg, reason=reason)
+    if is_warning:
+        reason += (
+            f" Material but not significant — underpowered at a sample of "
+            f"n={len(cand)}. Not blocking, and not clean either."
+        )
+    return RegressionResult(
+        **fields, is_regression=is_reg, is_warning=is_warning, reason=reason
+    )

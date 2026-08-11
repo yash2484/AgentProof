@@ -151,7 +151,15 @@ def format_regression_report(report: RegressionReport) -> str:
     """Render a per-metric regression report."""
     lines = ["Regression report:"]
     for r in report.results:
-        verdict = "REGRESSION" if r.is_regression else "ok"
+        # "warn" is not a severity between ok and REGRESSION; it means the
+        # sample could not settle the question. Printing it as "ok" is what
+        # hid a real drop in plain sight.
+        if r.is_regression:
+            verdict = "REGRESSION"
+        elif r.is_warning:
+            verdict = "warn"
+        else:
+            verdict = "ok"
         lines.append(
             f"  [{verdict:<10}] {r.metric_name:<22} "
             f"baseline={r.baseline_mean:.3f} candidate={r.candidate_mean:.3f} "
