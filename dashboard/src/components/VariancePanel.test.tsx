@@ -10,13 +10,20 @@ const runs = sampleAnalytics.eval_runs;
 const run = (
   at: string,
   group_means: AnalyticsEvalRun["group_means"],
+  trace_count = 3,
 ): AnalyticsEvalRun => ({
   run_at: at,
-  trace_count: 3,
+  trace_count,
   degraded: 0,
   group_means,
   metric_means: {},
 });
+
+/** Three runs of equal size — points that are genuinely peers. */
+const peers = (means: number[]) =>
+  means.map((m, i) =>
+    run(`2026-08-0${i + 1}T00:00:00.000Z`, { quality: m }, 13),
+  );
 
 describe("VariancePanel", () => {
   it("holds the slot when nothing has run, so nothing shifts later", () => {
@@ -44,9 +51,82 @@ describe("VariancePanel", () => {
     expect(screen.queryByTestId("paired-slope")).not.toBeInTheDocument();
   });
 
-  it("calls it variance, never trend", () => {
-    const { container } = renderWithProviders(<VariancePanel runs={runs} />);
+  it("calls it variance, never trend, when the runs are peers", () => {
+    const { container } = renderWithProviders(
+      <VariancePanel runs={peers([0.95, 0.9, 0.92])} />,
+    );
     expect(container.textContent).toContain("Variance, not trend");
+  });
+
+  // -------------------------------------------------------------------------
+  // The denominator
+  // -------------------------------------------------------------------------
+  //
+  // Runs 6 to 8 of the measured corpus each evaluated a single adversarial
+  // trace while the runs either side averaged thirteen mixed scenarios. The
+  // chart drew a mean over n=1 and a mean over n=13 as consecutive points on
+  // one line and let the reader infer a regression and a recovery. A figure
+  // without its denominator, compared against a figure that does not share
+  // its population, is the laundering this product exists to prevent.
+
+  it("refuses to call a step between differently-sized runs variance", () => {
+    const { container } = renderWithProviders(<VariancePanel runs={runs} />);
+    expect(container.textContent).not.toContain("Variance, not trend");
+    expect(container.textContent).toContain("not like-for-like");
+  });
+
+  it("states the range of sample sizes behind the line", () => {
+    const { container } = renderWithProviders(<VariancePanel runs={runs} />);
+    expect(container.textContent).toContain("3 to 13");
+  });
+
+  it("says which runs cannot show variance at all", () => {
+    const thin = [
+      run("2026-08-01T00:00:00.000Z", { quality: 0.926 }, 13),
+      run("2026-08-02T00:00:00.000Z", { quality: 0.35 }, 1),
+      run("2026-08-03T00:00:00.000Z", { quality: 0.92 }, 13),
+    ];
+
+    const { container } = renderWithProviders(<VariancePanel runs={thin} />);
+
+    expect(container.textContent).toContain("1 run covers a single trace");
+    expect(container.textContent).toContain("cannot show variance at all");
+  });
+
+  it("prints the trace count behind every point when the runs are uneven", () => {
+    // The caption states the range; a reader checking a specific step needs
+    // the per-run number, and a screenshot carries no tooltip.
+    renderWithProviders(<VariancePanel runs={runs} />);
+
+    expect(screen.getByTestId("variance-denominators")).toHaveTextContent(
+      "3 · 3 · 3 · 13",
+    );
+  });
+
+  it("does not belabour the denominator when every run is the same size", () => {
+    renderWithProviders(<VariancePanel runs={peers([0.95, 0.9, 0.92])} />);
+
+    expect(screen.queryByTestId("variance-denominators")).not.toBeInTheDocument();
+  });
+
+  it("names the measured step when it clears the judge band", () => {
+    const { container } = renderWithProviders(
+      <VariancePanel runs={peers([0.95, 0.5, 0.55])} />,
+    );
+    expect(container.textContent).toContain("0.450");
+  });
+
+  it("makes no denominator claim on two runs either", () => {
+    // The paired slope has the same problem as the line: two means over
+    // different populations are not a delta.
+    const pair = [
+      run("2026-08-01T00:00:00.000Z", { quality: 0.926 }, 13),
+      run("2026-08-02T00:00:00.000Z", { quality: 0.35 }, 1),
+    ];
+
+    const { container } = renderWithProviders(<VariancePanel runs={pair} />);
+
+    expect(container.textContent).toContain("not like-for-like");
   });
 
   // -------------------------------------------------------------------------

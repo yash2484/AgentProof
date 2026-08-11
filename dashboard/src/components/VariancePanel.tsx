@@ -8,6 +8,7 @@ import {
   groupLabel,
   presentGroups,
 } from "../lib/groups";
+import { varianceReading, varianceCaption } from "../lib/variance";
 import { SectionHeading, DataPanel, CHART_SX } from "./Ledger";
 import type { AnalyticsEvalRun, MetricGroup } from "../types";
 
@@ -162,6 +163,7 @@ export function VariancePanel({ runs }: { runs: AnalyticsEvalRun[] }) {
   const points = scored(runs);
   const groups = presentGroups(points);
   const judged = groups.some(groupHasJudgeNoise);
+  const reading = varianceReading(points, groups);
   const floor = axisFloor(
     points.flatMap((p) =>
       groups.map((g) => meanFor(p, g)).filter((v): v is number => v !== null),
@@ -234,8 +236,15 @@ export function VariancePanel({ runs }: { runs: AnalyticsEvalRun[] }) {
                 {
                   data: points.map((_p, i) => i),
                   scaleType: "point",
+                  // The tooltip carries the denominator too. A reader hovering
+                  // one point is asking what it is worth, and "3 traces" is
+                  // most of that answer.
                   valueFormatter: (i: number, ctx) =>
-                    ctx?.location === "tick" ? `#${i + 1}` : when(points[i].run_at),
+                    ctx?.location === "tick"
+                      ? `#${i + 1}`
+                      : `${when(points[i].run_at)} · ${points[i].trace_count} ${
+                          points[i].trace_count === 1 ? "trace" : "traces"
+                        }`,
                 },
               ]}
               yAxis={[{ min: floor, max: 1 }]}
@@ -252,6 +261,18 @@ export function VariancePanel({ runs }: { runs: AnalyticsEvalRun[] }) {
           </Box>
         )}
 
+        {points.length >= 2 && reading.unevenSamples && (
+          // Only when the runs are not peers. On comparable runs this is four
+          // identical numbers in a row, which trains the reader to skip the
+          // line in the one case it matters.
+          <Box
+            data-testid="variance-denominators"
+            sx={{ ...DATA, color: tokens.dim, mt: `${SPACE.sm}px` }}
+          >
+            Traces per run: {points.map((p) => p.trace_count).join(" · ")}
+          </Box>
+        )}
+
         {points.length >= 2 && (
           <Typography
             // A footnote, not body prose: it may run wider than the 62ch
@@ -259,11 +280,11 @@ export function VariancePanel({ runs }: { runs: AnalyticsEvalRun[] }) {
             // wrapped into three short lines inside a panel four times that.
             sx={{ ...PROSE, fontSize: 14, maxWidth: "88ch", color: tokens.dim, mt: `${SPACE.sm}px` }}
           >
-            Variance, not trend.{" "}
-            {judged
-              ? `A ±${JUDGE_NOISE} swing between runs on identical input is expected
-                 from the judged group; the others are measured, not judged.`
-              : "These groups are measured, not judged."}
+            {/* Derived, not fixed. The sentence that used to sit here said a
+              * ±0.2 swing was expected whatever the chart showed — including
+              * under a line dropping 0.926 → 0.350 across runs that measured
+              * one trace and thirteen. */}
+            {varianceCaption(reading, judged)}
             {points.length >= TREND_MIN_RUNS && floor > 0 && (
               <Box component="span" data-testid="axis-note">
                 {" "}
