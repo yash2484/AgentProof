@@ -5,16 +5,38 @@
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
 
-**An eval, observability, and security harness for LLM agents — with a CI gate
-that has been proven to fire.**
+**A CI regression gate for teams shipping an agent as a product.**
 
-AgentProof traces every LLM call, tool invocation, and agent handoff as a typed
-span DAG, scores each trace against configurable metrics (deterministic,
-LLM-as-judge, and security), and blocks a pull request when a pinned metric drops
-by an amount that is both statistically significant and large enough to matter.
+A fixed eval set runs against a pinned baseline and returns a verdict per run
+carrying a p-value and an effect size.
 
-The core is framework-neutral — instrument anything with a context manager or a
-decorator. LangGraph gets a one-line auto-instrumentation adapter.
+Other tools report that a number moved. This one reports whether it moved
+further than the **measured** noise — and refuses to answer when the sample
+cannot support an answer.
+
+![The AgentProof overview, rendered from the measured demo corpus](docs/images/overview.png)
+
+That screenshot is a real render of the corpus in this repository, produced by
+`scripts/ui_audit.py`. Nothing in it is mocked up. Read the four tiles across
+the middle: *38 of 45 traces measured*, *7 never evaluated — not passing,
+unmeasured*, *5 of 8 metrics never moved — unexercised, not proven*. Those
+sentences are the product.
+
+## What it refuses to say
+
+The most useful thing this gate does is decline.
+
+```
+relevance   base=0.931  cand=0.908   p=0.3877 >= alpha=0.05,  d=0.113 < 0.5
+```
+
+Relevance fell by 0.023 between the pinned baseline and the latest run. An
+effect exists. Neither guard clears, so the gate reports **no regression** and
+says why in the same line. It does not round the drop away, and it does not
+promote it to a finding.
+
+A tool that only ever reports movement will report noise, and a team that gets
+paged for noise turns the gate off within a month.
 
 ## It caught a real hallucination
 
@@ -128,59 +150,63 @@ Deterministic and heuristic metrics gate **every pull request**, free and
 key-free. Judge metrics are run against a key on demand, because they cost money
 and cannot be made deterministic.
 
-## Status
+## What you are looking at
 
-Phases 0–8 complete and merged; tags `phase-1` … `phase-8`.
+Three of the four routes. Each states the limits of its own figures rather than
+leaving them to be inferred.
 
-| Phase | Feature |
-|---|---|
-| 0–1 | Monorepo, Docker, CI, trace schema, collector SDK, storage API |
-| 2 | Eval engine — deterministic, LLM-as-judge, composite |
-| 3 | Security evals — prompt injection, tool misuse, data exfiltration |
-| 4 | Regression detector (Welch's t-test) + CI gate |
-| 5 | Dashboard — trace waterfall, eval timeseries, security reports |
-| 6 | Demo research-assistant agent (LangGraph) |
-| 7 | Agent-gated CI |
-| 8 | Dashboard redesign |
+### Evals — a flat metric is not a passing metric
 
-### What works today
+![The evals page, grouped by metric type](docs/images/evals.png)
 
-- **Trace data model** — a DAG of typed spans (`llm_call`, `tool_use`,
-  `retrieval`, `agent_handoff`, `human_decision`) with multi-parent support for
-  parallel and merge topologies.
-- **Collector SDK** (`agentproof`) — context-manager and decorator
-  instrumentation, a fire-and-forget async exporter (buffering, batching, retry,
-  bounded buffer with an observable drop counter), token-cost computation, and a
-  LangGraph auto-instrumentation adapter.
-- **Storage API** (FastAPI + Postgres) — batch and single trace ingestion,
-  filtered listing, full-trace detail, span-DAG tree view, delete. SQLAlchemy 2.0
-  async with GIN and composite indexes.
-- **Eval engine** — eight metrics driven by `agentproof.yaml`: three
-  deterministic (`latency_budget`, `cost_budget`, `tool_allowlist`), three
-  security (`injection_resistance`, `data_exfiltration`, `tool_misuse`), two
-  LLM-judge (`faithfulness`, `relevance`). Metrics can be scoped to named spans,
-  because a groundedness rubric is meaningless against a planner's list of search
-  queries.
-- **Security evals** — a built-in, overridable rule library of 40 patterns across
-  3 attack categories, with per-metric `detection_mode` (`heuristic | llm |
-  dual`). Heuristic mode is free and key-free; `llm` and `dual` build a judge
-  client when a key is available and degrade to heuristic with a warning when it
-  is not.
-- **Regression detector** — pinned-baseline Welch's t-test with the effect-size
-  guard and small-sample floor described above. File-based and DB-free.
-- **CI gates** — two jobs on every pull request, both key-free and DB-free.
-  `fixture-gate` exercises the t-test path against a corpus with known variance.
-  `agent-gate` runs the demo agent *on that commit*, captures the traces it
-  produces, and gates them against a pinned baseline. Because CI runs the agent
-  in deterministic replay, this catches structural and harness regressions;
-  behavioural changes to the model itself are covered by the judge tests, which
-  need a key.
-- **Dashboard** — Vite + React + MUI: trace list with filters and delete, span
-  waterfall with a detail panel and a run-eval action, eval-score timeseries, and
-  a security report.
-- **Tests** — 169 server, 43 SDK, 37 demo-agent, 140 dashboard (Vitest). `ruff`
-  clean across `server/`, `sdk/`, `demo_agent/`, `scripts/`; dashboard `eslint`
-  and `tsc` clean.
+Metrics are grouped by what they measure, never pooled, because a judge score
+graded 0–1 and a binary budget check do not share a unit. Pooling them was
+measured on this corpus: a −0.15 drift in the judged metrics rendered as a flat
+line, diluted by six metrics pinned at 1.000.
+
+The panel says outright: *"Injection resistance, Tool misuse have never varied —
+no scenario in this window stressed them. That is an unexercised control, not a
+passing one."*
+
+### Security — counts, not rates, and the denominator with them
+
+![The security page, showing attack surface coverage](docs/images/security.png)
+
+**5 of 38 traces attacked (13.2%). 33 were never probed.** A breach count means
+little without knowing how much of the surface was tested, so the coverage sits
+beside the count. Failures are enumerated; passing rows are counted and never
+listed, because a wall of green invites the reading that everything was checked.
+
+## The corpus, stated plainly
+
+The dashboard lands on `demo-research-agent`, a real LangGraph agent, and every
+figure above comes from it. `scripts/demo_check.py` fails the build if the app
+ever lands anywhere else.
+
+| | |
+|---|---:|
+| traces | 45 |
+| evaluation runs | 10 |
+| measurements | 520 |
+| computed from recorded spans by code | 389 |
+| returned by a live judge call | 112 |
+| judge calls that errored or refused | 19 |
+| total cost of the live runs | **$0.128** across 37,800 tokens |
+
+The 19 broken judge calls are **kept and shown as broken**. Twelve of them are
+historical `401`s from a run against a dead key. They are excluded from every
+figure rather than counted as failures, and the dashboard reports them as their
+own quantity. A harness that quietly folded them into a pass rate would be
+committing the error it exists to catch.
+
+Two caveats a reader should have before trusting any chart here:
+
+- **The runs are not all the same size.** Four of the ten evaluated a single
+  adversarial trace while others averaged thirteen mixed scenarios. The variance
+  panel prints the per-run trace counts and states that those points are not
+  like-for-like, rather than drawing them as a trend.
+- **45 traces is small.** It is enough to prove the harness works end to end. It
+  is not enough to characterise an agent, and nothing here claims otherwise.
 
 ## Quick start
 
@@ -215,27 +241,6 @@ python -m demo_agent run --scenario all --mode replay --export
 - `--record-fixtures PATH` with `--mode live` freezes a live run as replay
   fixtures.
 
-### The `synthetic-showcase` project is generated, not measured
-
-Everything above is measured. One thing in the dashboard is not, and it is
-labelled everywhere it appears.
-
-The recorded corpus is 25 traces across 4 runs — enough to prove the harness
-works, too thin to evaluate a dashboard against, since most metrics never move
-and every trend is two points. `synthetic-showcase` is a fabricated corpus of
-300 traces over 180 days with a deliberate slow quality drift, seeded so it
-regenerates identically:
-
-```bash
-docker compose exec server python -m agentproof_server.scripts_pkg.synthetic_showcase
-```
-
-It lives under its own project name, is badged **generated data** in the
-project switcher and the scope bar, and is never baselined or fed to the
-regression gate. **No generated row ever enters `demo-research-agent`** — that
-corpus stays a byte-for-byte recording, which is the only reason the claim
-above is worth anything.
-
 Capture the agent's traces as an eval corpus and gate them — no database, no API
 key, this is what CI runs:
 
@@ -249,6 +254,22 @@ cd server && python -m agentproof_server.eval_engine.cli regression \
 
 Exits 0 when the agent still matches its pinned baseline, 1 when a CI-blocking
 metric has regressed.
+
+### One project in the dashboard is generated, not measured
+
+`synthetic-showcase` is a fabricated corpus of 300 traces over 180 days with a
+deliberate slow quality drift, seeded so it regenerates identically. It exists to
+exercise the dashboard at a data volume the real corpus does not reach.
+
+```bash
+docker compose exec server python -m agentproof_server.scripts_pkg.synthetic_showcase
+```
+
+It lives under its own project name, is badged **generated data** wherever it
+appears, is never baselined, and is never fed to the regression gate. **No
+generated row ever enters `demo-research-agent`** — that corpus stays a
+byte-for-byte recording, which is the only reason the numbers above are worth
+anything.
 
 ## Instrument your own agent
 
@@ -280,6 +301,71 @@ instrumented = instrument_langgraph(graph, ap)
 result = instrumented.invoke({"question": "What are multi-agent systems?"})
 ```
 
+## Status
+
+Phases 0–8 complete and merged, tags `phase-1` … `phase-8`, plus a hardening
+pass and the Ledger dashboard rework on top.
+
+| Phase | Feature |
+|---|---|
+| 0–1 | Monorepo, Docker, CI, trace schema, collector SDK, storage API |
+| 2 | Eval engine — deterministic, LLM-as-judge, composite |
+| 3 | Security evals — prompt injection, tool misuse, data exfiltration |
+| 4 | Regression detector (Welch's t-test) + CI gate |
+| 5 | Dashboard — trace waterfall, eval timeseries, security reports |
+| 6 | Demo research-assistant agent (LangGraph) |
+| 7 | Agent-gated CI |
+| 8 | Dashboard redesign |
+| — | Hardening: live judge, fault injection, measured sensitivity and overhead |
+| — | Ledger — light document theme, grouped metrics, provenance on every figure |
+
+### What works today
+
+- **Trace data model** — a DAG of typed spans (`llm_call`, `tool_use`,
+  `retrieval`, `agent_handoff`, `human_decision`) with multi-parent support for
+  parallel and merge topologies.
+- **Collector SDK** (`agentproof`) — context-manager and decorator
+  instrumentation, a fire-and-forget async exporter (buffering, batching, retry,
+  bounded buffer with an observable drop counter), token-cost computation, and a
+  LangGraph auto-instrumentation adapter.
+- **Storage API** (FastAPI + Postgres) — batch and single trace ingestion,
+  filtered listing, full-trace detail, span-DAG tree view, delete. SQLAlchemy 2.0
+  async with GIN and composite indexes.
+- **Eval engine** — eight metrics driven by `agentproof.yaml`: three
+  deterministic (`latency_budget`, `cost_budget`, `tool_allowlist`), three
+  security (`injection_resistance`, `data_exfiltration`, `tool_misuse`), two
+  LLM-judge (`faithfulness`, `relevance`). Metrics can be scoped to named spans,
+  because a groundedness rubric is meaningless against a planner's list of search
+  queries.
+- **Security evals** — a built-in, overridable rule library of 40 patterns across
+  3 attack categories, with per-metric `detection_mode` (`heuristic | llm |
+  dual`). Heuristic mode is free and key-free; `llm` and `dual` build a judge
+  client when a key is available and degrade to heuristic with a warning when it
+  is not.
+- **Regression detector** — pinned-baseline Welch's t-test with the effect-size
+  guard and small-sample floor described above. File-based and DB-free.
+- **CI gates** — two jobs on every pull request, both key-free and DB-free.
+  `fixture-gate` exercises the t-test path against a corpus with known variance.
+  `agent-gate` runs the demo agent *on that commit*, captures the traces it
+  produces, and gates them against a pinned baseline. Because CI runs the agent
+  in deterministic replay, this catches structural and harness regressions;
+  behavioural changes to the model itself are covered by the judge tests, which
+  need a key.
+- **Dashboard** — Vite + React + MUI across four top-level routes plus trace and
+  metric detail views: overview with a gate verdict and run-to-run variance,
+  traces with a span waterfall and a run-eval action, evals grouped by metric
+  type, and a security report. Every figure carries its denominator and its
+  provenance.
+- **Visual gates** — `scripts/ui_audit.py` reports overflow with the responsible
+  element named, console errors, the font families actually resolved, and a WCAG
+  AA sweep per text node, across six routes at 1440px and 390px.
+  `scripts/demo_check.py` fails if the app lands anywhere but the measured
+  corpus, or if a generated-data marker could reach a screenshot.
+- **Tests** — 355 server unit, 39 server DB, 43 SDK, 38 demo-agent, 409 dashboard
+  (Vitest). `ruff` clean across `server/`, `sdk/`, `demo_agent/`, `scripts/`;
+  dashboard `eslint` and `tsc` clean; `ui_audit` 12/12 clean. One DB test is a
+  known intermittent — see limitations.
+
 ## Repository layout
 
 ```
@@ -289,7 +375,8 @@ dashboard/   # React dashboard
 demo_agent/  # Demo research-assistant agent (LangGraph)
 fixtures/    # Pinned eval corpora and configs
 baselines/   # Pinned score distributions the CI gate compares against
-docs/        # Detector sensitivity, walkthrough, design specs
+scripts/     # Seeding and the visual gates (ui_audit, demo_check)
+docs/        # Detector sensitivity, walkthrough, design specs, screenshots
 ```
 
 ## Development
@@ -311,19 +398,39 @@ name their test package `tests`.
 Kept here deliberately, because a harness that overstates itself is the thing it
 exists to prevent.
 
+- **This is not an observability product.** Evaluation is after-the-fact and
+  batch; there is no live ingest, no alerting, and no streaming view. It stores
+  traces because it needs them to grade, not to compete on tracing.
+- **It is the wrong shape for ad-hoc use.** The gate compares a fixed input set
+  against a pinned baseline. A developer using an LLM CLI runs a different task
+  every session, so there is nothing stable to pin a baseline against.
 - **The LLM judge is not calibrated against human labels.** It discriminates
   fabrication from grounded text by a wide margin, but no agreement statistic
   (Cohen's kappa or otherwise) has been computed against a hand-labelled gold
   set. Until that exists, treat judge scores as a soft signal.
-- **Six of eight metrics sit flat at 1.000** on the demo corpus. Only
-  `faithfulness` and `relevance` currently have variance; no scenario stresses
-  the deterministic and security checks hard enough to move them.
+- **Five of eight metrics have never moved** on the demo corpus. No scenario
+  stresses the deterministic and security checks hard enough. The dashboard
+  reports them as unexercised rather than passing, which is the honest reading
+  but not a substitute for exercising them.
 - **One adapter ships.** The core is framework-neutral and manual instrumentation
   works anywhere, but LangGraph is the only auto-instrumentation adapter today.
 - **The demo agent is the only agent it has run against.** Instrumenting a second,
   unrelated project is the next real validation.
 - **Alembic migrations are scaffolded, not written.** `versions/` is empty, so a
   declared `ondelete="CASCADE"` is not in the deployed schema.
+- **The batch eval endpoint can return 200 without persisting.**
+  `test_eval_pipeline_end_to_end` reproduces it intermittently (roughly 2 runs in
+  4): POST a batch, get 200, then 404 on the trace, with no rows written. An
+  endpoint that reports success without writing is the same class of defect as a
+  metric that reports a pass without measuring, and it is open.
+- **Triggering evals from the demo agent can time out.** `trigger_evals` in
+  `demo_agent/demo_agent/export.py` uses a short HTTP timeout, while a 13-trace
+  batch genuinely takes around seven minutes. The client gives up, the disconnect
+  cancels the server handler, and nothing is written. Evaluate from the dashboard
+  or the CLI until this is fixed.
+- **The positioning above is a judgement, not a validated finding.** It is
+  inferred from what the code does well. It has not been checked against a team
+  that ships an agent in production.
 
 ## License
 
