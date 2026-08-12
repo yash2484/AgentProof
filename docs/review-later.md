@@ -448,3 +448,86 @@ claim, not the claim.
 post goes out, sanity-check Tier 1 against two or three people who actually
 ship an agent — the failure mode is a well-built tool aimed at a group that
 does not feel the pain.
+
+---
+
+## Paired regression detection — opened 2026-08-11, built 2026-08-12
+
+The detector was rewritten after it failed to catch a deliberately injected
+regression. What follows are the judgement calls made during that work that
+someone other than the author should sign off on.
+
+### R23. A single security breach does not block the build — OPEN
+
+One scenario in thirteen successfully prompt-injected produces a drop of 0.077
+and `d_z=0.277`, below the 0.5 effect-size guard, so the gate passes it. Three
+breached scenarios are needed before it fires. Measured 2026-08-12 by running
+the reproduction in `walkthrough.md`; the behaviour is identical under the
+paired and unpaired comparisons, so pairing did not introduce it. It arrived
+when the demo corpus grew from three scenarios to thirteen and crossed
+`min_sample_size`, moving the decision off the absolute-drop floor and onto the
+statistical path.
+
+The effect-size guard is defensible for graded quality metrics: one poorly
+worded answer is not a systemwide groundedness failure. It is hard to defend
+for security, where a breach is an event rather than a trend. The six measured
+metrics also have a run-to-run standard deviation of 0.000, so for them there is
+no noise for a statistical guard to see through and every drop is signal.
+
+**Review:** decide whether zero-noise metrics should bypass the statistical
+path entirely and use an absolute-drop rule, or whether security metrics need
+their own decision rule. Either way the current behaviour should not survive
+unexamined — it is disclosed in the README, and a disclosure is not a fix.
+
+### R24. `relevance` is floored rather than repaired — QUEUED
+
+Its rubric has bands for "directly answers" and "off-topic or empty" and none
+for *correctly declining because the corpus cannot answer*, so on the
+`unanswerable` scenario the judge picks a different band each run: 0.00, 0.10,
+0.10, 0.40, 0.40 across five evaluations of an identical fixture. Contained with
+a per-metric floor of 0.15, above the 0.120 that three sigma of its own noise
+reaches.
+
+**Review:** the floor stops false regressions; it does not make the metric
+informative. Adding the missing band changes what the metric measures, so it
+requires its own baseline re-pin and should not be folded into an unrelated
+change.
+
+### R25. A baseline carries one evaluation run's judge noise — OPEN
+
+Baselines are built from a single pass, so whatever the judge returned that day
+becomes the reference. `faithfulness` moves with a per-scenario standard
+deviation of 0.034 between identical runs, so the pinned reference is noisier
+than it needs to be. A `--repeat N` averaging option would reduce it by roughly
+the square root of N.
+
+**Review:** cheap to build, and it interacts with the calibration floors — a
+quieter reference moves the minimum detectable effect, which is asserted in
+`test_regression_calibration.py` and would need re-measuring in the same commit.
+
+### R26. The two-config split invites the drift it caused — QUEUED
+
+The composite action takes both `config` and `judged-config`, so the same metric
+definitions are maintained in two files. They drifted: `relevance.min_mean_drop`
+was set in one and unset in the other, and `injection_resistance` was `dual` in
+the active config and `heuristic` in both CI configs — the dashboard scoring
+with a judge while the gate used a regex, against one shared baseline.
+`test_config_drift.py` now enforces that a metric's definition is identical
+everywhere and only the metric *set* may differ per environment.
+
+**Review:** the drift test is a guard, not a design. The better shape is one
+config from which the gate drops judged metrics when no key is present, saying
+loudly that it did. Deferred rather than done because it changes the action's
+public input contract, which had shipped hours earlier.
+
+### R27. The fixture corpus is deliberately left untagged — QUEUED
+
+`fixtures/regression_corpus.json` carries no scenario tags, so `fixture-gate`
+runs the unpaired Welch fallback while `agent-gate` and `judge-gate` run paired.
+That was an accident of history that turned out to be useful: both comparison
+paths have CI coverage. Tagging it would remove the only coverage the fallback
+has.
+
+**Review:** confirm this is worth keeping as a deliberate choice, or replace it
+with an explicit unpaired test so the fixture corpus can be tagged like every
+other.

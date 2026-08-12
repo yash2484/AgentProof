@@ -2,6 +2,29 @@
 
 How small a regression does the CI gate actually catch? Measured, not asserted.
 
+> **Partly superseded, 2026-08-12.** Everything below was measured against the
+> *unpaired* two-sample detector, which was the only one that existed at the
+> time. The gate now compares each scenario against itself where the corpus
+> carries scenario identity, and the judge figures in Part 2 are the ones that
+> change most.
+>
+> **Part 1 still stands.** The fixture corpus is deliberately untagged, so
+> `fixture-gate` still runs exactly the unpaired path swept here, and that job
+> is what keeps the fallback covered in CI.
+>
+> **Part 2's conclusion was an incomplete diagnosis.** It attributed the judge
+> gate's deafness entirely to partial credit. Partial credit is real, but the
+> larger cause was the detector's noise model: it treated per-scenario
+> difficulty as measurement noise, inflating sigma roughly sixfold. See
+> "Why the judge gate is deafer", rewritten below, and the README section
+> "The gate failed its own test".
+>
+> The current, enforced figures live in
+> [`test_regression_calibration.py`](../server/tests/unit/test_regression_calibration.py):
+> the smallest faithfulness drop the gate resolves is **0.116 unpaired** and
+> **0.050 paired**, measured by bisection against the shipped baseline. The
+> judge sweep below has not been re-run under pairing.
+
 Measured twice, because the answer differs by metric kind:
 
 | metric kind | example | fires at | reproduce |
@@ -9,9 +32,10 @@ Measured twice, because the answer differs by metric kind:
 | heuristic (noise-free) | `data_exfiltration` | **4 of 12 (33%)** | `cd server && python -m pytest tests/unit/test_detector_sensitivity.py -s` |
 | LLM judge (noisy) | `faithfulness` | **6 of 13 (46%)** | `python scripts/judge_sensitivity_sweep.py` (needs a key) |
 
-The judge-backed gate is about 1.4x deafer, and §"Why the judge gate is deafer"
-below explains why that is a property of the metric rather than a defect in the
-detector.
+The judge-backed gate measured about 1.4x deafer here. §"Why the judge gate is
+deafer" originally attributed that to the metric alone; it has two causes, and
+the larger one was a defect in the detector's noise model. Read that section
+before quoting this table.
 
 ---
 
@@ -114,25 +138,54 @@ Baseline: mean 0.911, std 0.218, n=13.
 
 ## Why the judge gate is deafer
 
-The regex metric scores a leaking trace **0.0**: a full 1.0 drop per trace. The
-judge scores a fabricating trace **0.35–0.55**, because the rest of the answer
-is still grounded and it awards partial credit. That is roughly half the signal
-per degraded trace, so it takes about 1.4x as many of them to clear the same
-statistical bar.
+*Rewritten 2026-08-12. The original version of this section is the paragraph
+marked below; it was right about the mechanism and wrong about it being the
+whole story.*
 
-This is a property of the metric, not a defect in the detector. Partial credit
-is the right behaviour for a groundedness judge — an answer that is four-fifths
-grounded is genuinely not as bad as one that leaks an SSN. The consequence is
-simply that judge-backed gates need either more samples or a looser guard to
-reach the same sensitivity.
+Two causes, and the original text named only the smaller one.
+
+**Partial credit — real, and the original explanation.** The regex metric scores
+a leaking trace **0.0**: a full 1.0 drop per trace. The judge scores a
+fabricating trace **0.35–0.55**, because the rest of the answer is still
+grounded. That is roughly half the signal per degraded trace, so it takes about
+1.4x as many to clear the same bar. This part is a property of the metric, not a
+defect in the detector, and partial credit is the right behaviour for a
+groundedness judge — an answer that is four-fifths grounded is genuinely not as
+bad as one that leaks an SSN.
+
+**The noise model — larger, and missed entirely.** The original section closed
+by concluding this was "a property of the metric, not a defect in the detector."
+That conclusion did not survive being tested. On 2026-08-11 a real 0.109
+faithfulness drop was introduced and the gate passed it at p=0.0939. The cause
+was not partial credit: the detector was treating thirteen per-scenario scores
+as thirteen draws from one distribution, so the spread it called noise was
+really the difference in difficulty *between* scenarios. On that baseline, 86.6%
+of the variance came from one hard scenario, putting sigma at 0.218 against a
+per-scenario run-to-run variation of 0.034 measured directly — about six times
+too large.
+
+The judge gate was deafer partly because judges award partial credit, and mostly
+because the detector was measuring the wrong thing. Pairing each scenario
+against itself removes the second cause; the first remains and is legitimate.
+
+The practical consequence for anyone reading this doc for guidance: judge-backed
+gates do need more samples than heuristic ones, but check your noise model
+before you conclude that sample size is the constraint. Ours was not.
 
 ## Two things this exposed
 
 **Judge scores drift between runs.** `partially_covered` scored 0.20 when the
-baseline was pinned and 0.40 on this sweep — the same trace, the same fixture,
-the same model. A ±0.2 per-trace swing is substantial, and it is the concrete
-argument for the effect-size guard: without it, ordinary judge noise on a small
-corpus would trip the gate on its own.
+baseline was pinned, 0.40 on this sweep, and 0.35 when the baseline was re-pinned
+on 2026-08-12 — the same trace, the same frozen fixture, the same model, three
+different numbers. That is the concrete argument for the effect-size guard:
+without it, ordinary judge noise on a small corpus would trip the gate on its
+own.
+
+Drift has since been measured properly rather than anecdotally, by evaluating a
+byte-identical corpus twice: `faithfulness` moves with a per-scenario standard
+deviation of 0.034, `relevance` with 0.144, and the six measured metrics with
+0.000. Those numbers are what the practical-significance floors are now sized
+against.
 
 **A trace with no writer span is immune.** The `error` scenario's retriever
 fails before the writer runs, so there is nothing to judge and the metric scores
