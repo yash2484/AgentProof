@@ -190,9 +190,12 @@ class RegressionResult(BaseModel):
     reason: str
     # Which comparison actually ran. "paired" when both sides carried matching
     # keys, "welch" for the two-sample fallback, "floor" when the sample was too
-    # small or too degenerate for either test. Reported so a verdict can never
-    # be read without knowing how it was reached.
-    method: Literal["paired", "welch", "floor"] = "welch"
+    # small or too degenerate for either test, and "none" when the candidate did
+    # not drop at all and the detector returned before consulting either.
+    # Reported so a verdict can never be read without knowing how it was
+    # reached, which is also why every exit sets it rather than inheriting this
+    # default.
+    method: Literal["paired", "welch", "floor", "none"] = "welch"
     cohens_dz: float | None = None
     paired_n: int | None = None
 

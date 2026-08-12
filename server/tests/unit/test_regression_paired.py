@@ -85,6 +85,58 @@ def test_falls_back_when_key_overlap_is_too_small():
     assert res.method == "welch"
 
 
+def test_a_missing_pinned_scenario_forfeits_pairing_entirely():
+    """Partial overlap is not a smaller paired comparison; it is a different one.
+
+    The detector paired on whatever intersected as long as the intersection
+    cleared ``min_sample_size``. Drop the hard scenario from the candidate and
+    it would keep pairing over the twelve easy ones, report a healthy baseline
+    mean computed over those twelve, and never say the population had changed.
+    The run that quietly stops comparing the hard scenario is exactly the run
+    that looks fine.
+    """
+    base = _baseline(REAL_FAITHFULNESS, keyed=True)
+    cand = _candidate([0.0] * 13)
+    # Index 10 is the 0.20 scenario carrying most of the baseline's variance.
+    del cand[KEYS[10]]
+
+    res = detect_regression(
+        base, list(cand.values()), RegressionConfig(), candidate_by_key=cand
+    )
+    assert res.method != "paired"
+    assert res.paired_n is None
+    assert res.baseline_mean == base.mean, "the pinned mean, not a 12-key subset"
+
+
+def test_extra_candidate_scenarios_sit_out_and_are_declared():
+    """A new scenario has nothing pinned to pair against, so it cannot be used.
+
+    Excluding it is right; excluding it silently is not. ``paired_n`` would
+    otherwise read 13 on a 14-scenario run with no indication of the gap.
+    """
+    base = _baseline(REAL_FAITHFULNESS, keyed=True)
+    cand = _candidate([0.0] * 13) | {"scenario-new": 0.42}
+
+    res = detect_regression(
+        base, list(cand.values()), RegressionConfig(), candidate_by_key=cand
+    )
+    assert res.method == "paired"
+    assert res.paired_n == 13
+    assert "1 candidate scenario had no pinned counterpart" in res.reason
+
+
+def test_a_no_drop_verdict_does_not_claim_a_test_that_never_ran():
+    """``method`` answers "how was this reached", so it cannot inherit a default.
+
+    The unpaired no-drop exit returned before any test or floor and inherited
+    the field default, reporting ``welch`` for a Welch test that never ran.
+    """
+    base = _baseline(REAL_FAITHFULNESS, keyed=False)
+    res = detect_regression(base, REAL_FAITHFULNESS, RegressionConfig())
+    assert res.is_regression is False
+    assert res.method == "none"
+
+
 def test_paired_catches_the_drop_that_unpaired_misses():
     """The measured failure: a real 0.109 mean drop the Welch path let through.
 

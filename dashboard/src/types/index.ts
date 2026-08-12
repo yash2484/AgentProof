@@ -261,7 +261,8 @@ export interface GateVerdict {
    * degenerate for either test. They have very different minimum detectable
    * effects, so a verdict cannot be read without it. Null when not assessed.
    */
-  method: "paired" | "welch" | "floor" | null;
+  /** `none` = the candidate did not drop, so no test or floor was consulted. */
+  method: "paired" | "welch" | "floor" | "none" | null;
   /** Paired effect size (mean delta over sd of deltas). Null when unpaired. */
   cohens_dz: number | null;
   /** Scenarios matched on both sides. Null when unpaired. */

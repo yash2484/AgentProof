@@ -344,4 +344,34 @@ describe("a material drop the sample cannot confirm", () => {
     expect(v.tone).toBe("serious");
     expect(v.focus).toBe("faithfulness");
   });
+
+  it("sends the reader to the largest drop, not the first metric alphabetically", () => {
+    // The gate arrives sorted by metric name because that is how the server
+    // iterates its baselines. Taking `[0]` from the filtered slice therefore
+    // fronted `cost_budget` over a collapsed `faithfulness` and called it the
+    // worst. The metric a reader is told to open first has to be earned.
+    const v = overviewVerdict({
+      metrics: [metric({ failed: 0, count: 13 })],
+      gate: [
+        gate({
+          metric_name: "cost_budget",
+          is_warning: true,
+          baseline_mean: 0.98,
+          candidate_mean: 0.96,
+          delta: -0.02,
+        }),
+        gate({
+          metric_name: "faithfulness",
+          is_warning: true,
+          baseline_mean: 0.91,
+          candidate_mean: 0.6,
+          delta: -0.31,
+        }),
+      ],
+      scored: 13,
+    });
+
+    expect(v.focus).toBe("faithfulness");
+    expect(v.detail).toContain("faithfulness");
+  });
 });

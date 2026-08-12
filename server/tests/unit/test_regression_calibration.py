@@ -7,53 +7,70 @@ because nobody had ever written down how small a regression it could resolve.
 
 These tests write it down and enforce it. They are not testing statistics; they
 are pinning the *sensitivity* of a shipped product so it cannot drift silently.
-If a threshold changes, the documented floor here changes with it, in a diff
-someone has to read.
+
+The distribution is read from the shipped baseline rather than copied into this
+file. An earlier version hardcoded a snapshot and described it as "the real
+pinned distribution". The baseline was then re-pinned, the snapshot went stale,
+and the tests kept passing because they were self-consistent with their own
+copy — the exact drift they exist to prevent, occurring inside the detector for
+it. Sensitivity is a property of the detector *and* the baseline it compares
+against, so re-pinning is allowed to move these floors, and is required to say
+so in a diff.
 """
 
 from __future__ import annotations
 
+import json
 from datetime import UTC, datetime
+from pathlib import Path
 
-import numpy as np
 import pytest
 from agentproof_server.eval_engine.models import Baseline, RegressionConfig
 from agentproof_server.eval_engine.regression import detect_regression
 
-# The real pinned faithfulness distribution from baselines/demo-agent-replay.json.
-# Kept verbatim: calibration against a synthetic distribution would measure a
-# fiction. 88.8% of its squared deviation is the single 0.20.
-REAL_FAITHFULNESS = [
-    0.95, 1.0, 0.95, 0.99, 0.95, 1.0, 1.0, 1.0, 1.0, 1.0, 0.2, 0.95, 0.85,
-]
-KEYS = [f"scenario-{i:02d}" for i in range(len(REAL_FAITHFULNESS))]
+BASELINE_FILE = Path(__file__).resolve().parents[3] / "baselines" / "demo-agent-replay.json"
 
-# Documented floors. These are measurements, not aspirations.
-UNPAIRED_MIN_DETECTABLE_DROP = 0.146
-PAIRED_MIN_DETECTABLE_DROP = 0.05
-MEASURED_DEMO_DROP = 0.109  # what the 2026-08-11 degradation actually produced
+# Documented floors, measured against the baseline above. These are
+# measurements, not aspirations. If a threshold or the baseline changes, the
+# assertions below fail until these are updated in the same commit.
+UNPAIRED_MIN_DETECTABLE_DROP = 0.116
+PAIRED_MIN_DETECTABLE_DROP = 0.050
+
+# What the 2026-08-11 degradation actually produced, measured under the
+# baseline pinned at the time. Kept as a fixed historical figure: it is the
+# reason the detector changed, and it does not move when the baseline is
+# re-pinned.
+MEASURED_DEMO_DROP = 0.109
+
+
+def _pinned() -> tuple[list[str], list[float], dict]:
+    raw = {
+        b["metric_name"]: b
+        for b in json.loads(BASELINE_FILE.read_text(encoding="utf-8"))["baselines"]
+    }["faithfulness"]
+    keys = sorted(raw["scores_by_key"])
+    return keys, [raw["scores_by_key"][k] for k in keys], raw
+
+
+KEYS, SCORES, RAW = _pinned()
 
 
 def _baseline(*, keyed: bool) -> Baseline:
-    arr = np.asarray(REAL_FAITHFULNESS, dtype=float)
     return Baseline(
-        project="demo",
+        project=RAW["project"],
         metric_name="faithfulness",
-        scores=REAL_FAITHFULNESS,
-        scores_by_key=dict(zip(KEYS, REAL_FAITHFULNESS, strict=True)) if keyed else None,
-        mean=float(arr.mean()),
-        std=float(arr.std(ddof=1)),
-        sample_size=len(REAL_FAITHFULNESS),
+        scores=SCORES,
+        scores_by_key=dict(zip(KEYS, SCORES, strict=True)) if keyed else None,
+        mean=RAW["mean"],
+        std=RAW["std"],
+        sample_size=len(SCORES),
         created_at=datetime.now(UTC),
     )
 
 
 def _shift(drop: float) -> dict[str, float]:
     """Every scenario drops by the same amount — the cleanest possible signal."""
-    return {
-        k: max(0.0, b - drop)
-        for k, b in zip(KEYS, REAL_FAITHFULNESS, strict=True)
-    }
+    return {k: max(0.0, b - drop) for k, b in zip(KEYS, SCORES, strict=True)}
 
 
 def _fires(drop: float, *, paired: bool) -> bool:
@@ -76,6 +93,17 @@ def _smallest_detectable(*, paired: bool) -> float:
         else:
             lo = mid
     return round(hi, 3)
+
+
+# --- the baseline this is calibrated against -------------------------------
+
+def test_the_pinned_baseline_supports_pairing():
+    """Without per-scenario identity the paired floor below is unreachable."""
+    assert RAW.get("scores_by_key"), (
+        "the pinned baseline carries no per-scenario scores, so the gate can "
+        "only run the less sensitive unpaired comparison"
+    )
+    assert len(RAW["scores_by_key"]) == RAW["sample_size"]
 
 
 # --- must catch -----------------------------------------------------------
@@ -103,8 +131,9 @@ def test_unpaired_floor_is_where_we_documented_it():
     measured = _smallest_detectable(paired=False)
     assert measured == pytest.approx(UNPAIRED_MIN_DETECTABLE_DROP, abs=0.005), (
         f"The unpaired gate's minimum detectable drop moved to {measured}. "
-        f"If this was intentional, update UNPAIRED_MIN_DETECTABLE_DROP and the "
-        f"README's stated sensitivity in the same commit."
+        f"A threshold change or a re-pinned baseline can both do this. If it "
+        f"was intended, update UNPAIRED_MIN_DETECTABLE_DROP and the README's "
+        f"stated sensitivity in the same commit."
     )
 
 
@@ -112,7 +141,7 @@ def test_paired_floor_is_where_we_documented_it():
     measured = _smallest_detectable(paired=True)
     assert measured == pytest.approx(PAIRED_MIN_DETECTABLE_DROP, abs=0.005), (
         f"The paired gate's minimum detectable drop moved to {measured}. "
-        f"If this was intentional, update PAIRED_MIN_DETECTABLE_DROP and the "
+        f"If this was intended, update PAIRED_MIN_DETECTABLE_DROP and the "
         f"README's stated sensitivity in the same commit."
     )
 
@@ -120,7 +149,7 @@ def test_paired_floor_is_where_we_documented_it():
 def test_pairing_is_what_closed_the_gap_on_the_real_regression():
     """The 2026-08-11 finding, encoded so it cannot regress back.
 
-    A drop of 0.109 sits below the unpaired floor and above the paired one.
+    The measured drop sits below the unpaired floor and above the paired one.
     That single fact is the whole reason the detector changed.
     """
     assert UNPAIRED_MIN_DETECTABLE_DROP > MEASURED_DEMO_DROP, (

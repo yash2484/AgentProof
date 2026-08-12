@@ -27,6 +27,11 @@ from agentproof_server.eval_engine import details as details_shape
 from agentproof_server.eval_engine.baseline import baselines_from_json
 from agentproof_server.eval_engine.config_parser import load_config
 from agentproof_server.eval_engine.models import Baseline, RegressionConfig
+from agentproof_server.eval_engine.pairing import (
+    PAIR_KEY_TAG,
+    pair_keys,
+    scores_by_key,
+)
 from agentproof_server.eval_engine.regression import detect_regression
 from agentproof_server.provenance import exclude_generated, is_generated
 
@@ -452,7 +457,11 @@ def _candidate_scores_stmt(project: str | None, since: datetime | None):
         # The scenario that produced the trace, so the dashboard can run the
         # same paired comparison CI runs. Without it this endpoint computes an
         # unpaired verdict and can disagree with the gate on the same commit.
-        TraceModel.tags["scenario"].astext.label("scenario"),
+        TraceModel.tags[PAIR_KEY_TAG].astext.label("scenario"),
+        # Carried so eligibility is decided per *trace*, exactly as the CLI
+        # decides it. Deciding it from eval rows alone made an untagged trace
+        # forfeit pairing only for the metrics it happened to score.
+        EvalResultModel.trace_id,
     ).select_from(EvalResultModel)
     return _scope_evals(stmt, project, since).where(~_degraded_expr())
 
@@ -1029,31 +1038,41 @@ async def get_evals_analytics(
         candidate_since = runs[-1]["run_at"] if runs else None
         scores_by_metric: dict[str, list[float]] = {}
         keyed_by_metric: dict[str, dict[str, float]] = {}
-        unpairable: set[str] = set()
         if runs:
             candidate_rows = (
                 await db.execute(
                     _candidate_scores_stmt(project, candidate_since)
                 )
             ).all()
-            for metric_name, score, scenario in candidate_rows:
+            scenario_by_trace: dict[str, str | None] = {}
+            for metric_name, score, scenario, trace_id in candidate_rows:
                 scores_by_metric.setdefault(metric_name, []).append(float(score))
-                # Same all-or-nothing rule the CLI applies: an untagged trace or
-                # a scenario appearing twice forfeits pairing for that metric
-                # rather than letting one score take another's slot.
-                slot = keyed_by_metric.setdefault(metric_name, {})
-                if not scenario or scenario in slot:
-                    unpairable.add(metric_name)
-                else:
-                    slot[scenario] = float(score)
+                scenario_by_trace[str(trace_id)] = scenario
+            # The identical rule the CLI applies, from the identical function:
+            # corpus-wide all-or-nothing over traces, then a per-metric drop for
+            # any metric whose rows collide on a scenario. Reimplementing it
+            # here is what let CI and this endpoint disagree on one commit.
+            keys = pair_keys(
+                [
+                    {"trace_id": tid, "tags": {PAIR_KEY_TAG: scenario}}
+                    for tid, scenario in scenario_by_trace.items()
+                ]
+            )
+            keyed_by_metric = (
+                scores_by_key(
+                    (
+                        (metric_name, str(trace_id), float(score))
+                        for metric_name, score, _scenario, trace_id in candidate_rows
+                    ),
+                    keys,
+                )
+                if keys
+                else {}
+            )
         gate = _gate_payload(
             baselines,
             scores_by_metric,
-            keyed_by_metric={
-                name: keyed
-                for name, keyed in keyed_by_metric.items()
-                if name not in unpairable
-            },
+            keyed_by_metric=keyed_by_metric,
             floors=_metric_floors(),
         )
 

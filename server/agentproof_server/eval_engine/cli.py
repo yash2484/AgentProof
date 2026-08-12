@@ -36,6 +36,12 @@ from agentproof_server.eval_engine.models import (
     RegressionConfig,
     RegressionReport,
 )
+from agentproof_server.eval_engine.pairing import (
+    # Defined here originally; moved to `pairing` so the analytics endpoint
+    # applies the identical rule rather than its own reading of it.
+    pair_keys,
+    scores_by_key,
+)
 from agentproof_server.eval_engine.regression import detect_regression
 from agentproof_server.eval_engine.runner import EvalRunner
 
@@ -105,46 +111,14 @@ def regression_metric_names(config) -> set[str]:
     return {m.name for m in config.metrics if m.regression_alert}
 
 
-# The trace tag carrying a stable scenario identity. A captured trace has a
-# fresh UUID and a shared trace name, so without this the corpus cannot be
-# compared to itself across runs.
-PAIR_KEY_TAG = "scenario"
-
-
-def pair_keys(traces: list[dict], tag: str = PAIR_KEY_TAG) -> dict[str, str]:
-    """Map ``trace_id -> scenario key``, or ``{}`` if the corpus cannot pair.
-
-    All-or-nothing on purpose. Pairing a subset of the corpus would silently
-    change the population under test between runs, and pairing on a duplicated
-    key would drop a scenario without saying so. Either the whole corpus has a
-    unique key per trace or the comparison falls back to unpaired, which is
-    less sensitive but never wrong about what it compared.
-    """
-    keys: dict[str, str] = {}
-    seen: set[str] = set()
-    for trace in traces:
-        key = (trace.get("tags") or {}).get(tag)
-        if not key or key in seen:
-            return {}
-        seen.add(key)
-        keys[str(trace["trace_id"])] = str(key)
-    return keys
-
-
 def _scores_by_key(
     report, keys_by_trace: dict[str, str]
 ) -> dict[str, dict[str, float]]:
     """Per-metric ``scenario -> score``, omitting metrics that cannot pair."""
-    keyed: dict[str, dict[str, float]] = {}
-    unpairable: set[str] = set()
-    for r in report.results:
-        key = keys_by_trace.get(r.trace_id)
-        slot = keyed.setdefault(r.metric_name, {})
-        if key is None or key in slot:
-            unpairable.add(r.metric_name)
-        else:
-            slot[key] = r.score
-    return {k: v for k, v in keyed.items() if k not in unpairable}
+    return scores_by_key(
+        ((r.metric_name, r.trace_id, r.score) for r in report.results),
+        keys_by_trace,
+    )
 
 
 def format_regression_report(report: RegressionReport) -> str:

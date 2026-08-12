@@ -15,6 +15,11 @@ from datetime import UTC, datetime
 import numpy as np
 from agentproof_server.api.analytics import _gate_payload
 from agentproof_server.eval_engine.models import Baseline
+from agentproof_server.eval_engine.pairing import (
+    PAIR_KEY_TAG,
+    pair_keys,
+    scores_by_key,
+)
 
 REAL_FAITHFULNESS = [
     0.95, 1.0, 0.95, 0.99, 0.95, 1.0, 1.0, 1.0, 1.0, 1.0, 0.2, 0.95, 0.85,
@@ -98,3 +103,33 @@ def test_metric_without_candidate_scores_reports_shape_consistently():
     assert row["comparable"] is False
     assert row["method"] is None
     assert row["paired_n"] is None
+
+
+def test_one_untagged_trace_forfeits_pairing_for_every_metric():
+    """The endpoint applies the CLI's corpus-wide rule, not a per-metric one.
+
+    The endpoint used to decide eligibility from eval rows, so an untagged
+    trace only cost pairing for the metrics it happened to score. Metrics have
+    different ``applies_to`` targets, so a trace with no tool_use span produces
+    no ``tool_allowlist`` row at all -- and that metric stayed paired here while
+    the CLI unpaired the whole corpus. Same commit, two verdicts.
+    """
+    rows = [
+        ("faithfulness", str(i), 0.9) for i in range(len(KEYS))
+    ] + [
+        # This metric never scored the untagged trace, so a per-metric rule
+        # would leave it eligible.
+        ("tool_allowlist", str(i), 1.0) for i in range(len(KEYS) - 1)
+    ]
+    tagged = [
+        {"trace_id": str(i), "tags": {PAIR_KEY_TAG: k}}
+        for i, k in enumerate(KEYS)
+    ]
+    untagged = [dict(t) for t in tagged]
+    untagged[-1]["tags"] = {}
+
+    assert scores_by_key(rows, pair_keys(tagged)).keys() == {
+        "faithfulness",
+        "tool_allowlist",
+    }
+    assert scores_by_key(rows, pair_keys(untagged)) == {}

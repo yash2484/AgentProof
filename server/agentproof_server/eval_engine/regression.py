@@ -98,8 +98,14 @@ def _detect_paired(
     candidate_by_key: Mapping[str, float],
     keys: list[str],
     cfg: RegressionConfig,
+    unpinned: int = 0,
 ) -> RegressionResult:
-    """Scenario-by-scenario comparison over the keys present on both sides."""
+    """Scenario-by-scenario comparison over the keys present on both sides.
+
+    ``unpinned`` counts candidate scenarios with no pinned counterpart. They
+    cannot be paired against anything, so they sit out — but the report says so
+    rather than quietly reporting a smaller ``paired_n`` than the run had.
+    """
     b = [float(baseline_by_key[k]) for k in keys]
     c = [float(candidate_by_key[k]) for k in keys]
     deltas = [bi - ci for bi, ci in zip(b, c, strict=True)]
@@ -107,6 +113,12 @@ def _detect_paired(
     baseline_mean = float(np.mean(b))
     candidate_mean = float(np.mean(c))
     mean_delta = float(np.mean(deltas))
+    note = (
+        f" {unpinned} candidate scenario{'' if unpinned == 1 else 's'} had no "
+        f"pinned counterpart and sat out."
+        if unpinned
+        else ""
+    )
     fields = {
         "metric_name": baseline.metric_name,
         "baseline_mean": baseline_mean,
@@ -127,7 +139,7 @@ def _detect_paired(
             is_regression=False,
             reason=(
                 f"No drop (paired mean delta {mean_delta:+.3f} over "
-                f"{len(keys)} scenarios)."
+                f"{len(keys)} scenarios).{note}"
             ),
         )
 
@@ -140,7 +152,7 @@ def _detect_paired(
             reason=(
                 f"Paired mean drop {mean_delta:.3f} < practical floor "
                 f"{cfg.min_mean_drop} over {len(keys)} scenarios — below the "
-                f"level worth acting on, regardless of significance."
+                f"level worth acting on, regardless of significance.{note}"
             ),
         )
 
@@ -156,7 +168,7 @@ def _detect_paired(
             is_regression=True,
             reason=(
                 f"Every one of {len(keys)} scenarios dropped by "
-                f"{mean_delta:.3f} — uniform shift, no spread to test."
+                f"{mean_delta:.3f} — uniform shift, no spread to test.{note}"
             ),
         )
 
@@ -169,7 +181,7 @@ def _detect_paired(
             is_regression=mean_delta >= cfg.min_mean_drop,
             reason=(
                 f"Undefined paired t-test -> practical floor: drop "
-                f"{mean_delta:.3f} >= {cfg.min_mean_drop}."
+                f"{mean_delta:.3f} >= {cfg.min_mean_drop}.{note}"
             ),
         )
 
@@ -191,7 +203,7 @@ def _detect_paired(
             f"n={len(keys)}. Not blocking, and not clean either."
         )
     return RegressionResult(
-        **fields, is_regression=is_reg, is_warning=is_warning, reason=reason
+        **fields, is_regression=is_reg, is_warning=is_warning, reason=reason + note
     )
 
 
@@ -203,18 +215,31 @@ def detect_regression(
 ) -> RegressionResult:
     """Decide whether the candidate is a regression against ``baseline``.
 
-    Pairs scenario-by-scenario when both sides carry keys and enough of them
-    overlap; otherwise falls back to the two-sample Welch path. The fallback is
-    deliberate rather than best-effort: pairing on a partial or renamed key set
-    would compare one scenario's baseline against another's candidate, and a
-    silently mispaired verdict is worse than an underpowered honest one.
+    Pairs scenario-by-scenario when both sides carry keys and the candidate
+    covers **every** pinned scenario; otherwise falls back to the two-sample
+    Welch path. The fallback is deliberate rather than best-effort.
+
+    The all-or-nothing rule is the point. Pairing on whatever happened to
+    intersect would let a renamed or dropped scenario shrink the population
+    under test between two runs without saying so, and the run that quietly
+    stops comparing the hard scenario is exactly the run that looks fine. An
+    underpowered honest comparison beats a confident one over a corpus that
+    changed shape. Extra candidate scenarios are the harmless direction — there
+    is nothing pinned to pair them against — so they sit out and are counted in
+    the reason string.
     """
     baseline_by_key = baseline.scores_by_key
     if baseline_by_key and candidate_by_key:
         keys = sorted(set(baseline_by_key) & set(candidate_by_key))
-        if len(keys) >= cfg.min_sample_size:
+        covers_baseline = len(keys) == len(baseline_by_key)
+        if covers_baseline and len(keys) >= cfg.min_sample_size:
             return _detect_paired(
-                baseline, baseline_by_key, candidate_by_key, keys, cfg
+                baseline,
+                baseline_by_key,
+                candidate_by_key,
+                keys,
+                cfg,
+                unpinned=len(set(candidate_by_key) - set(baseline_by_key)),
             )
 
     cand = list(candidate_scores)
@@ -229,10 +254,13 @@ def detect_regression(
         "cohens_d": None,
     }
 
-    # 1. No drop (improvement or equal) is never a regression.
+    # 1. No drop (improvement or equal) is never a regression. No test ran and
+    #    no floor was consulted, so `method` says so rather than inheriting the
+    #    field default and claiming a Welch test that never happened.
     if candidate_mean >= baseline.mean:
         return RegressionResult(
             **fields,
+            method="none",
             is_regression=False,
             reason=(
                 f"No drop (candidate {candidate_mean:.3f} >= "
@@ -323,5 +351,9 @@ def detect_regression(
             f"n={len(cand)}. Not blocking, and not clean either."
         )
     return RegressionResult(
-        **fields, is_regression=is_reg, is_warning=is_warning, reason=reason
+        **fields,
+        method="welch",
+        is_regression=is_reg,
+        is_warning=is_warning,
+        reason=reason,
     )

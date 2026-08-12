@@ -86,7 +86,12 @@ export function metricSeverity(
   // The gate fired, so a p-value and an effect size exist behind the claim.
   if (gate?.is_regression) return "serious";
 
-  if (metric.failed === 0) return "clear";
+  // A metric can move materially against its baseline while every individual
+  // score stays inside its threshold, so `failed === 0` does not settle it.
+  // Without this the strip painted a metric clear while the lede called the
+  // same metric unresolved — one screen, two verdicts. Every branch below
+  // already returns at least "watch", so the floor only bites here.
+  if (metric.failed === 0) return gate?.is_warning ? "watch" : "clear";
 
   const rate = metric.failed / metric.count;
 
@@ -208,9 +213,15 @@ export function describeGate(gate: GateVerdict | undefined): GateDescription {
       severity: "watch",
     };
   }
+  // Reaching here means neither guard set nor the practical floor was cleared,
+  // and which one fell short is the server's business. This line used to assert
+  // "not statistically significant" unconditionally, which is false whenever a
+  // significant-but-trivial drop lands here (p=0.01 with d=0.3, or a drop under
+  // the metric's floor). Report both numbers and the outcome; do not re-derive
+  // alpha on the client to explain a decision made on the server.
   return {
     headline: "Not flagged",
-    statLine: `effect is ${effectSizeLabel(d)} (${dText}) and not statistically significant at this sample size (${pText})`,
+    statLine: `${effectSizeLabel(d)} effect (${dText}) at ${pText} — below the level the gate acts on`,
     severity: "clear",
   };
 }
