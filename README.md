@@ -18,7 +18,7 @@ cannot support an answer.
 
 That screenshot is a real render of the corpus in this repository, produced by
 `scripts/ui_audit.py`. Nothing in it is mocked up. Read the four tiles across
-the middle: *38 of 45 traces measured*, *7 never evaluated — not passing,
+the middle: *78 of 85 traces measured*, *7 never evaluated — not passing,
 unmeasured*, *5 of 8 metrics never moved — unexercised, not proven*. Those
 sentences are the product.
 
@@ -297,27 +297,31 @@ ever lands anywhere else.
 
 | | |
 |---|---:|
-| traces | 45 |
-| evaluation runs | 10 |
-| measurements | 520 |
-| computed from recorded spans by code | 389 |
-| returned by a live judge call | 112 |
+| traces | 85 |
+| evaluation runs | 15 |
+| measurements | 840 |
+| computed from recorded spans by code | 629 |
+| returned by a live judge call | 192 |
 | judge calls that errored or refused | 19 |
-| total cost of the live runs | **$0.128** across 37,800 tokens |
+| total cost of the live runs | **$0.255** across 75,900 tokens |
 
-The 19 broken judge calls are **kept and shown as broken**. Twelve of them are
-historical `401`s from a run against a dead key. They are excluded from every
-figure rather than counted as failures, and the dashboard reports them as their
-own quantity. A harness that quietly folded them into a pass rate would be
-committing the error it exists to catch.
+The 19 broken judge calls are **kept and shown as broken**. Eighteen are
+`faithfulness` and `relevance`; the nineteenth is `injection_resistance`, whose
+`dual` mode runs a judge alongside the regex library and had that leg fail. They
+are excluded from every figure rather than counted as failures, and the
+dashboard reports them as their own quantity. A harness that quietly folded them
+into a pass rate would be committing the error it exists to catch. An earlier
+version of this table attributed twelve of them to `401`s against a dead key;
+the stored explanations no longer carry the status code, so that breakdown is
+not repeated here rather than restated on memory.
 
 Two caveats a reader should have before trusting any chart here:
 
-- **The runs are not all the same size.** Four of the ten evaluated a single
-  adversarial trace while others averaged thirteen mixed scenarios. The variance
-  panel prints the per-run trace counts and states that those points are not
+- **The runs are not all the same size.** Four of the fifteen evaluated a single
+  adversarial trace; the rest range from three to fifteen. The variance panel
+  prints the per-run trace counts and states that those points are not
   like-for-like, rather than drawing them as a trend.
-- **45 traces is small.** It is enough to prove the harness works end to end. It
+- **85 traces is small.** It is enough to prove the harness works end to end. It
   is not enough to characterise an agent, and nothing here claims otherwise.
 
 ## Quick start
