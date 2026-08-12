@@ -1,22 +1,56 @@
 # AgentProof — Progress
 
-**Current phase:** Ledger frontend — **built and verified**
-**Branch:** `overview-analytics`
-**Last updated:** 2026-08-10
+**Current phase:** Paired regression detection — **built and verified**
+**Branch:** `feat/paired-regression` (PR #12)
+**Last updated:** 2026-08-12
 
-> Ledger is implemented across all six routes and the app lands on the
-> **measured** corpus (`demo-research-agent`). The branch is demo-ready: run
-> `python scripts/demo_check.py` before any capture — it fails if the landing
-> project or a generated-data marker ever regresses.
+> The gate was packaged as a composite action and this repo's CI now consumes it
+> via `uses: ./` (PR #10, merged `a68c165`). It was then tested with a
+> deliberately injected regression **and failed to catch it** — the detector was
+> using between-scenario difficulty as its noise model. The comparison is now
+> paired scenario-against-scenario, with practical-significance floors sized
+> from measured judge noise, and the gate's sensitivity is asserted by tests
+> derived from the shipped baseline.
 >
-> **Next session reads `docs/handover-launch-readiness.md` first.** It ranks
-> everything remaining for a public post and a demo. The P0 item is that
-> `main` still holds the pre-Ledger dark dashboard, so anyone clicking through
-> from a post lands on the old product.
+> Same degradation, same fixtures, only the comparison changed:
+> `p=0.0939` PASS → `p=0.0043` FAIL, with the clean agent still passing.
+>
+> **Two things a next session should not miss.** The demo `walkthrough.md`
+> reproduction had been claiming an outcome the tool stopped producing — a
+> single prompt-injection breach no longer blocks, and it takes three. That is
+> disclosed, not fixed, and it is `R23` in `docs/review-later.md`. And the
+> baseline was re-pinned in the keyed format, so any figure quoted from the
+> pre-2026-08-12 baseline is superseded.
 
 ## Last verified working
 
-Full sweep, 2026-08-10, after Ledger landed.
+Full sweep, 2026-08-12, on `feat/paired-regression`. Every figure below was
+produced by running the command in the same session that wrote this table.
+
+| Suite | Result | How verified |
+|---|---|---|
+| server (host) | **416 passed, 36 skipped** | `python -m pytest tests/ -q` from `server/` |
+| sdk | **43 passed** | `python -m pytest tests/ -q` from `sdk/` |
+| demo_agent | **38 passed** | `python -m pytest tests/ -q` from `demo_agent/` |
+| dashboard | **418 passed, 33 files** | `npm test` from `dashboard/` |
+| dashboard types + lint | exit 0, exit 0 | `npx tsc -b`; `npx eslint . --ext ts,tsx` |
+| lint (python) | All checks passed | `ruff check sdk/ server/ demo_agent/ scripts/` from the repo root |
+| CI, PR #12 | **8/8 green** | `lint`, `test-sdk`, `test-server`, `test-dashboard`, `judge-key`, `fixture-gate`, `agent-gate`, `judge-gate` |
+| gate vs degraded agent | **FAIL, exit 1** | paired, `drop 0.085, p=0.0043, d_z=0.870` |
+| gate vs clean agent | PASS, exit 0 | paired, `delta -0.008` — no false positive |
+| live endpoint | 200, all 8 metrics `method=paired`, `paired_n=13` | `GET /api/v1/evals/analytics?project=demo-research-agent` |
+
+`demo_agent` is 38/38 for the first time: the `trigger_evals` timeout stopped
+firing when `injection_resistance` moved from `dual` to `heuristic`, which
+removed a judge call per `llm_call` span. Measured by putting it back — `dual`
+fails at 36.3s, `heuristic` passes in three consecutive runs. **The symptom is
+gone, the defect is not:** the 30-second timeout is still fixed against a batch
+whose cost depends on the config.
+
+Superseded figures from the previous sweep are kept below for the trail.
+
+<details>
+<summary>Previous sweep, 2026-08-10, after Ledger landed</summary>
 
 | Suite | Result | How verified |
 |---|---|---|
@@ -55,8 +89,11 @@ Application-hardening figures, verified 2026-08-08 before that merge, unchanged
 since: sdk 43 passed; demo_agent 37 passed, 1 skipped; dashboard 140 passed;
 CI 6/6; both regression gates PASS exit 0.
 
+</details>
+
 **Repo:** public, `github.com/yash2484/AgentProof`. Tags continuous
-`phase-1` … `phase-8`. Remote branches: `main`, `overview-analytics`.
+`phase-1` … `phase-8`. Remote branches: `main`, `feat/paired-regression`.
+`overview-analytics` and `feat/composite-action` are merged.
 
 ## The measured corpus — `demo-research-agent`
 
@@ -192,7 +229,109 @@ Inter, which is why headings looked subtly off.
 No dark variant. Questioned by the owner and dropped: one theme that is exactly
 right beats two that are merely fine.
 
-## Built & verified — Ledger (this phase)
+## Built & verified — the composite action and paired detection (this phase)
+
+Two pieces of work, 2026-08-11 to 2026-08-12. The second exists because the
+first was tested honestly.
+
+**1. The gate became something a stranger can adopt.** PR #10, merged
+`a68c165`. `action.yml` at the repo root wraps install → optional capture →
+`eval_engine.cli regression`, installing the engine from `GITHUB_ACTION_PATH` so
+a consumer gets the engine from the same commit as the `action.yml` they pinned.
+`regression.yml` lost its hand-rolled steps and now calls `uses: ./`, so the
+thing a stranger adds is the thing this repo runs. A `judge-gate` job runs the
+two judged metrics when `ANTHROPIC_API_KEY` is present, resolving the secret in
+its own job because `secrets` is unreadable from a job-level `if:` — forks get
+no secrets and skip rather than fail.
+
+The action refuses to run a config declaring `llm_judge` metrics without a key.
+An unkeyed judge does not raise; it scores every span 0.0, so the report would
+read `faithfulness 0.911 -> 0.000` and blame the pull request for a missing
+secret.
+
+**2. The gate failed its own test, and was rebuilt.** PR #12. A degradation was
+injected (the clause *"Answer using ONLY the provided context."* removed from
+the writer prompt, fixtures re-recorded live because replay is blind to prompt
+changes). Faithfulness fell 0.109 and **the gate passed it** at `p=0.0939`.
+
+The detector was correct to its specification and the specification was wrong:
+thirteen per-scenario scores were being treated as thirteen draws from one
+distribution, so the spread called "noise" was really difference in difficulty
+between scenarios. 86.6% of that baseline's variance came from one hard
+scenario, putting sigma at 0.218 against a per-scenario run-to-run variation of
+0.034 — about six times too large, and a minimum detectable regression of
+roughly fifteen points. No amount of extra corpus fixes that; the error was in
+the model, not the sample.
+
+What landed:
+
+- **Paired comparison.** Baselines carry `scores_by_key`; a run is compared
+  scenario against scenario with a paired t-test and Cohen's *d_z*. Falls back
+  to Welch when identity is missing, or when the candidate does not cover every
+  pinned scenario — deliberately, since a run that quietly stops comparing the
+  hard scenario is exactly the run that looks fine.
+- **Scenario identity.** The SDK already supported per-invoke `trace_tags` and
+  had no caller; `demo_agent` now stamps the scenario and the CLI reads it back.
+  All-or-nothing per corpus and per metric.
+- **A practical-significance floor**, necessary on both statistical paths.
+  Pairing alone drops the noise floor far enough that almost anything becomes
+  significant, and a gate that fires weekly gets switched off.
+- **Per-metric floors, measured.** Two evaluations of a byte-identical corpus:
+  `faithfulness` sd 0.034, `relevance` sd 0.144, the six measured metrics 0.000.
+  `relevance` sets its own floor at 0.15, above its 0.120 three-sigma.
+- **A warning state.** A drop clearing the floor and the effect guard but
+  missing significance reports `warn`, not `ok`, in the CLI and on the dashboard
+  card. "Could not tell" is not "fine".
+- **Calibration tests** pinning the sensitivity itself, read from the shipped
+  baseline rather than a copy: **0.116 unpaired, 0.050 paired**. An earlier
+  version hardcoded a snapshot, the baseline was re-pinned, and the tests kept
+  passing against their own stale copy — the exact drift they exist to prevent.
+- **Dashboard/CI alignment.** `_gate_payload` was computing an unpaired verdict
+  against a global floor while CI computed a paired one against per-metric
+  floors, so the two could disagree about the same commit. Fixed, plus the two
+  config drifts that made alignment impossible anyway; `test_config_drift.py`
+  now enforces that a metric's definition is global and only the *set* is local.
+
+**Baseline re-pinned** in the keyed format from the first of two clean runs on
+unmodified main, by a rule fixed before either run's numbers were seen.
+Continuity: faithfulness came out at 0.9077 and 0.9246 against the 2026-08-08
+pinned 0.9108, so nothing drifted while the format changed.
+
+**Result, same degradation and same fixtures throughout:** unpaired `p=0.0939`
+PASS → paired `drop 0.085, p=0.0043, d_z=0.870` FAIL, clean agent `delta -0.008`
+PASS.
+
+**What code review caught in this work**, all five in code written during it:
+
+- **The alignment fix was still misaligned.** The endpoint decided pairing
+  eligibility per *metric* from eval rows; the CLI decides it per *trace*,
+  corpus-wide. Metrics have different `applies_to` targets, so one untagged
+  trace with no tool_use span cost pairing for `faithfulness` and left
+  `tool_allowlist` paired — CI unpaired everything, the dashboard did not. Same
+  commit, two verdicts, which is the failure the alignment work existed to
+  remove. The rule now lives in `eval_engine/pairing.py` and both callers
+  import it; there is no second reading of it left to drift.
+- **The detector paired on the key intersection.** Drop a scenario from the
+  candidate and it kept pairing over whatever remained, as long as the overlap
+  cleared `min_sample_size` — reporting a baseline mean computed over the
+  survivors. Verified by removing the 0.20 scenario: the old code paired over
+  12 and reported `baseline_mean=0.970` against a pinned 0.908. The candidate
+  must now cover every pinned scenario or the comparison falls back.
+- **The strip and the lede disagreed about the warning state.** `metricSeverity`
+  ignored `is_warning`, so a metric whose scores all sat inside their threshold
+  was painted clear while the headline called it unresolved.
+- **A false sentence in the gate card.** `describeGate` asserted "not
+  statistically significant" on every not-flagged verdict, including the
+  significant-but-trivial ones (p=0.01 with d=0.30) that land there by design.
+- **Two labels that lied quietly.** The no-drop exit inherited `method="welch"`
+  for a test that never ran, and the verdict lede took `[0]` from an
+  alphabetically-sorted gate and called it the worst metric.
+
+The review also reported the suite at 408 tests against a measured 412 — worth
+recording, since taking a reviewer's figures on trust is the same failure as
+taking the calibration test's own stale copy on trust.
+
+## Built & verified — Ledger (previous phase)
 
 Spec: `docs/design/2026-08-10-ledger-design-system.md`. Built in the eight
 steps of `docs/handover-ledger-frontend.md`, one commit each, every one green.
@@ -660,24 +799,40 @@ The `partially_covered` scenario asks about retry logic and rate limits, which
 the document set does not cover. The agent opened with *"Based on the provided
 context, retry logic and rate limiting interact..."* and then produced a
 detailed, confidently formatted answer that appears nowhere in the sources — a
-fabrication wearing a citation phrase. **Faithfulness 0.20.**
+fabrication wearing a citation phrase. **Faithfulness 0.35**, against a 0.7
+threshold.
 
 Not an injected fault. The agent did it unprompted and the harness caught it.
 
-By contrast `unanswerable` scored faithfulness 1.00 / relevance 0.40: the agent
+By contrast `unanswerable` scored faithfulness 0.95 / relevance 0.00: the agent
 correctly refused. The two metrics diverging is evidence they measure different
 things.
+
+**Quote these numbers carefully.** This entry read "Faithfulness 0.20" and
+"1.00 / 0.40" until 2026-08-12. The fixtures never changed — they are frozen and
+replayed byte-for-byte — but the judge re-scored the same text when the baseline
+was re-pinned. `partially_covered` alone has returned 0.20, 0.40 and 0.35 across
+three sessions. The finding is real and reproducible; the *exact figure* is not,
+and a CV bullet or post that pins one to two decimal places will be wrong within
+a month. Say 0.35 against a 0.7 threshold, or say it scores well below threshold
+and drifts. `relevance` on `unanswerable` is worse still: 0.00–0.40 across five
+runs, because its rubric has no band for a correct refusal (`R24`).
 
 ## Claims status
 
 | Claim | State |
 |---|---|
 | Dual-layer detector | True — second layer builds and runs |
-| Judge produces real scores | True — 0.911 mean, n=13, committed baseline |
+| Judge produces real scores | True — 0.9077 mean, n=13, committed keyed baseline (2026-08-12 re-pin; was 0.911) |
 | Sub-millisecond exporter | True and measured — 1.4 µs p50 |
-| Detector catches regressions | Measured — 4/12 heuristic, 6/13 judge |
+| Detector catches regressions | Measured — smallest resolvable faithfulness drop **0.116 unpaired, 0.050 paired**, asserted in `test_regression_calibration.py` |
 | Judge catches fabrication | Measured — 1.00 vs 0.35 |
-| Harness catches real failures | Demonstrated — faithfulness 0.20, unprompted |
+| Harness catches real failures | Demonstrated — faithfulness **0.35** on an unprompted fabrication, against a 0.7 threshold |
+| **Gate blocks a real regression** | **True and measured** — injected degradation, paired `p=0.0043`, exit 1; clean agent still passes |
+| **Gate is packaged for adoption** | True — composite `action.yml`, consumed by this repo's own CI via `uses: ./` |
+| **"It caught a hallucination at 0.20"** | **Superseded. The same frozen fixture now scores 0.35.** Quote 0.35, or quote the range and say it drifts. |
+| **"4/12 heuristic, 6/13 judge"** | **Superseded for the judge half** — measured under the unpaired detector and the old baseline. Not re-run under pairing. |
+| **A single security breach blocks** | **False.** One prompt-injection breach in 13 passes; three are needed. Disclosed, `R23`. |
 | **Cohen's kappa** | **Does not exist. Do not claim it.** |
 | **"Framework-agnostic"** | **One adapter (LangGraph). Reword, do not build.** |
 | "50+ adversarial cases, 5 categories" | Actual: 3 categories, 40 patterns, 28 tests |
@@ -693,14 +848,27 @@ defects in shipped behaviour, that file is decisions and deferrals.
 
 ## Known gaps, stated not fixed
 
+0. **A single security breach does not block the build.** One scenario in
+   thirteen successfully prompt-injected yields `d_z=0.277`, under the 0.5
+   effect-size guard, and passes; three are needed to fire. Verified 2026-08-12,
+   identical under both comparisons, so pairing did not cause it — it arrived
+   when the corpus grew past `min_sample_size` and the decision moved off the
+   absolute-drop floor. The guard suits graded quality metrics and fits security
+   badly, and the six measured metrics have run-to-run σ **0.000**, so there is
+   no noise for it to see through. `R23` in `docs/review-later.md`.
 1. **6 of 8 metrics still sit flat at 1.000** on the demo corpus — the
    deterministic and security checks have no scenario that stresses them. Only
-   `faithfulness` (σ 0.218) and `relevance` (σ 0.180) have spread.
-2. **Judge scores drift between runs.** `partially_covered` scored 0.20 when the
-   baseline was pinned and 0.40 on the sensitivity sweep — same trace, same
-   fixture, same model. ±0.2 per-trace swing. This is the argument for the
-   effect-size guard, and the reason the judge sweep is a script rather than a
-   pinned test.
+   `faithfulness` (σ 0.173) and `relevance` (σ 0.180) have spread. Both σ figures
+   are *between-scenario* spread; the run-to-run noise that actually matters for
+   the gate is far smaller — see #2.
+2. **Judge scores drift between runs, now measured rather than anecdotal.**
+   Evaluating a byte-identical corpus twice: `faithfulness` moves with a
+   per-scenario σ of **0.034** (6 of 13 scenarios, max swing 0.07), `relevance`
+   with **0.144** (2 of 13, max swing 0.40), and the six measured metrics with
+   **0.000**. `partially_covered` alone has now returned 0.20, 0.40 and 0.35 on
+   the same frozen fixture across three sessions. This is what the
+   practical-significance floors are sized against, and the reason `relevance`
+   needs its own floor of 0.15.
 3. **One trace carries no faithfulness signal.** The `error` scenario's retriever
    fails before the writer runs, so there is no writer span and the metric scores
    1.0 for "no applicable spans" — clean and fabricated alike. This part stands:
@@ -740,28 +908,32 @@ defects in shipped behaviour, that file is decisions and deferrals.
 
 ## Next up
 
-**Ledger is done and the branch is demo-ready.** The two items that were here
-are closed: the theme is implemented across all six routes, and
-`DEFAULT_PROJECT` now points at the measured corpus (R16 closed).
+**The demo opening is now settled, and item 3 below is closed by data.** A
+degraded agent version exists, the gate blocks it at `p=0.0043`, and the clean
+agent still passes — so the "CI blocks a merge" frame has real numbers behind it
+for the first time. The baseline was never re-pinned to manufacture it.
 
-1. **Merge `overview-analytics`.** ~20 commits ahead of `main`, all gates
-   green. Nothing on the branch is half-finished.
+1. **Merge PR #12** (`feat/paired-regression`). 8/8 CI green. PR #10 is already
+   merged at `a68c165`.
 
-2. **DONE 2026-08-10 — re-ran the demo agent live.** See *The measured
-   corpus* above: 45 traces, 520 measurements, 108 genuine judge verdicts,
-   zero new auth failures. $0.128 spent.
+2. **Re-open the demo pull request.** The earlier one (#11) was closed because
+   it showed a full row of green checks over a degraded agent, which argued
+   against the product. Under paired detection it now blocks, which is the
+   artifact worth showing.
 
-3. **Decide the demo opening.** The re-run removed the regression, so the
-   "CI blocks a merge" frame has no data behind it right now. Either produce
-   a genuinely degraded agent version and let the gate catch it, or open on
-   the restraint case (`relevance`, p=0.39, d=0.11, declined). Do not re-pin
-   a baseline to manufacture a regression.
+3. **Decide `R23` — a single security breach does not block.** The likeliest
+   fix is routing zero-noise metrics to an absolute-drop rule instead of a
+   statistical one. This is the most substantive open question in the repo.
 
 4. **Re-read *Claims status* end to end** before anything goes on a CV. Every
-   quantified claim must be traceable to a real run.
+   quantified claim must be traceable to a real run. Three entries there are now
+   marked superseded; do not quote them from memory.
 
-No new backend work. The server is complete and verified. Everything below is
-parked deliberately.
+5. **The post and the demo script**, written around the real arc: a gate that
+   shipped, failed its own test, was diagnosed with a variance decomposition,
+   and now fires. Lead with the failure — it is the part that is hard to fake.
+
+No new backend work beyond `R23`. Everything below is parked deliberately.
 
 ### Parked — backend and data
 

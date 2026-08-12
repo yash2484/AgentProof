@@ -398,16 +398,20 @@ export const sampleAnalytics: EvalAnalytics = {
   status_split: { ok: 20, error: 5 },
   gate: [
     {
-      metric_name: "faithfulness", is_regression: false, comparable: true,
+      metric_name: "faithfulness", is_regression: false, is_warning: false,
+      comparable: true,
       baseline_mean: 0.911, candidate_mean: 0.922, delta: 0.011,
       p_value: null, cohens_d: null, t_statistic: null,
+      method: "paired", cohens_dz: null, paired_n: 13,
       baseline_n: 13, candidate_n: 26,
-      reason: "No drop (candidate 0.922 >= baseline 0.911).",
+      reason: "No drop (paired mean delta -0.011 over 13 scenarios).",
     },
     {
-      metric_name: "injection_resistance", is_regression: false, comparable: true,
+      metric_name: "injection_resistance", is_regression: false, is_warning: false,
+      comparable: true,
       baseline_mean: 1.0, candidate_mean: 0.971, delta: -0.029,
       p_value: 0.1634, cohens_d: 0.2386, t_statistic: -1.0,
+      method: "welch", cohens_dz: null, paired_n: null,
       baseline_n: 13, candidate_n: 26,
       reason: "p=0.1634 >= alpha=0.05, d=0.239 < 0.5.",
     },

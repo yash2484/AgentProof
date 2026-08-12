@@ -27,13 +27,20 @@ sentences are the product.
 The most useful thing this gate does is decline.
 
 ```
-relevance   base=0.931  cand=0.908   p=0.3877 >= alpha=0.05,  d=0.113 < 0.5
+relevance  baseline=0.900 candidate=0.877 -- Paired mean drop 0.023 < practical
+floor 0.15 over 13 scenarios — below the level worth acting on, regardless of
+significance.
 ```
 
-Relevance fell by 0.023 between the pinned baseline and the latest run. An
-effect exists. Neither guard clears, so the gate reports **no regression** and
-says why in the same line. It does not round the drop away, and it does not
+That is a real line from this repository's CI. Relevance fell by 0.023 between
+the pinned baseline and the run. The movement is real, and the gate declines
+anyway, because 0.023 sits inside this metric's *measured* noise: across two
+evaluations of a byte-identical corpus, relevance moves with a per-scenario
+standard deviation of 0.144. It does not round the drop away, and it does not
 promote it to a finding.
+
+The floor it is compared against was measured, not chosen. That distinction is
+the product.
 
 A tool that only ever reports movement will report noise, and a team that gets
 paged for noise turns the gate off within a month.
@@ -49,13 +56,27 @@ set does not cover. It answered:
 and then produced a detailed, confidently formatted answer that appears nowhere
 in the retrieved sources. A fabrication wearing a citation phrase.
 
-**Faithfulness: 0.20.** No fault was injected — the agent did that on its own,
-and the harness caught it.
+**Faithfulness: 0.35**, against a 0.7 threshold. No fault was injected — the
+agent did that on its own, and the harness caught it.
+
+That number used to read 0.20 in this file. The fixture never changed; it is
+frozen and replayed byte-for-byte. The judge re-scored the same text 0.35 when
+the baseline was re-pinned on 2026-08-12. Nothing regressed and nothing was
+fixed — a judge is a measuring instrument with its own error bar, and that is
+the entire reason this gate compares distributions against a pinned baseline
+instead of comparing one number to another.
 
 On a question with genuinely no answer in the corpus, the same agent scored
-faithfulness **1.00** and relevance **0.40**: it correctly refused, so nothing was
-fabricated, but nothing was answered either. Two metrics measuring different
+faithfulness **0.95** and relevance **0.00**: it correctly refused, so nothing
+was fabricated, but nothing was answered either. Two metrics measuring different
 things and diverging when they should.
+
+Relevance on that scenario is the least trustworthy number on this page, and it
+is worth saying so where it is quoted. Across five evaluations of the identical
+fixture it returned 0.00, 0.10, 0.10, 0.40 and 0.40. The rubric has a band for
+"directly answers" and a band for "off-topic or empty", and none for "correctly
+declined because the corpus cannot answer" — so the judge picks a different band
+each run. See the limitations.
 
 ## Evidence, not adjectives
 
@@ -85,19 +106,38 @@ cd server && python -m pytest tests/unit/test_fault_injection.py
 
 ### How small a regression it catches
 
-| metric kind | example | fires at |
-|---|---|---|
-| heuristic (noise-free) | `data_exfiltration` | **4 of 12 traces (33%)**, p=0.033, d=0.80 |
-| LLM judge (noisy) | `faithfulness` | **6 of 13 traces (46%)** |
+Every gate has a minimum detectable effect whether or not anyone measures it.
+This one's is measured, asserted in
+[`test_regression_calibration.py`](server/tests/unit/test_regression_calibration.py),
+and derived from the shipped baseline rather than a copy of it — so re-pinning
+is allowed to move it and is required to say so in a diff.
 
-It also stays quiet at 1–2 broken traces, which is inside normal agent
-variation. A gate that cries wolf gets switched off.
+| comparison | smallest faithfulness drop it resolves |
+|---|---|
+| unpaired, two-sample | 0.116 |
+| **paired, scenario against itself** | **0.050** |
 
-The judge-backed gate is deafer on purpose-of-metric grounds: a leaking trace
-scores 0.0 on a regex check (a full 1.0 drop), while a fabricating trace scores
-0.35–0.55 from a judge because the rest of the answer is still grounded. Half the
-signal per trace, so it takes proportionally more of them. Full sweeps and
-reasoning in [docs/detector-sensitivity.md](docs/detector-sensitivity.md).
+Both are found by bisection against `baselines/demo-agent-replay.json`. The
+paired floor is the practical-significance floor itself: once between-scenario
+difficulty is removed, what remains is small enough that the question stops
+being "can we detect this" and becomes "do we care".
+
+It stays quiet below those numbers on purpose. A gate that cries wolf gets
+switched off.
+
+```bash
+cd server && python -m pytest tests/unit/test_regression_calibration.py
+```
+
+The gap between those two rows is not academic. It is the difference between
+passing and failing a real degradation — see below.
+
+Note on [docs/detector-sensitivity.md](docs/detector-sensitivity.md): its
+heuristic sweep still stands, and `fixture-gate` still exercises that unpaired
+path in CI. Its **judge** sweep, and its conclusion that the judge gate is
+deafer on purpose-of-metric grounds, predate pairing and are partly explained by
+the noise-model defect described in the next section. Treat that half as
+superseded until it is re-run.
 
 ### Instrumentation overhead
 
@@ -130,25 +170,97 @@ detector end to end.
 
 This is the part most eval tooling gets wrong, so it is worth stating plainly.
 
-Judge scores drift. The same trace, the same frozen fixture and the same model
-produced 0.20 on one run and 0.40 on another — a ±0.2 per-trace swing. A gate
-that simply compared means would fire on that noise.
+Judge scores drift. Evaluating a byte-identical corpus twice, with the same
+frozen fixtures and the same model, moves them:
 
-Three rules keep it honest:
+| metric | per-scenario sd | scenarios that moved | largest single swing |
+|---|---:|---:|---:|
+| `faithfulness` | 0.034 | 6 of 13 | 0.07 |
+| `relevance` | 0.144 | 2 of 13 | 0.40 |
+| the six measured metrics | 0.000 | 0 of 13 | 0.00 |
 
-1. **One-sided Welch's t-test** at alpha=0.05 — the drop has to be statistically
-   distinguishable from variance.
-2. **A Cohen's *d* ≥ 0.5 effect-size guard** — it also has to be large enough to
-   care about. Both must agree. In the sweep at k=3, the effect size had cleared
-   (d=0.619) while significance had not (p=0.073), and the gate correctly held
-   back.
-3. **An absolute-drop floor below `min_sample_size` (9)** — under nine samples per
-   group the t-test is underpowered, so a blunt rule decides instead rather than a
+A gate that compared means would fire on that. Five rules keep it honest, and
+the first one matters most:
+
+1. **Compare each scenario against itself.** A baseline stores a score *per
+   scenario*, so a run is compared scenario by scenario rather than as two
+   unordered bags of numbers. Without this, the spread being called "noise" is
+   really the difference in difficulty between scenarios, and the gate goes
+   deaf. That is not hypothetical here — see the next section.
+2. **A practical-significance floor.** Significance answers "is this real", never
+   "does this matter". Below the floor the gate declines regardless of how
+   certain the statistics are.
+3. **Per-metric floors, measured rather than chosen.** One number cannot serve a
+   metric with an sd of 0.034 and one with 0.144. `relevance` sets its own at
+   0.15, above the 0.120 that three sigma of its own noise reaches.
+4. **A one-sided t-test at alpha=0.05 plus an effect-size guard** — Cohen's *d*
+   unpaired, *d_z* paired. Both must agree. The effect-size guard is what stops
+   one collapsing scenario from convicting the whole suite.
+5. **An absolute-drop floor below `min_sample_size` (9)** — under nine samples per
+   group the t-test is underpowered, so a blunt rule decides instead of a
    confident-looking wrong one.
+
+When a drop clears the floor and the effect-size guard but misses significance,
+the gate reports **`warn`**, not `ok`. This is the 2026-08-11 verdict described
+in the next section, re-run against the detector as it stands today:
+
+```
+[warn      ] faithfulness  baseline=0.911 candidate=0.802 -- p=0.1071 >= alpha=0.05,
+             d=0.501 >= 0.5. Material but not significant — underpowered at a
+             sample of n=13. Not blocking, and not clean either.
+```
+
+"We looked and it is fine" and "we looked and could not tell" are different
+answers, and a gate that renders them identically is hiding the only line in the
+report worth a second look.
 
 Deterministic and heuristic metrics gate **every pull request**, free and
 key-free. Judge metrics are run against a key on demand, because they cost money
 and cannot be made deterministic.
+
+## The gate failed its own test, and that is why it works now
+
+On 2026-08-11 a degradation was deliberately introduced to find out whether the
+gate could see it: the clause *"Answer using ONLY the provided context."* was
+removed from the writer's system prompt, and the replay fixtures were re-recorded
+live against the weakened prompt. Faithfulness fell by 0.109 across thirteen
+scenarios.
+
+The gate passed it.
+
+```
+[ok] faithfulness  baseline=0.911 candidate=0.802 -- p=0.0939 >= alpha=0.05, d=0.532 >= 0.5
+Overall: PASS
+```
+
+The detector was behaving exactly as specified. The specification was wrong.
+
+It was treating thirteen per-scenario scores as thirteen draws from one
+distribution, so the spread it called "noise" was really the difference in
+difficulty between scenarios. **86.6% of that baseline's variance came from a
+single hard scenario.** Its sigma was 0.218, against a per-scenario run-to-run
+variation of 0.034 measured directly — a noise estimate roughly six times too
+large, which put the smallest resolvable regression at about fifteen points. The
+eleven-point drop was never catchable. No amount of extra corpus would have
+fixed it, because the error was in the model, not the sample.
+
+The fix was to compare each scenario against itself. Same degradation, same
+fixtures, only the comparison changed:
+
+| run | comparison | verdict |
+|---|---|---|
+| degraded agent | unpaired | PASS — `p=0.0939`, missed |
+| degraded agent | **paired** | **FAIL** — `drop 0.085, p=0.0043, d_z=0.870` |
+| clean agent | paired | PASS — `delta -0.008`, no false positive |
+
+Pairing alone would have traded a deaf gate for a hair-trigger one: it drops the
+noise floor far enough that almost any movement becomes significant, and a gate
+that fires every week gets switched off. The practical-significance floor and
+the per-metric floors above are what hold that back, and both were set from
+measurements rather than taste.
+
+The sensitivity is now asserted by tests derived from the shipped baseline, so
+this class of blindness fails CI instead of shipping quietly.
 
 ## What you are looking at
 
@@ -345,7 +457,7 @@ Add `anthropic-api-key` and a `judged-config` to gate on `faithfulness` and
 Without the secret the action selects `config` and reports only measured
 metrics. It will not run a judged config unkeyed. That is a deliberate refusal
 rather than a convenience: an unkeyed judge does not raise, it scores every span
-`0.0`, so the report would read `faithfulness 0.911 -> 0.000` and blame your pull
+`0.0`, so the report would read `faithfulness 0.908 -> 0.000` and blame your pull
 request for a missing secret. A gate that invents a regression is worse than no
 gate. Forks, which never receive secrets, skip the judged job instead of failing
 it.
@@ -367,6 +479,8 @@ pass and the Ledger dashboard rework on top.
 | 8 | Dashboard redesign |
 | — | Hardening: live judge, fault injection, measured sensitivity and overhead |
 | — | Ledger — light document theme, grouped metrics, provenance on every figure |
+| — | Composite action — the gate packaged as `uses:`, and consumed by this repo's own CI |
+| — | Paired detection — scenario identity, measured noise floors, calibrated sensitivity |
 
 ### What works today
 
@@ -391,18 +505,27 @@ pass and the Ledger dashboard rework on top.
   dual`). Heuristic mode is free and key-free; `llm` and `dual` build a judge
   client when a key is available and degrade to heuristic with a warning when it
   is not.
-- **Regression detector** — pinned-baseline Welch's t-test with the effect-size
-  guard and small-sample floor described above. File-based and DB-free.
+- **Regression detector** — pinned-baseline comparison, scenario against
+  scenario, with a paired t-test and Cohen's *d_z*, a practical-significance
+  floor that can be set per metric, and the small-sample floor described above.
+  Falls back to the two-sample Welch path when a corpus carries no stable
+  scenario identity, or when the candidate does not cover every pinned
+  scenario — deliberately, because pairing on whatever happens to intersect
+  would let a renamed or dropped scenario shrink the population under test
+  between runs without saying so, and the run that quietly stops comparing the
+  hard scenario is exactly the run that looks fine. File-based and DB-free.
 - **CI gates** — three jobs on every pull request, all DB-free, and all of them
   consuming the same composite action a stranger would add via `uses:`. There is
   no hand-rolled copy of the gate in this repository's own workflow; if the
   action breaks, this repository's pull requests break with it.
-  `fixture-gate` exercises the t-test path against a corpus with known variance.
-  `agent-gate` runs the demo agent *on that commit*, captures the traces it
-  produces, and gates them against a pinned baseline, key-free. `judge-gate`
-  adds `faithfulness` and `relevance`, which are the only two metrics on this
-  corpus with the variance to produce a t-test rather than a threshold check,
-  and it skips cleanly when no key is present.
+  `fixture-gate` runs a committed corpus that carries no scenario identity, so
+  it exercises the unpaired Welch fallback — kept that way on purpose, so both
+  comparison paths have CI coverage. `agent-gate` runs the demo agent *on that
+  commit*, captures the traces it produces, and gates them paired against a
+  pinned baseline, key-free. `judge-gate` adds `faithfulness` and `relevance`,
+  the only two metrics on this corpus with enough variance to produce a
+  statistic rather than a threshold check, and it skips cleanly when no key is
+  present — so forks, which never receive secrets, are not failed by it.
 - **Dashboard** — Vite + React + MUI across four top-level routes plus trace and
   metric detail views: overview with a gate verdict and run-to-run variance,
   traces with a span waterfall and a run-eval action, evals grouped by metric
@@ -413,7 +536,8 @@ pass and the Ledger dashboard rework on top.
   AA sweep per text node, across six routes at 1440px and 390px.
   `scripts/demo_check.py` fails if the app lands anywhere but the measured
   corpus, or if a generated-data marker could reach a screenshot.
-- **Tests** — 355 server unit, 39 server DB, 43 SDK, 38 demo-agent, 409 dashboard
+- **Tests** — 416 server passing with 36 skipped (the skips are DB-backed and
+  run in CI against a Postgres service), 43 SDK, 38 demo-agent, 418 dashboard
   (Vitest). `ruff` clean across `server/`, `sdk/`, `demo_agent/`, `scripts/`;
   dashboard `eslint` and `tsc` clean; `ui_audit` 12/12 clean. One DB test is a
   known intermittent — see limitations.
@@ -475,11 +599,40 @@ exists to prevent.
   4): POST a batch, get 200, then 404 on the trace, with no rows written. An
   endpoint that reports success without writing is the same class of defect as a
   metric that reports a pass without measuring, and it is open.
-- **Triggering evals from the demo agent can time out.** `trigger_evals` in
-  `demo_agent/demo_agent/export.py` uses a short HTTP timeout, while a 13-trace
-  batch genuinely takes around seven minutes. The client gives up, the disconnect
-  cancels the server handler, and nothing is written. Evaluate from the dashboard
-  or the CLI until this is fixed.
+- **`trigger_evals` has a fixed timeout against a variable batch.**
+  `demo_agent/demo_agent/export.py` hard-codes a 30-second HTTP timeout for a
+  batch whose cost depends entirely on the config it runs. It currently passes
+  in about 20 seconds, but only because `injection_resistance` was moved from
+  `dual` to `heuristic`, which stopped it making a judge call on every
+  `llm_call` span. Measured by putting it back: `dual` fails at 36.3s, and
+  `heuristic` passes in three consecutive runs. The symptom is gone; the defect
+  is not. Adding scenarios or re-enabling a judge-backed security metric brings
+  it straight back, and the fix is a timeout that scales with the batch.
+- **A single security breach does not block the build.** The effect-size guard
+  is designed for graded quality metrics, where one bad answer should not
+  convict a whole suite. Applied to security it reads oddly: one scenario in
+  thirteen successfully prompt-injected produces `d_z=0.277` and passes, and it
+  takes three before the gate fires. A breach is not a trend, and the six
+  measured metrics have a run-to-run standard deviation of **0.000**, so there
+  is no noise for a statistical guard to see through — every drop is signal.
+  Reproduction and the full table are in
+  [docs/walkthrough.md](docs/walkthrough.md). Open, and the likeliest fix is to
+  route zero-noise metrics to an absolute-drop rule rather than a statistical
+  one.
+- **`relevance` is not yet trustworthy, and is contained rather than fixed.**
+  Its rubric has a band for "directly answers" and one for "off-topic or empty",
+  and none for *correctly declining because the corpus cannot answer*. On the
+  `unanswerable` scenario the judge therefore picks a different band each run:
+  0.00, 0.10, 0.10, 0.40, 0.40 across five evaluations of an identical fixture.
+  It is held back by a per-metric floor of 0.15 and reports without blocking,
+  but a floor is containment. The rubric needs the missing band, and that
+  changes what the metric measures, so it needs its own re-pin.
+- **A pinned baseline carries one evaluation run's judge noise.** Baselines are
+  built from a single pass, so whatever the judge happened to return that day
+  becomes the reference. Averaging over several runs would reduce it; there is
+  no `--repeat` yet. The practical-significance floors are what keep this from
+  mattering, and they are sized against measured noise, but the reference itself
+  is noisier than it needs to be.
 - **The positioning above is a judgement, not a validated finding.** It is
   inferred from what the code does well. It has not been checked against a team
   that ships an agent in production.

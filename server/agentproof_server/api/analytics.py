@@ -27,6 +27,11 @@ from agentproof_server.eval_engine import details as details_shape
 from agentproof_server.eval_engine.baseline import baselines_from_json
 from agentproof_server.eval_engine.config_parser import load_config
 from agentproof_server.eval_engine.models import Baseline, RegressionConfig
+from agentproof_server.eval_engine.pairing import (
+    PAIR_KEY_TAG,
+    pair_keys,
+    scores_by_key,
+)
 from agentproof_server.eval_engine.regression import detect_regression
 from agentproof_server.provenance import exclude_generated, is_generated
 
@@ -447,7 +452,16 @@ def _candidate_scores_stmt(project: str | None, since: datetime | None):
     regression headline.
     """
     stmt = select(
-        EvalResultModel.metric_name, EvalResultModel.score
+        EvalResultModel.metric_name,
+        EvalResultModel.score,
+        # The scenario that produced the trace, so the dashboard can run the
+        # same paired comparison CI runs. Without it this endpoint computes an
+        # unpaired verdict and can disagree with the gate on the same commit.
+        TraceModel.tags[PAIR_KEY_TAG].astext.label("scenario"),
+        # Carried so eligibility is decided per *trace*, exactly as the CLI
+        # decides it. Deciding it from eval rows alone made an untagged trace
+        # forfeit pairing only for the metrics it happened to score.
+        EvalResultModel.trace_id,
     ).select_from(EvalResultModel)
     return _scope_evals(stmt, project, since).where(~_degraded_expr())
 
@@ -485,6 +499,8 @@ def _gate_payload(
     baselines: dict[str, Baseline],
     scores_by_metric: dict[str, list[float]],
     cfg: RegressionConfig | None = None,
+    keyed_by_metric: dict[str, dict[str, float]] | None = None,
+    floors: dict[str, float] | None = None,
 ) -> list[dict]:
     """Run the pure detector over each baselined metric.
 
@@ -492,8 +508,16 @@ def _gate_payload(
     ``comparable: false`` rather than dropped, so the card can say "not
     assessed this run" instead of silently omitting a metric. Treating a
     missing sample as a 0.0 drop would invent a regression.
+
+    ``keyed_by_metric`` and ``floors`` exist so this endpoint reaches the same
+    verdict as the CI gate on the same data. Without them the dashboard runs an
+    unpaired comparison against a global noise floor while CI runs a paired one
+    against per-metric floors, and the two can disagree about whether a commit
+    regressed -- which is the one thing a verdict card must never do.
     """
     cfg = cfg or RegressionConfig()
+    keyed_by_metric = keyed_by_metric or {}
+    floors = floors or {}
     rows: list[dict] = []
     for name in sorted(baselines):
         baseline = baselines[name]
@@ -503,6 +527,7 @@ def _gate_payload(
                 {
                     "metric_name": name,
                     "is_regression": False,
+                    "is_warning": False,
                     "comparable": False,
                     "baseline_mean": baseline.mean,
                     "candidate_mean": None,
@@ -512,6 +537,9 @@ def _gate_payload(
                     "t_statistic": None,
                     "baseline_n": baseline.sample_size,
                     "candidate_n": 0,
+                    "method": None,
+                    "cohens_dz": None,
+                    "paired_n": None,
                     "reason": (
                         f"No candidate scores for '{name}' in this window — "
                         f"not assessed."
@@ -519,11 +547,21 @@ def _gate_payload(
                 }
             )
             continue
-        result = detect_regression(baseline, scores, cfg)
+        metric_cfg = (
+            cfg.model_copy(update={"min_mean_drop": floors[name]})
+            if name in floors
+            else cfg
+        )
+        result = detect_regression(
+            baseline, scores, metric_cfg, candidate_by_key=keyed_by_metric.get(name)
+        )
         rows.append(
             {
                 "metric_name": name,
                 "is_regression": result.is_regression,
+                # Material but unconfirmed. The card must be able to say
+                # "could not tell" rather than showing this as a clean pass.
+                "is_warning": result.is_warning,
                 "comparable": True,
                 "baseline_mean": result.baseline_mean,
                 "candidate_mean": result.candidate_mean,
@@ -533,6 +571,12 @@ def _gate_payload(
                 "t_statistic": result.t_statistic,
                 "baseline_n": baseline.sample_size,
                 "candidate_n": len(scores),
+                # Which comparison produced this verdict. A reader must be able
+                # to tell a paired result from an unpaired fallback, because
+                # they have very different minimum detectable effects.
+                "method": result.method,
+                "cohens_dz": result.cohens_dz,
+                "paired_n": result.paired_n,
                 "reason": result.reason,
             }
         )
@@ -861,6 +905,26 @@ def _ci_block_by_metric() -> dict[str, bool]:
     return {m.name: m.ci_block for m in config.metrics}
 
 
+def _metric_floors() -> dict[str, float]:
+    """Map metric name -> its own practical-significance floor, if it declares one.
+
+    Read from the same active config as ``_ci_block_by_metric``. Noise is a
+    property of the metric, so a metric measured as noisier than the global
+    floor sets its own; the gate and this endpoint must apply the same one or
+    they will disagree about what counts as a regression.
+    """
+    try:
+        config = load_config(settings.eval_config_path)
+    except Exception as exc:  # missing/invalid config -- degrade, don't 500
+        logger.warning("Could not read eval config for metric floors: %s", exc)
+        return {}
+    return {
+        m.name: m.min_mean_drop
+        for m in config.metrics
+        if m.min_mean_drop is not None
+    }
+
+
 @router.get("/evals/metric/{metric_name}")
 async def get_metric_detail(
     metric_name: str,
@@ -973,15 +1037,44 @@ async def get_evals_analytics(
     if baselines:
         candidate_since = runs[-1]["run_at"] if runs else None
         scores_by_metric: dict[str, list[float]] = {}
+        keyed_by_metric: dict[str, dict[str, float]] = {}
         if runs:
             candidate_rows = (
                 await db.execute(
                     _candidate_scores_stmt(project, candidate_since)
                 )
             ).all()
-            for metric_name, score in candidate_rows:
+            scenario_by_trace: dict[str, str | None] = {}
+            for metric_name, score, scenario, trace_id in candidate_rows:
                 scores_by_metric.setdefault(metric_name, []).append(float(score))
-        gate = _gate_payload(baselines, scores_by_metric)
+                scenario_by_trace[str(trace_id)] = scenario
+            # The identical rule the CLI applies, from the identical function:
+            # corpus-wide all-or-nothing over traces, then a per-metric drop for
+            # any metric whose rows collide on a scenario. Reimplementing it
+            # here is what let CI and this endpoint disagree on one commit.
+            keys = pair_keys(
+                [
+                    {"trace_id": tid, "tags": {PAIR_KEY_TAG: scenario}}
+                    for tid, scenario in scenario_by_trace.items()
+                ]
+            )
+            keyed_by_metric = (
+                scores_by_key(
+                    (
+                        (metric_name, str(trace_id), float(score))
+                        for metric_name, score, _scenario, trace_id in candidate_rows
+                    ),
+                    keys,
+                )
+                if keys
+                else {}
+            )
+        gate = _gate_payload(
+            baselines,
+            scores_by_metric,
+            keyed_by_metric=keyed_by_metric,
+            floors=_metric_floors(),
+        )
 
     return _analytics_payload(
         project=project,

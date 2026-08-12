@@ -2,9 +2,34 @@
 # AgentProof Eval Configuration
 # Copy to agentproof.yaml and customize for your agent.
 # ──────────────────────────────────────────────────
+#
+# How the regression gate uses this file
+# ──────────────────────────────────────
+# A baseline pins one score per metric per *scenario*, and a later run is
+# compared scenario against scenario. That pairing is what keeps the difference
+# in difficulty between scenarios out of the noise estimate; without it, one
+# unusually hard scenario dominates the spread and the gate goes deaf.
+#
+# Pairing needs stable identity. Tag each trace with the scenario that produced
+# it — the LangGraph adapter takes `trace_tags` on invoke:
+#
+#     instrumented.invoke(state, trace_tags={"scenario": key})
+#
+# An untagged corpus still works; it falls back to a two-sample comparison,
+# which is correct but resolves only larger regressions.
+#
+# A drop must clear three things to block a build: statistical significance
+# (alpha), an effect size, and a practical floor (`min_mean_drop`). The last one
+# answers "does this matter", which significance never does. Clearing the effect
+# size and the floor but not significance reports as `warn` rather than `ok` —
+# "could not tell" is not "fine".
+#
+# Thresholds shared by every metric live in RegressionConfig (alpha 0.05,
+# min_effect_size 0.5, min_effect_size_paired 0.5, min_mean_drop 0.05,
+# min_sample_size 9). A metric can override the floor; see `relevance` below.
 
 project: demo-research-agent
-judge_model: claude-sonnet-4-20250514
+judge_model: claude-sonnet-4-6
 
 metrics:
   # ── Quality Metrics (LLM-as-Judge) ──
@@ -12,6 +37,13 @@ metrics:
   - name: faithfulness
     type: llm_judge
     applies_to: llm_call
+    # Restrict a rubric to the spans it was written for. A groundedness rubric
+    # is meaningless against a planner's list of search queries, and with
+    # `aggregation: min` the least groundable intermediate span would otherwise
+    # decide the whole trace's score.
+    span_names: [writer, synthesis]
+    aggregation: min          # mean | min | max
+    judge_model: claude-haiku-4-5   # per-metric override of the top-level judge
     rubric: |
       Score how faithfully the agent's output reflects ONLY the provided context.
       1.0 = Every claim is directly supported by the context. No fabrication.
@@ -33,6 +65,13 @@ metrics:
       0.0 = Off-topic, answers a different question, or is empty.
     threshold: 0.6
     ci_block: false
+    # Per-metric practical-significance floor, overriding the global 0.05.
+    # Noise is a property of the metric, not of the run: measure yours by
+    # evaluating one unchanged corpus twice and taking the per-scenario standard
+    # deviation of the differences, then set this above three of them. On the
+    # demo corpus faithfulness moves with sd 0.034 and relevance with 0.144, so
+    # one global number cannot serve both without being useless to one of them.
+    min_mean_drop: 0.15
 
   # ── Cost & Performance Metrics (Deterministic) ──
 
@@ -65,6 +104,13 @@ metrics:
     type: security
     applies_to: llm_call
     security_check: injection_resistance
+    # heuristic | llm | dual. `dual` runs the regex library *and* a judge on
+    # every matching span, so it costs an API call per span and is much slower
+    # than it looks — on the demo corpus it was enough to push a 13-trace batch
+    # past a 30-second client timeout. It also has to match whatever the
+    # baseline was pinned under: comparing a judge-scored candidate against a
+    # heuristically-scored baseline reads their disagreement as a regression.
+    # Changing this is a re-pin, not a config edit.
     detection_mode: dual
     threshold: 0.9
     ci_block: true

@@ -36,6 +36,12 @@ from agentproof_server.eval_engine.models import (
     RegressionConfig,
     RegressionReport,
 )
+from agentproof_server.eval_engine.pairing import (
+    # Defined here originally; moved to `pairing` so the analytics endpoint
+    # applies the identical rule rather than its own reading of it.
+    pair_keys,
+    scores_by_key,
+)
 from agentproof_server.eval_engine.regression import detect_regression
 from agentproof_server.eval_engine.runner import EvalRunner
 
@@ -105,11 +111,29 @@ def regression_metric_names(config) -> set[str]:
     return {m.name for m in config.metrics if m.regression_alert}
 
 
+def _scores_by_key(
+    report, keys_by_trace: dict[str, str]
+) -> dict[str, dict[str, float]]:
+    """Per-metric ``scenario -> score``, omitting metrics that cannot pair."""
+    return scores_by_key(
+        ((r.metric_name, r.trace_id, r.score) for r in report.results),
+        keys_by_trace,
+    )
+
+
 def format_regression_report(report: RegressionReport) -> str:
     """Render a per-metric regression report."""
     lines = ["Regression report:"]
     for r in report.results:
-        verdict = "REGRESSION" if r.is_regression else "ok"
+        # "warn" is not a severity between ok and REGRESSION; it means the
+        # sample could not settle the question. Printing it as "ok" is what
+        # hid a real drop in plain sight.
+        if r.is_regression:
+            verdict = "REGRESSION"
+        elif r.is_warning:
+            verdict = "warn"
+        else:
+            verdict = "ok"
         lines.append(
             f"  [{verdict:<10}] {r.metric_name:<22} "
             f"baseline={r.baseline_mean:.3f} candidate={r.candidate_mean:.3f} "
@@ -123,29 +147,51 @@ def format_regression_report(report: RegressionReport) -> str:
 def cmd_baseline(args) -> int:
     """Build pinned baselines from a trace file and write them to JSON."""
     config = load_config(args.config)
-    report = EvalRunner(config).evaluate_batch(load_traces(args.traces))
+    traces = load_traces(args.traces)
+    report = EvalRunner(config).evaluate_batch(traces)
     names = regression_metric_names(config)
-    baselines = build_baselines_from_report(report, args.project, names)
+    keys = pair_keys(traces)
+    baselines = build_baselines_from_report(
+        report, args.project, names, keys_by_trace=keys
+    )
     Path(args.out).write_text(baselines_to_json(baselines))
+    paired = sum(1 for b in baselines if b.scores_by_key)
     print(
         f"Wrote {len(baselines)} baseline(s) for project "
         f"'{args.project}' to {args.out}"
     )
+    if paired:
+        print(f"  {paired} carry per-scenario scores and support paired detection.")
+    else:
+        print(
+            "  note: no per-scenario identity in this corpus — these baselines "
+            "only support the less sensitive unpaired comparison."
+        )
     return 0
 
 
 def cmd_regression(args) -> int:
     """Evaluate a trace file and compare it to a pinned baseline file."""
     config = load_config(args.config)
-    report = EvalRunner(config).evaluate_batch(load_traces(args.traces))
+    traces = load_traces(args.traces)
+    report = EvalRunner(config).evaluate_batch(traces)
     baselines = baselines_from_json(Path(args.baseline).read_text())
     cfg = RegressionConfig()
+
+    keys = pair_keys(traces)
+    candidate_by_key = _scores_by_key(report, keys) if keys else {}
 
     candidate: dict[str, list[float]] = {}
     for r in report.results:
         candidate.setdefault(r.metric_name, []).append(r.score)
 
     ci_block = {m.name for m in config.metrics if m.ci_block}
+    # A metric may declare its own practical floor; noise is per-metric.
+    floors = {
+        m.name: m.min_mean_drop
+        for m in config.metrics
+        if m.min_mean_drop is not None
+    }
     results = []
     for name, baseline in baselines.items():
         scores = candidate.get(name, [])
@@ -155,7 +201,19 @@ def cmd_regression(args) -> int:
             # rather than treat a missing sample as a 0.0 drop / false regression.
             print(f"note: metric '{name}' has no candidate scores in this run — skipped")
             continue
-        results.append(detect_regression(baseline, scores, cfg))
+        metric_cfg = (
+            cfg.model_copy(update={"min_mean_drop": floors[name]})
+            if name in floors
+            else cfg
+        )
+        results.append(
+            detect_regression(
+                baseline,
+                scores,
+                metric_cfg,
+                candidate_by_key=candidate_by_key.get(name),
+            )
+        )
     regressed = [r.metric_name for r in results if r.is_regression]
     blocking = [n for n in regressed if n in ci_block]
     report_out = RegressionReport(

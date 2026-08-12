@@ -37,11 +37,20 @@ def _run_scenarios(
 
     The single instrument-and-invoke path shared by every sink, so the export
     and capture routes cannot drift apart.
+
+    Every trace is tagged with the scenario that produced it. Without that the
+    corpus has no stable identity across runs -- ``trace_id`` is a fresh UUID
+    each time and every trace shares the name "research-assistant" -- so the
+    regression gate can only compare two unordered bags of scores, which makes
+    between-scenario difficulty look like measurement noise. The tag is what
+    lets a run be compared to the previous one scenario by scenario.
     """
     graph = build_graph(backend)
     instrumented = instrument_langgraph(graph, ap, trace_name="research-assistant")
     for key in scenario_keys:
-        instrumented.invoke(SCENARIOS[key].initial_state())
+        instrumented.invoke(
+            SCENARIOS[key].initial_state(), trace_tags={"scenario": key}
+        )
     ap.flush()
     return instrumented.trace_ids
 

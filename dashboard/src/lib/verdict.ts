@@ -46,6 +46,22 @@ function plural(n: number, one: string, many: string): string {
 }
 
 /**
+ * Largest drop first; ties broken by name.
+ *
+ * The gate arrives sorted by metric name, because that is how the server
+ * iterates its baselines. Taking `[0]` from a filtered slice therefore picked
+ * the alphabetically first metric and called it the worst — with two
+ * regressions, `cost_budget` fronted the headline over a collapsed
+ * `faithfulness`. The name a reader is sent to open first has to be earned.
+ */
+function byDrop(a: GateVerdict, b: GateVerdict): number {
+  const dropA = -(a.delta ?? 0);
+  const dropB = -(b.delta ?? 0);
+  if (dropA !== dropB) return dropB - dropA;
+  return a.metric_name.localeCompare(b.metric_name);
+}
+
+/**
  * The sentence that must never be omitted from a clean verdict.
  *
  * Six of eight metrics sit at 1.000 with zero variance because no scenario in
@@ -111,7 +127,7 @@ export function overviewVerdict({ metrics, gate, scored }: VerdictInput): Verdic
   // A regression outranks everything else because it is the only claim on this
   // page backed by a baseline comparison — a p-value and an effect size exist
   // behind it. Raw failure counts describe a state; this describes a change.
-  const regressed = gate.filter((g) => g.is_regression);
+  const regressed = gate.filter((g) => g.is_regression).sort(byDrop);
   if (regressed.length > 0) {
     const worst = regressed[0];
     return {
@@ -120,6 +136,25 @@ export function overviewVerdict({ metrics, gate, scored }: VerdictInput): Verdic
         regressed.length === 1
           ? `${worst.metric_name} regressed against baseline`
           : `${plural(regressed.length, "metric", "metrics")} regressed against baseline`,
+      detail: `${sentence(regressionDetail(worst))}${degradedClause(metrics)}`,
+      focus: worst.metric_name,
+    };
+  }
+
+  // A metric that moved materially but could not be confirmed outranks raw
+  // failure counts, for the same reason a regression does: it is a statement
+  // about change against a baseline. It must never fall through to the clear
+  // branch, because "we could not tell" reported as "all clear" is the exact
+  // failure this state was added to remove.
+  const unresolved = gate.filter((g) => g.is_warning).sort(byDrop);
+  if (unresolved.length > 0) {
+    const worst = unresolved[0];
+    return {
+      tone: "watch",
+      headline:
+        unresolved.length === 1
+          ? `${worst.metric_name} moved, and the sample cannot say whether it matters`
+          : `${plural(unresolved.length, "metric", "metrics")} moved without enough evidence to judge`,
       detail: `${sentence(regressionDetail(worst))}${degradedClause(metrics)}`,
       focus: worst.metric_name,
     };

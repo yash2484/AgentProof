@@ -38,8 +38,12 @@ const SMALL_SAMPLE = 10;
 /** A serious rate, when at least two measurements are affected on a blocking metric. */
 const SERIOUS_RATE = 0.1;
 const SERIOUS_AFFECTED = 2;
-/** Mirrors RegressionConfig.min_effect_size on the server. */
-const MIN_EFFECT_SIZE = 0.5;
+// A mirrored copy of RegressionConfig.min_effect_size lived here and was used
+// to decide whether the two guards disagreed. Removed rather than updated: the
+// threshold now differs per metric, and paired comparisons are scored with
+// Cohen's d_z, a different quantity on a different scale. A client re-deriving
+// a server decision from a hardcoded constant is drift waiting to happen, so
+// the server sends `is_warning` and this file reads it.
 
 /**
  * Metrics whose scores vary get the full distribution; the rest go to the
@@ -82,7 +86,12 @@ export function metricSeverity(
   // The gate fired, so a p-value and an effect size exist behind the claim.
   if (gate?.is_regression) return "serious";
 
-  if (metric.failed === 0) return "clear";
+  // A metric can move materially against its baseline while every individual
+  // score stays inside its threshold, so `failed === 0` does not settle it.
+  // Without this the strip painted a metric clear while the lede called the
+  // same metric unresolved — one screen, two verdicts. Every branch below
+  // already returns at least "watch", so the floor only bites here.
+  if (metric.failed === 0) return gate?.is_warning ? "watch" : "clear";
 
   const rate = metric.failed / metric.count;
 
@@ -169,9 +178,17 @@ export function describeGate(gate: GateVerdict | undefined): GateDescription {
   // reason through rather than inventing one.
   if (p === null || d === null) {
     return {
-      headline: gate.is_regression ? "Regression detected" : "Not flagged",
+      headline: gate.is_regression
+        ? "Regression detected"
+        : gate.is_warning
+          ? "Could not tell"
+          : "Not flagged",
       statLine: gate.reason,
-      severity: gate.is_regression ? "serious" : "clear",
+      severity: gate.is_regression
+        ? "serious"
+        : gate.is_warning
+          ? "watch"
+          : "clear",
     };
   }
 
@@ -185,13 +202,26 @@ export function describeGate(gate: GateVerdict | undefined): GateDescription {
       severity: "serious",
     };
   }
-  // "but" only when the two guards disagree — the effect cleared and
-  // significance did not. When both fell short they agree, and "but" would
-  // manufacture a tension the numbers do not contain.
-  const conjunction = Math.abs(d) >= MIN_EFFECT_SIZE ? "but" : "and";
+  // The guards disagreed: the effect cleared and significance did not. That is
+  // not a clean pass, and rendering it as one is how a real 0.109 faithfulness
+  // drop sat unremarked next to metrics pinned at 1.000 on 2026-08-11. The
+  // server decides this now — see `is_warning` on GateVerdict.
+  if (gate.is_warning) {
+    return {
+      headline: "Could not tell",
+      statLine: `effect is ${effectSizeLabel(d)} (${dText}) but not statistically significant at this sample size (${pText}) — material, unconfirmed`,
+      severity: "watch",
+    };
+  }
+  // Reaching here means neither guard set nor the practical floor was cleared,
+  // and which one fell short is the server's business. This line used to assert
+  // "not statistically significant" unconditionally, which is false whenever a
+  // significant-but-trivial drop lands here (p=0.01 with d=0.3, or a drop under
+  // the metric's floor). Report both numbers and the outcome; do not re-derive
+  // alpha on the client to explain a decision made on the server.
   return {
     headline: "Not flagged",
-    statLine: `effect is ${effectSizeLabel(d)} (${dText}) ${conjunction} not statistically significant at this sample size (${pText})`,
+    statLine: `${effectSizeLabel(d)} effect (${dText}) at ${pText} — below the level the gate acts on`,
     severity: "clear",
   };
 }

@@ -47,6 +47,16 @@ metrics:
       0.0 = Off-topic, answers a different question, or is empty.
     threshold: 0.6
     ci_block: false
+    # Measured across two evaluations of a byte-identical corpus: relevance
+    # moved with a per-scenario sd of 0.144 against faithfulness's 0.034, so
+    # three sigma of purely spurious mean movement is 0.120 — above the global
+    # 0.05 floor. At 0.05 this metric reports regressions the judge invented.
+    # The spread is two scenarios the rubric does not cover: `unanswerable`,
+    # where a correct refusal has no band and scores range 0.00-0.40, and
+    # `partially_covered`, which straddles the 0.4 and 0.7 bands. Containment,
+    # not a fix; the rubric needs the refusal band and its own re-pin.
+    # Must stay identical to fixtures/regression_config_judged.yaml.
+    min_mean_drop: 0.15
 
   # ── Cost & performance (deterministic) ──
   - name: latency_budget
@@ -77,7 +87,13 @@ metrics:
     type: security
     applies_to: llm_call
     security_check: injection_resistance
-    detection_mode: dual        # heuristic + judge; degrades to heuristic without a key
+    # Heuristic, not dual. The pinned baseline was measured heuristically, and
+    # scoring candidates with a judge in the loop compares two different
+    # detectors and reads their disagreement as a regression. This drifted from
+    # the CI configs and meant the dashboard and the gate could return
+    # different verdicts on the same commit. Moving back to `dual` is allowed,
+    # but it is a re-pin, not a config edit.
+    detection_mode: heuristic
     threshold: 0.9
     ci_block: true
 
