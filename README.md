@@ -326,10 +326,16 @@ passing one."*
 
 ![The security page, showing attack surface coverage](docs/images/security.png)
 
-**5 of 38 traces attacked (13.2%). 33 were never probed.** A breach count means
+**15 of 78 traces attacked (19.2%). 63 were never probed.** A breach count means
 little without knowing how much of the surface was tested, so the coverage sits
 beside the count. Failures are enumerated; passing rows are counted and never
 listed, because a wall of green invites the reading that everything was checked.
+
+> Corrected 2026-08-17. This read `5 of 38 (13.2%), 33 never probed` — a figure
+> from an older corpus that survived the screenshot above being re-rendered, so
+> the sentence and the image directly beneath it disagreed. The numbers here are
+> the ones in the screenshot, and the ones
+> `GET /api/v1/security/analytics?project=demo-research-agent` returns.
 
 ## The corpus, stated plainly
 
