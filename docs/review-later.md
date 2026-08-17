@@ -497,9 +497,21 @@ change.
 
 Baselines are built from a single pass, so whatever the judge returned that day
 becomes the reference. `faithfulness` moves with a per-scenario standard
-deviation of 0.034 between identical runs, so the pinned reference is noisier
-than it needs to be. A `--repeat N` averaging option would reduce it by roughly
-the square root of N.
+deviation of **0.066** between identical runs (median over five clean draws,
+max 0.126 — corrected 2026-08-14 from 0.034, which came from only two), so the
+pinned reference is noisier than it needs to be. A `--repeat N` averaging option
+would reduce it by roughly the square root of N.
+
+**Scoped 2026-08-14.** This affects the *accuracy* of every reported drop, not
+the run-to-run *stability* of the verdict — frozen baseline noise is a fixed
+per-scenario offset, not variance, so it cannot flip a verdict between two runs.
+Measured consequence: correcting the baseline over k=5 would cut `sd(deltas)`
+from ~0.139 to ~0.126, about a 1.10x lift on `d_z` — not enough to change the
+one run that missed (`d_z` 0.377 → ~0.42). Note also that "re-pinning" and
+"correcting" differ: redrawing one pass swaps one noisy draw for another,
+averaging k reduces the noise by sqrt(k). Deferred deliberately — it invalidates
+every figure derived from the current baseline, including the calibration floors,
+so it is worth bundling with the next change that touches the decision rule.
 
 **Review:** cheap to build, and it interacts with the calibration floors — a
 quieter reference moves the minimum detectable effect, which is asserted in

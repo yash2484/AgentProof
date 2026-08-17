@@ -312,9 +312,14 @@ thirteen per-scenario scores were being treated as thirteen draws from one
 distribution, so the spread called "noise" was really difference in difficulty
 between scenarios. 86.6% of that baseline's variance came from one hard
 scenario, putting sigma at 0.218 against a per-scenario run-to-run variation of
-0.034 — about six times too large, and a minimum detectable regression of
-roughly fifteen points. No amount of extra corpus fixes that; the error was in
-the model, not the sample.
+**0.066** — about **three times** too large, and a minimum detectable regression
+well above the drop on the table. No amount of extra corpus fixes that; the
+error was in the model, not the sample.
+
+> **Corrected 2026-08-14.** This read "0.034 — about six times too large" until
+> the sd was re-measured over five clean draws instead of two. The defect and
+> the fix are unchanged; the multiple was overstated by roughly 2x. The README
+> carried the same 6x figure and is corrected in the same commit.
 
 What landed:
 
@@ -329,9 +334,12 @@ What landed:
 - **A practical-significance floor**, necessary on both statistical paths.
   Pairing alone drops the noise floor far enough that almost anything becomes
   significant, and a gate that fires weekly gets switched off.
-- **Per-metric floors, measured.** Two evaluations of a byte-identical corpus:
-  `faithfulness` sd 0.034, `relevance` sd 0.144, the six measured metrics 0.000.
+- **Per-metric floors, measured.** Evaluations of a byte-identical corpus:
+  `faithfulness` sd **0.066** over five draws (0.034 over the original two —
+  superseded), `relevance` sd 0.144, the six measured metrics 0.000.
   `relevance` sets its own floor at 0.15, above its 0.120 three-sigma.
+  `faithfulness` runs on the global 0.05, which the corrected sd puts at about
+  2.7 sigma rather than the ~5 sigma the old figure implied.
 - **A warning state.** A drop clearing the floor and the effect guard but
   missing significance reports `warn`, not `ok`, in the CLI and on the dashboard
   card. "Could not tell" is not "fine".
@@ -890,7 +898,7 @@ runs, because its rubric has no band for a correct refusal (`R24`).
 | **Gate blocks a real regression** | **True with a measured miss rate — quote the rate, never the bare claim.** Six homogeneous runs on `983fef2`: **5 blocked, 1 passed** (PR #14). Safe wording: *"it blocks a real injected regression in 5 of 6 runs; the effect sits near the deliberate effect-size floor, so it is missed roughly 1 run in 6, and that rate is measured."* Do not quote a single run's `p` or `d_z` as characteristic — the range is `p` 0.0049–0.0996, `d_z` 0.377–0.849. |
 | **Judge noise on faithfulness** | Measured — per-scenario σ median **0.066**, max 0.126 over five clean draws. Supersedes the 0.034 in `regression_config_judged.yaml`, which is corrected in place. Consequence: the global `min_mean_drop: 0.05` sits near **2.7σ**, not the ~5σ the old figure implied. |
 | **Unreachable judge is distinguishable from a bad agent** | True as of `8140973` — `NO DATA` verdict, exit 2, message stating it is infrastructure. Before that fix an exhausted credit balance produced a red check identical to a caught regression. |
-| **Pairing fixed the noise model** | True and measured — the unpaired detector put sigma at 0.218 against a per-scenario run-to-run 0.034. This claim survives 2026-08-14 untouched; it is the one to lead with. |
+| **Pairing fixed the noise model** | True and measured — the unpaired detector put sigma at 0.218 against a per-scenario run-to-run **0.066**, so its noise estimate was roughly **3x** too large. The defect and the fix survive 2026-08-14; the *multiple* does not — it read 6x against the old 0.034 sd. Still the claim to lead with, at the corrected magnitude. |
 | **Gate is packaged for adoption** | True — composite `action.yml`, consumed by this repo's own CI via `uses: ./` |
 | **"It caught a hallucination at 0.20"** | **Superseded. The same frozen fixture now scores 0.35.** Quote 0.35, or quote the range and say it drifts. |
 | **"4/12 heuristic, 6/13 judge"** | **Superseded for the judge half** — measured under the unpaired detector and the old baseline. Not re-run under pairing. |
@@ -1122,13 +1130,18 @@ determinism. Judge spend for the whole investigation: ~$0.67.
    shipped, was tested against a real injected regression, **failed to catch
    it**, was diagnosed by decomposing the variance (between-scenario difficulty
    was being counted as measurement noise, sigma 0.218 against a true
-   run-to-run 0.034), was rebuilt as a paired comparison, and the smallest
-   resolvable drop went from 0.116 to 0.050. Then it was re-tested and the
-   verdict proved unstable, which is Gap A, which is open.
+   run-to-run **0.066** — roughly three times too large), was rebuilt as a
+   paired comparison, and the smallest resolvable drop went from 0.116 to 0.050.
+   It was then re-tested six times: **it blocks in 5 of 6 runs**, and the run
+   that missed is kept open as PR #14 rather than re-rolled.
 
-   Lead with the failure. Do not claim a stable block. Do not quote
-   `p=0.0043` without also quoting `p=0.0996` from the 2026-08-14 run on
-   identical inputs.
+   Lead with the failure. **Quote the miss rate, never a bare "it blocks".**
+   Never quote a single run's `p` or `d_z` as characteristic — the measured
+   ranges are `p` 0.0049–0.0996 and `d_z` 0.377–0.849.
+
+   Two figures that are easy to get wrong because they were corrected on
+   2026-08-14: judge sd is **0.066**, not 0.034, and the old noise model was
+   **~3x** too large, not ~6x. Anything quoting the earlier pair is stale.
 
 **Standing constraints, still in force.** Never re-pin a baseline to manufacture
 a regression. Never tune a degradation until the p-value looks good. Never

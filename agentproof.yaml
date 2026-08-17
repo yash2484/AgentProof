@@ -47,10 +47,14 @@ metrics:
       0.0 = Off-topic, answers a different question, or is empty.
     threshold: 0.6
     ci_block: false
-    # Measured across two evaluations of a byte-identical corpus: relevance
-    # moved with a per-scenario sd of 0.144 against faithfulness's 0.034, so
+    # Measured on a byte-identical corpus: relevance moved with a per-scenario
+    # sd of 0.144 (two evaluations) against faithfulness's 0.066 (median of five
+    # clean draws; corrected 2026-08-14 from 0.034, which came from only two), so
     # three sigma of purely spurious mean movement is 0.120 — above the global
     # 0.05 floor. At 0.05 this metric reports regressions the judge invented.
+    # Note the corrected faithfulness sd puts that global 0.05 floor at about
+    # 2.7 sigma rather than ~5; it is left in place rather than raised, since
+    # raising it would cut the gate's sensitivity.
     # The spread is two scenarios the rubric does not cover: `unanswerable`,
     # where a correct refusal has no band and scores range 0.00-0.40, and
     # `partially_covered`, which straddles the 0.4 and 0.7 bands. Containment,

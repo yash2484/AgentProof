@@ -82,7 +82,7 @@ each run. See the limitations.
 
 Every number below is produced by committed code you can re-run.
 
-### The gate has been proven to fire
+### The gate has been proven to fire — and its miss rate is measured
 
 Four realistic faults are injected into a pinned corpus, each asserting the gate
 exits non-zero **and names the metric that should have caught it** — plus a
@@ -104,6 +104,12 @@ thresholds neutered, every fault assertion fails and the control still passes.
 cd server && python -m pytest tests/unit/test_fault_injection.py
 ```
 
+These are deterministic faults, and the gate catches them every time. A judged
+quality regression is a different question, because the judge is a noisy
+instrument: on the injected grounding regression the gate blocks in **5 of 6
+measured runs**. Both numbers are stated below rather than only the flattering
+one.
+
 ### How small a regression it catches
 
 Every gate has a minimum detectable effect whether or not anyone measures it.
@@ -121,6 +127,14 @@ Both are found by bisection against `baselines/demo-agent-replay.json`. The
 paired floor is the practical-significance floor itself: once between-scenario
 difficulty is removed, what remains is small enough that the question stops
 being "can we detect this" and becomes "do we care".
+
+**One caveat worth stating rather than burying.** That baseline pins one judge
+draw per scenario, so each pinned score carries a single run's noise. These two
+floors are therefore point estimates against a noisy reference, not exact
+quantities. Correcting the baseline to a mean of k draws would tighten them by
+roughly ten percent; it is deliberately deferred, because it invalidates every
+figure derived from the current baseline and is worth doing once, alongside the
+next change that touches the decision rule.
 
 It stays quiet below those numbers on purpose. A gate that cries wolf gets
 switched off.
@@ -170,14 +184,19 @@ detector end to end.
 
 This is the part most eval tooling gets wrong, so it is worth stating plainly.
 
-Judge scores drift. Evaluating a byte-identical corpus twice, with the same
+Judge scores drift. Evaluating a byte-identical corpus repeatedly, with the same
 frozen fixtures and the same model, moves them:
 
-| metric | per-scenario sd | scenarios that moved | largest single swing |
+| metric | per-scenario sd | largest single swing | draws |
 |---|---:|---:|---:|
-| `faithfulness` | 0.034 | 6 of 13 | 0.07 |
-| `relevance` | 0.144 | 2 of 13 | 0.40 |
-| the six measured metrics | 0.000 | 0 of 13 | 0.00 |
+| `faithfulness` | **0.066** (max 0.126) | 0.27 | 5 |
+| `relevance` | 0.144 | 0.40 | 2 |
+| the six measured metrics | 0.000 | 0.00 | 2 |
+
+The `faithfulness` figure was **0.034 until 2026-08-14**, when five clean draws
+replaced the original two and roughly doubled it. Two evaluations are enough to
+notice drift and not enough to size it; the correction is recorded because the
+floors below are set against this number.
 
 A gate that compared means would fire on that. Five rules keep it honest, and
 the first one matters most:
@@ -191,8 +210,12 @@ the first one matters most:
    "does this matter". Below the floor the gate declines regardless of how
    certain the statistics are.
 3. **Per-metric floors, measured rather than chosen.** One number cannot serve a
-   metric with an sd of 0.034 and one with 0.144. `relevance` sets its own at
-   0.15, above the 0.120 that three sigma of its own noise reaches.
+   metric with an sd of 0.066 and one with 0.144. `relevance` sets its own at
+   0.15, above the 0.120 that three sigma of its own noise reaches. The global
+   0.05 floor that `faithfulness` runs on sits at about 2.7 sigma of spurious
+   movement in the mean, not the ~5 sigma implied before the sd was corrected —
+   a thinner margin than previously documented, and deliberately left in place
+   rather than raised, since raising it cuts sensitivity.
 4. **A one-sided t-test at alpha=0.05 plus an effect-size guard** — Cohen's *d*
    unpaired, *d_z* paired. Both must agree. The effect-size guard is what stops
    one collapsing scenario from convicting the whole suite.
@@ -239,10 +262,15 @@ It was treating thirteen per-scenario scores as thirteen draws from one
 distribution, so the spread it called "noise" was really the difference in
 difficulty between scenarios. **86.6% of that baseline's variance came from a
 single hard scenario.** Its sigma was 0.218, against a per-scenario run-to-run
-variation of 0.034 measured directly — a noise estimate roughly six times too
-large, which put the smallest resolvable regression at about fifteen points. The
-eleven-point drop was never catchable. No amount of extra corpus would have
-fixed it, because the error was in the model, not the sample.
+variation of 0.066 measured directly — a noise estimate roughly **three times**
+too large, which put the smallest resolvable regression well above the drop on
+the table. The eleven-point drop was never catchable. No amount of extra corpus
+would have fixed it, because the error was in the model, not the sample.
+
+> This paragraph read "roughly six times too large" until 2026-08-14. That
+> multiple was computed against the old sd of 0.034; measuring five draws instead
+> of two put the sd at 0.066 and halved it. The defect and the fix are unchanged
+> — the magnitude was overstated, and correcting it is cheaper than defending it.
 
 The fix was to compare each scenario against itself. Same degradation, same
 fixtures, only the comparison changed:
@@ -250,8 +278,22 @@ fixtures, only the comparison changed:
 | run | comparison | verdict |
 |---|---|---|
 | degraded agent | unpaired | PASS — `p=0.0939`, missed |
-| degraded agent | **paired** | **FAIL** — `drop 0.085, p=0.0043, d_z=0.870` |
+| degraded agent | **paired** | **FAIL** in 5 of 6 runs — see below |
 | clean agent | paired | PASS — `delta -0.008`, no false positive |
+
+**The paired row is a rate, not a single result, and that matters.** Six
+measured runs of the same degradation against the same pinned baseline: five
+block, one passes. `d_z` ranges 0.377–0.849 and `p` ranges 0.0049–0.0996. The
+effect sits near the `d_z >= 0.5` effect-size guard, so it is missed roughly one
+run in six.
+
+That is the guard working rather than failing — it exists to require *breadth*,
+and this degradation genuinely hits some scenarios far harder than others. The
+run that missed is kept open and annotated as
+[PR #14](https://github.com/yash2484/AgentProof/pull/14) rather than re-run
+until it went red. A gate's miss rate is a property worth measuring and
+publishing; quoting a single blocking run as though it were deterministic is the
+kind of claim this project exists to avoid making.
 
 Pairing alone would have traded a deaf gate for a hair-trigger one: it drops the
 noise floor far enough that almost any movement becomes significant, and a gate

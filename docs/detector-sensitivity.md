@@ -161,8 +161,12 @@ was not partial credit: the detector was treating thirteen per-scenario scores
 as thirteen draws from one distribution, so the spread it called noise was
 really the difference in difficulty *between* scenarios. On that baseline, 86.6%
 of the variance came from one hard scenario, putting sigma at 0.218 against a
-per-scenario run-to-run variation of 0.034 measured directly — about six times
-too large.
+per-scenario run-to-run variation of 0.066 measured directly — about **three
+times** too large.
+
+> **Corrected 2026-08-14.** This read "0.034 … about six times too large". The
+> sd came from two evaluations; five clean draws put it at 0.066 and halved the
+> multiple. The diagnosis is unchanged, the magnitude was overstated.
 
 The judge gate was deafer partly because judges award partial credit, and mostly
 because the detector was measuring the wrong thing. Pairing each scenario
@@ -182,10 +186,12 @@ without it, ordinary judge noise on a small corpus would trip the gate on its
 own.
 
 Drift has since been measured properly rather than anecdotally, by evaluating a
-byte-identical corpus twice: `faithfulness` moves with a per-scenario standard
-deviation of 0.034, `relevance` with 0.144, and the six measured metrics with
-0.000. Those numbers are what the practical-significance floors are now sized
-against.
+byte-identical corpus repeatedly: `faithfulness` moves with a per-scenario
+standard deviation of **0.066** (median over five clean draws, max 0.126),
+`relevance` with 0.144 over two, and the six measured metrics with 0.000. Those
+numbers are what the practical-significance floors are sized against — and the
+`faithfulness` figure was 0.034 until 2026-08-14, when three more draws roughly
+doubled it. Two evaluations detect drift; they do not size it.
 
 **A trace with no writer span is immune.** The `error` scenario's retriever
 fails before the writer runs, so there is nothing to judge and the metric scores
