@@ -116,6 +116,7 @@ class EvalRunner:
             details=score.details,
             raw_judge_output=score.raw_judge_output,
             evaluated_at=now,
+            unmeasurable=score.unmeasurable,
         )
 
     @staticmethod

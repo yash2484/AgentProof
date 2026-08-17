@@ -130,6 +130,10 @@ def format_regression_report(report: RegressionReport) -> str:
         # hid a real drop in plain sight.
         if r.is_regression:
             verdict = "REGRESSION"
+        elif r.method == "unmeasurable":
+            # Rendered distinctly from "warn": warn means the sample could not
+            # settle the question, this means there was no sample at all.
+            verdict = "NO DATA"
         elif r.is_warning:
             verdict = "warn"
         else:
@@ -179,10 +183,26 @@ def cmd_regression(args) -> int:
     cfg = RegressionConfig()
 
     keys = pair_keys(traces)
-    candidate_by_key = _scores_by_key(report, keys) if keys else {}
+    # Unmeasured results carry a placeholder in `score`, not a measurement, so
+    # they are kept out of every candidate sample and tracked separately. Letting
+    # one through would enter the comparison as a 0.0 drop.
+    measured = [r for r in report.results if not r.unmeasurable]
+    unmeasurable_by_metric: dict[str, set[str]] = {}
+    for r in report.results:
+        if r.unmeasurable:
+            unmeasurable_by_metric.setdefault(r.metric_name, set()).add(
+                keys.get(str(r.trace_id), str(r.trace_id))
+            )
+
+    class _Measured:
+        """A view of the report carrying only results that produced a score."""
+
+        results = measured
+
+    candidate_by_key = _scores_by_key(_Measured, keys) if keys else {}
 
     candidate: dict[str, list[float]] = {}
-    for r in report.results:
+    for r in measured:
         candidate.setdefault(r.metric_name, []).append(r.score)
 
     ci_block = {m.name for m in config.metrics if m.ci_block}
@@ -195,6 +215,20 @@ def cmd_regression(args) -> int:
     results = []
     for name, baseline in baselines.items():
         scores = candidate.get(name, [])
+        if unmeasurable_by_metric.get(name):
+            # Short-circuits ahead of the no-scores skip below: "the judge broke"
+            # and "this metric is not evaluated any more" are different facts and
+            # must not collapse into the same quiet note.
+            results.append(
+                detect_regression(
+                    baseline,
+                    scores,
+                    cfg,
+                    candidate_by_key=candidate_by_key.get(name),
+                    unmeasurable_keys=unmeasurable_by_metric[name],
+                )
+            )
+            continue
         if not scores:
             # A baseline metric with no candidate scores this run (e.g. a metric
             # the current config no longer evaluates) cannot be assessed -> skip it
@@ -216,13 +250,32 @@ def cmd_regression(args) -> int:
         )
     regressed = [r.metric_name for r in results if r.is_regression]
     blocking = [n for n in regressed if n in ci_block]
+    # A blocking metric that could not be measured must not report a pass. The
+    # gate's promise is "this commit was checked", and an unreachable judge means
+    # it was not — so the job fails, but on infrastructure grounds, and the
+    # message says which so nobody reads it as a caught regression.
+    unmeasured_blocking = [
+        r.metric_name
+        for r in results
+        if r.method == "unmeasurable" and r.metric_name in ci_block
+    ]
     report_out = RegressionReport(
         results=results,
         regressed_metrics=regressed,
-        passed=len(blocking) == 0,
+        passed=len(blocking) == 0 and not unmeasured_blocking,
         timestamp=datetime.now(UTC),
     )
     print(format_regression_report(report_out))
+    if unmeasured_blocking:
+        print(
+            f"\nFAILED WITHOUT A VERDICT: {', '.join(unmeasured_blocking)} could not "
+            f"be measured, so this commit was not checked. This is an "
+            f"infrastructure failure (judge unreachable, refused, or out of "
+            f"credit) — NOT a detected regression. Do not read this run as "
+            f"evidence the gate caught anything.",
+            file=sys.stderr,
+        )
+        return 2
     return 0 if report_out.passed else 1
 
 
