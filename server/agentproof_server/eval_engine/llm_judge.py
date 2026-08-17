@@ -211,15 +211,30 @@ class LLMJudgeEvaluator:
             final_value = sum(scores) / len(scores)
 
         degraded = sum(1 for r in records if r.get("refusal") or r.get("error"))
+        if degraded:
+            # Any unreachable span taints the whole metric for this trace. Scoring
+            # only the spans that answered would silently change what the number
+            # covers from run to run — the same drift pairing exists to prevent —
+            # and under `aggregation: min` one failed span already decides the
+            # trace score outright.
+            explanation = (
+                f"{self.config.name}: could not be measured — {degraded} of "
+                f"{len(scores)} judge call(s) failed or were refused. This is not "
+                f"a score; the metric was attempted and did not produce one."
+            )
+            return EvalScore(
+                value=final_value,
+                explanation=explanation,
+                details={"per_span": records, "aggregation": agg},
+                raw_judge_output={"records": records},
+                latency_ms=int((time.perf_counter() - start) * 1000),
+                unmeasurable=True,
+            )
+
         explanation = (
             f"{self.config.name}: {agg} of {len(scores)} judged span(s)"
             f" = {final_value:.3f}"
         )
-        if degraded:
-            explanation += (
-                f" ({degraded} judge call(s) failed or were refused → scored 0.0)"
-            )
-
         return EvalScore(
             value=final_value,
             explanation=explanation,

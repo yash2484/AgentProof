@@ -1,21 +1,59 @@
 # AgentProof — Progress
 
-**Current phase:** Paired regression detection — **built and verified**
-**Branch:** `feat/paired-regression` (PR #12)
-**Last updated:** 2026-08-12
+**Current phase:** All build work merged. Open question: the block is not reproducible.
+**Branch:** `main` at `983fef2` (PRs #12 and #13). Demo PR #14 open, not merged.
+**Last updated:** 2026-08-14
 
-> The gate was packaged as a composite action and this repo's CI now consumes it
-> via `uses: ./` (PR #10, merged `a68c165`). It was then tested with a
-> deliberately injected regression **and failed to catch it** — the detector was
-> using between-scenario difficulty as its noise model. The comparison is now
-> paired scenario-against-scenario, with practical-significance floors sized
-> from measured judge noise, and the gate's sensitivity is asserted by tests
-> derived from the shipped baseline.
+> **Read this before drafting anything public.**
 >
-> Same degradation, same fixtures, only the comparison changed:
-> `p=0.0939` PASS → `p=0.0043` FAIL, with the clean agent still passing.
+> The gate was packaged as a composite action and this repo's CI consumes it via
+> `uses: ./` (PR #10, `a68c165`). It was tested with a deliberately injected
+> regression and **failed to catch it**, because the detector was using
+> between-scenario difficulty as its noise model. The comparison is now paired
+> scenario-against-scenario with practical-significance floors sized from
+> measured judge noise. That fix is real and it is asserted by tests derived
+> from the shipped baseline.
 >
-> **Two things a next session should not miss.** The demo `walkthrough.md`
+> **What 2026-08-14 established: the gate resolves this degradation in 5 of 6
+> runs, and the miss rate is now measured rather than assumed.** PR #14 is the
+> miss — it passed. Five further clean draws through the shipped rule all
+> blocked. The effect sits near the deliberate `d_z ≥ 0.5` breadth guard, so it
+> gets missed sometimes; that is statistical power, not a defect. Full six-run
+> table and the two ruled-out hypotheses under **Gap A** in *Known gaps*.
+>
+> Also landed 2026-08-14: **Gap B is fixed** (`8140973`, branch
+> `fix/judge-unmeasurable`) — an unreachable judge now reports `NO DATA` and
+> fails the job on infrastructure grounds instead of scoring 0.0 and reading as a
+> catastrophic regression.
+>
+> <details>
+> <summary>Superseded intermediate framing from earlier the same day</summary>
+>
+> This block first read "pairing was necessary and not sufficient" and presented
+> two runs as evidence the verdict was unstable:
+>
+> | Run | Verdict | Numbers |
+> |---|---|---|
+> | 2026-08-12, branch cut at `917aa4b` | **FAIL, exit 1** | `drop 0.085, p=0.0043, d_z=0.870` |
+> | 2026-08-14, PR #14 on `983fef2` | **PASS, exit 0** | `drop 0.072, p=0.0996, d_z=0.377` |
+>
+> Two observations across two commits do not support a stability claim. Five more
+> draws on the second commit did, in the other direction. Kept as a record of
+> reading too much into n=2.
+> </details>
+>
+> Nothing in the comparison changed between those two runs. `baselines/` and
+> `fixtures/regression_config*.yaml` are byte-identical across
+> `917aa4b..983fef2`; the detector diff is reporting text plus an `unpinned`
+> counter. The candidate side is re-judged live on every run, so the judge's
+> per-scenario noise moved `d_z` from 0.870 to 0.377 and flipped the verdict.
+>
+> **The block is real but not reproducible run to run.** Do not state "the gate
+> blocks a real regression" as a settled property. It blocked once and passed
+> once on identical inputs. This is `R25` (a baseline carries one evaluation
+> run's judge noise) and it is now the most important open item in the repo.
+>
+> **Two older things a next session should not miss.** The demo `walkthrough.md`
 > reproduction had been claiming an outcome the tool stopped producing — a
 > single prompt-injection breach no longer blocks, and it takes three. That is
 > disclosed, not fixed, and it is `R23` in `docs/review-later.md`. And the
@@ -36,9 +74,24 @@ produced by running the command in the same session that wrote this table.
 | dashboard types + lint | exit 0, exit 0 | `npx tsc -b`; `npx eslint . --ext ts,tsx` |
 | lint (python) | All checks passed | `ruff check sdk/ server/ demo_agent/ scripts/` from the repo root |
 | CI, PR #12 | **8/8 green** | `lint`, `test-sdk`, `test-server`, `test-dashboard`, `judge-key`, `fixture-gate`, `agent-gate`, `judge-gate` |
-| gate vs degraded agent | **FAIL, exit 1** | paired, `drop 0.085, p=0.0043, d_z=0.870` |
+| gate vs degraded agent | **FAIL, exit 1** | paired, `drop 0.085, p=0.0043, d_z=0.870` — **superseded, see below** |
 | gate vs clean agent | PASS, exit 0 | paired, `delta -0.008` — no false positive |
 | live endpoint | 200, all 8 metrics `method=paired`, `paired_n=13` | `GET /api/v1/evals/analytics?project=demo-research-agent` |
+
+**Re-verified 2026-08-14 on PR #14** (`demo/weaken-writer-guardrail-paired`,
+rebased onto `983fef2`), which is the run that supersedes the degraded-agent row
+above:
+
+| Check | Result | How verified |
+|---|---|---|
+| CI + Regression, PR #14 | **8/8 green over a degraded agent** | `gh pr checks 14` — `lint`, `test-sdk`, `test-server`, `test-dashboard`, `judge-key`, `fixture-gate`, `agent-gate`, `judge-gate` |
+| `agent-gate` (key-free) | PASS, exit 0 | Correct, not a miss. All six metrics it can run score 1.000 with sd 0.000, so a grounding drop is invisible to them. Reproduced locally. |
+| `judge-gate` (judged) | **PASS, exit 0** | `faithfulness baseline=0.908 candidate=0.836 — drop 0.072, p=0.0996 >= alpha=0.05, d_z=0.377 < 0.5` |
+| `relevance` on the degraded agent | **scored higher** | `baseline=0.900 candidate=0.954`, paired delta `-0.054`. The rubric has no band for this — `R24`. |
+
+The degradation was not tuned, the baseline was not re-pinned, and the job was
+not re-run to look for a different answer. The first verdict is the recorded
+one.
 
 `demo_agent` is 38/38 for the first time: the `trigger_evals` timeout stopped
 firing when `injection_resistance` moved from `dual` to `heuristic`, which
@@ -297,9 +350,15 @@ unmodified main, by a rule fixed before either run's numbers were seen.
 Continuity: faithfulness came out at 0.9077 and 0.9246 against the 2026-08-08
 pinned 0.9108, so nothing drifted while the format changed.
 
-**Result, same degradation and same fixtures throughout:** unpaired `p=0.0939`
-PASS → paired `drop 0.085, p=0.0043, d_z=0.870` FAIL, clean agent `delta -0.008`
-PASS.
+**Result on the day, same degradation and same fixtures throughout:** unpaired
+`p=0.0939` PASS → paired `drop 0.085, p=0.0043, d_z=0.870` FAIL, clean agent
+`delta -0.008` PASS.
+
+**This result did not hold on re-run.** On 2026-08-14 the identical degradation
+against the identical baseline returned `drop 0.072, p=0.0996, d_z=0.377` and
+PASSED. The unpaired-to-paired improvement above is a genuine property of the
+detector and is asserted by `test_regression_calibration.py`; the FAIL verdict
+is a single observation, not a stable one. See **Gap A** under *Known gaps*.
 
 **What code review caught in this work**, all five in code written during it:
 
@@ -828,7 +887,10 @@ runs, because its rubric has no band for a correct refusal (`R24`).
 | Detector catches regressions | Measured — smallest resolvable faithfulness drop **0.116 unpaired, 0.050 paired**, asserted in `test_regression_calibration.py` |
 | Judge catches fabrication | Measured — 1.00 vs 0.35 |
 | Harness catches real failures | Demonstrated — faithfulness **0.35** on an unprompted fabrication, against a 0.7 threshold |
-| **Gate blocks a real regression** | **True and measured** — injected degradation, paired `p=0.0043`, exit 1; clean agent still passes |
+| **Gate blocks a real regression** | **True with a measured miss rate — quote the rate, never the bare claim.** Six homogeneous runs on `983fef2`: **5 blocked, 1 passed** (PR #14). Safe wording: *"it blocks a real injected regression in 5 of 6 runs; the effect sits near the deliberate effect-size floor, so it is missed roughly 1 run in 6, and that rate is measured."* Do not quote a single run's `p` or `d_z` as characteristic — the range is `p` 0.0049–0.0996, `d_z` 0.377–0.849. |
+| **Judge noise on faithfulness** | Measured — per-scenario σ median **0.066**, max 0.126 over five clean draws. Supersedes the 0.034 in `regression_config_judged.yaml`, which is corrected in place. Consequence: the global `min_mean_drop: 0.05` sits near **2.7σ**, not the ~5σ the old figure implied. |
+| **Unreachable judge is distinguishable from a bad agent** | True as of `8140973` — `NO DATA` verdict, exit 2, message stating it is infrastructure. Before that fix an exhausted credit balance produced a red check identical to a caught regression. |
+| **Pairing fixed the noise model** | True and measured — the unpaired detector put sigma at 0.218 against a per-scenario run-to-run 0.034. This claim survives 2026-08-14 untouched; it is the one to lead with. |
 | **Gate is packaged for adoption** | True — composite `action.yml`, consumed by this repo's own CI via `uses: ./` |
 | **"It caught a hallucination at 0.20"** | **Superseded. The same frozen fixture now scores 0.35.** Quote 0.35, or quote the range and say it drifts. |
 | **"4/12 heuristic, 6/13 judge"** | **Superseded for the judge half** — measured under the unpaired detector and the old baseline. Not re-run under pairing. |
@@ -848,6 +910,109 @@ defects in shipped behaviour, that file is decisions and deferrals.
 
 ## Known gaps, stated not fixed
 
+> **Gap A — the gate misses this degradation in roughly 1 run in 6.**
+> Opened 2026-08-14 and **downgraded the same day** after measurement. Expected
+> statistical power on a borderline effect, not a defect.
+>
+> **Superseded framing, kept because the correction is the useful part.** This
+> entry twice claimed more than the evidence supported: first "the verdict is not
+> reproducible", then "the mean drop is reproducible, the spread is not — the gate
+> is effectively coin-flipping", both blamed on `R25` (the baseline pinning one
+> run's judge noise). The second version rested on three observations spanning two
+> commits, one of which was hand-computed rather than run through the shipped rule.
+>
+> **What six homogeneous observations on `983fef2` show.** Same degradation, same
+> pinned baseline, same frozen fixtures, same config; five local draws through the
+> shipped `detect_regression` plus the CI run on PR #14; every draw screened for
+> failed judge calls:
+>
+> | Run | drop | p | `d_z` | Verdict |
+> |---|---|---|---|---|
+> | CI, PR #14 | 0.072 | 0.0996 | 0.377 | **pass** |
+> | local 1 | 0.126 | 0.0094 | 0.752 | REGRESSION |
+> | local 2 | 0.117 | 0.0164 | 0.669 | REGRESSION |
+> | local 3 | 0.094 | 0.0049 | 0.849 | REGRESSION |
+> | local 4 | 0.099 | 0.0350 | 0.552 | REGRESSION |
+> | local 5 | 0.087 | 0.0057 | 0.827 | REGRESSION |
+>
+> **5 of 6 block.** The 2026-08-12 CI run (`d_z 0.870`) agrees but sits on a
+> pre-rebase commit, so it is deliberately not pooled into that ratio.
+>
+> **Two hypotheses ruled out rather than assumed away.**
+> - *A corpus difference between CI and local:* no. `demo_agent capture` is
+>   deterministic — judge-visible text is byte-identical across captures, 13/13.
+> - *PR #14 being anomalous:* no. Its spread of paired deltas (0.191) is 1.45σ
+>   above the local mean of 0.147, one-sided p ≈ 0.073. An ordinary draw.
+>
+> **The actual explanation.** Decomposing the spread: ~0.103 is genuine
+> scenario-to-scenario variation in how hard the degradation bites, against ~0.093
+> of measurement noise. It hits `blended`, `success` and `overclaim_bait` hard and
+> barely touches `injection` or `benchmarks`. The effect therefore sits near
+> `min_effect_size_paired = 0.5`, a deliberate *breadth* requirement whose
+> docstring rejects `d_z 0.41` on purpose. **An effect this close to the line gets
+> missed sometimes; that is the guard working, not failing.**
+>
+> **Replication was designed, costed and rejected on the numbers.** It would not
+> have flipped PR #14 (`d_z` 0.377 → ~0.46, still under 0.5); it buys ~8% spread
+> reduction because the spread is mostly real heterogeneity; candidate-only
+> averaging is asymmetric and inflates `d_z` while the baseline stays a single
+> draw; and it triples judged CI cost permanently ($0.095 → $0.29 per run).
+> Averaging the five draws *does* give a stable `drop 0.104, p=0.0080, d_z=0.777`
+> — the mechanism works, it is simply not worth its price here.
+>
+> **Still open, deferred deliberately: *correcting* the baseline** to the mean of
+> k clean draws. That improves the accuracy of the reported drop, since a scenario
+> whose baseline draw landed high shows an inflated drop, but it cannot improve
+> run-to-run stability — frozen noise is a fixed offset, not variance. It
+> invalidates every recorded baseline figure, so it needs its own declared change.
+> "Re-pinning" and "correcting" are not the same thing: redrawing one run swaps
+> one noisy draw for another, averaging k reduces the noise by √k.
+>
+> **Do not fix this by re-running until it fails.**
+
+> **Gap B — ~~the judged gate cannot tell "the agent got worse" from "the judge
+> could not be reached."~~ FIXED 2026-08-14, `8140973`, branch
+> `fix/judge-unmeasurable`.**
+>
+> **The fix.** `EvalScore`/`EvalResult` carry an `unmeasurable` flag (default
+> off, so every existing evaluator is untouched); the detector short-circuits to
+> a no-verdict result rather than computing a drop; the report renders `NO DATA`
+> distinctly from `warn`; and a blocking metric that could not be measured fails
+> the job on **exit 2** with a message stating it is infrastructure and not a
+> caught regression. Partial failure taints the whole metric on purpose —
+> scoring only the spans that answered would quietly change what the number
+> covers between runs. 8 new tests, TDD; 421 passed / 39 skipped; verified
+> end-to-end against an unreachable judge, which now prints `NO DATA` on both
+> judged metrics and `Overall: FAIL (regressed: none)`.
+>
+> **Still outstanding from this gap:** `action.yml:107` only checks that
+> `anthropic-api-key` is **non-empty**, never that it works. A cheap live
+> preflight call before scoring would fail fast on a dead key instead of
+> discovering it 12 judge calls in. Small, not yet done.
+>
+> **The defect, for the record.** `llm_judge.py` returned `0.0` for any
+> exception and appended "(N judge call(s) failed or were refused → scored
+> 0.0)". Nothing removed failed calls from regression scoring.
+>
+> Consequence, verified by hitting it: with the Anthropic credit balance
+> exhausted every judge call 400s, faithfulness scores ≈0.000 against a 0.908
+> baseline, and the gate reports a catastrophic uniform regression and **fails
+> the build**. An unpaid bill is indistinguishable from a destroyed agent.
+>
+> This is the same defect class the project exists to remove, one step over:
+> the codebase is careful that *unmeasured never renders as passing*, and here
+> unmeasured renders as **failing**, which for a gate is just as wrong. A gate
+> must be able to say "I could not measure this."
+>
+> **Do not re-run the judged gate until credit is restored.** It will produce a
+> red check that looks like a caught regression and is nothing of the kind. That
+> screenshot would be the single most damaging thing this repo could publish.
+>
+> Fix: mark judge-call failure as *unmeasurable* and have the judged gate exit
+> with a distinct "could not measure" status rather than folding it into a
+> score. Verify the key with one live call before scoring, and fail the job on
+> infrastructure grounds instead of reporting a quality verdict.
+
 0. **A single security breach does not block the build.** One scenario in
    thirteen successfully prompt-injected yields `d_z=0.277`, under the 0.5
    effect-size guard, and passes; three are needed to fire. Verified 2026-08-12,
@@ -861,14 +1026,24 @@ defects in shipped behaviour, that file is decisions and deferrals.
    `faithfulness` (σ 0.173) and `relevance` (σ 0.180) have spread. Both σ figures
    are *between-scenario* spread; the run-to-run noise that actually matters for
    the gate is far smaller — see #2.
-2. **Judge scores drift between runs, now measured rather than anecdotal.**
-   Evaluating a byte-identical corpus twice: `faithfulness` moves with a
-   per-scenario σ of **0.034** (6 of 13 scenarios, max swing 0.07), `relevance`
-   with **0.144** (2 of 13, max swing 0.40), and the six measured metrics with
-   **0.000**. `partially_covered` alone has now returned 0.20, 0.40 and 0.35 on
-   the same frozen fixture across three sessions. This is what the
-   practical-significance floors are sized against, and the reason `relevance`
-   needs its own floor of 0.15.
+2. **Judge scores drift between runs, now measured rather than anecdotal —
+   figure revised upward 2026-08-14.** `faithfulness` per-scenario σ is
+   **0.066 median, 0.126 max**, measured over **five** clean draws of a
+   byte-identical corpus; every draw was screened for failed judge calls. The
+   earlier **0.034** came from only two evaluations and is superseded — it is
+   corrected in place in `fixtures/regression_config_judged.yaml`. `relevance`
+   sits at **0.144** (2 of 13 scenarios, max swing 0.40) and the six measured
+   metrics at **0.000**. `partially_covered` alone has returned 0.20, 0.40 and
+   0.35 on the same frozen fixture across sessions.
+
+   **Consequence for the floors.** They are sized against this number, so the
+   global `min_mean_drop: 0.05` that `faithfulness` runs on sits near **2.7σ**
+   of purely spurious mean movement (standard error of a 13-scenario mean is
+   σ/√13 = 0.018), not the ~5σ the 0.034 figure implied. The floor was **not**
+   raised: doing so cuts sensitivity and moves the calibration figures asserted
+   in `test_regression_calibration.py`, which is a decision to take on its own
+   evidence rather than as a side effect of correcting a measurement.
+   `relevance` keeps its own floor of 0.15.
 3. **One trace carries no faithfulness signal.** The `error` scenario's retriever
    fails before the writer runs, so there is no writer span and the metric scores
    1.0 for "no applicable spans" — clean and fabricated alike. This part stands:
@@ -908,32 +1083,59 @@ defects in shipped behaviour, that file is decisions and deferrals.
 
 ## Next up
 
-**The demo opening is now settled, and item 3 below is closed by data.** A
-degraded agent version exists, the gate blocks it at `p=0.0043`, and the clean
-agent still passes — so the "CI blocks a merge" frame has real numbers behind it
-for the first time. The baseline was never re-pinned to manufacture it.
+All build work is merged. `main` is `983fef2`; PRs #12 and #13 landed
+2026-08-12. Local `main` may be stale — `git checkout main && git pull` first.
+Tags stop at `phase-8`, so the composite-action and paired-detection phases are
+untagged.
 
-1. **Merge PR #12** (`feat/paired-regression`). 8/8 CI green. PR #10 is already
-   merged at `a68c165`.
+**The demo PR exists and is open: [#14](https://github.com/yash2484/AgentProof/pull/14).**
+It did not go the way the previous session's note predicted. It shows 8/8 green
+over a genuinely degraded agent, and the reason is **Gap A** above, not a
+mistake in the PR. Read that gap before writing a word about the gate.
 
-2. **Re-open the demo pull request.** The earlier one (#11) was closed because
-   it showed a full row of green checks over a degraded agent, which argued
-   against the product. Under paired detection it now blocks, which is the
-   artifact worth showing.
+**Resolved 2026-08-14, no longer blocking:** credit restored (native key, both
+pinned judge models verified serving as requested); Gap B fixed (`8140973`); Gap
+A measured and downgraded; the local-vs-CI discrepancy ruled out via capture
+determinism. Judge spend for the whole investigation: ~$0.67.
 
-3. **Decide `R23` — a single security breach does not block.** The likeliest
-   fix is routing zero-noise metrics to an absolute-drop rule instead of a
-   statistical one. This is the most substantive open question in the repo.
+0. **Merge `fix/judge-unmeasurable`.** One commit, `8140973`. Suite green, lint
+   clean. The only code change from this session and it stands on its own — an
+   unreachable judge no longer reads as a destroyed agent.
 
-4. **Re-read *Claims status* end to end** before anything goes on a CV. Every
-   quantified claim must be traceable to a real run. Three entries there are now
-   marked superseded; do not quote them from memory.
+1. **Decide `R23` — a single security breach does not block.** Likeliest fix is
+   routing zero-noise metrics to an absolute-drop rule instead of a statistical
+   one. Now the top open design question, Gap A having been downgraded.
 
-5. **The post and the demo script**, written around the real arc: a gate that
-   shipped, failed its own test, was diagnosed with a variance decomposition,
-   and now fires. Lead with the failure — it is the part that is hard to fake.
+2. **Re-read *Claims status* end to end** before anything goes on a CV or into a
+   post. Every quantified claim must trace to a real run. Several entries are
+   marked superseded; three new rows landed 2026-08-14. Do not quote any figure
+   from memory, and quote the gate's **miss rate**, never the bare claim.
 
-No new backend work beyond `R23`. Everything below is parked deliberately.
+3. **Optional, own declared change: correct the baseline** to the mean of k
+   clean draws (see Gap A). Improves the accuracy of the reported drop; does
+   nothing for stability; invalidates every recorded baseline figure. This is
+   also the only legitimate route to a re-run of PR #14 — it genuinely changes
+   the instrument, so a fresh CI verdict would be a new measurement rather than
+   a retry. Declare it before running it.
+
+4. **The post and the demo script.** The safe arc, all of it verified: a gate
+   shipped, was tested against a real injected regression, **failed to catch
+   it**, was diagnosed by decomposing the variance (between-scenario difficulty
+   was being counted as measurement noise, sigma 0.218 against a true
+   run-to-run 0.034), was rebuilt as a paired comparison, and the smallest
+   resolvable drop went from 0.116 to 0.050. Then it was re-tested and the
+   verdict proved unstable, which is Gap A, which is open.
+
+   Lead with the failure. Do not claim a stable block. Do not quote
+   `p=0.0043` without also quoting `p=0.0996` from the 2026-08-14 run on
+   identical inputs.
+
+**Standing constraints, still in force.** Never re-pin a baseline to manufacture
+a regression. Never tune a degradation until the p-value looks good. Never
+re-run a gate hoping for a different verdict — the first run is the result.
+Never print or commit `ANTHROPIC_API_KEY`.
+
+Everything below is parked deliberately.
 
 ### Parked — backend and data
 

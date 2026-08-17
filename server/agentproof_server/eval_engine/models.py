@@ -32,6 +32,13 @@ class EvalScore(BaseModel):
     details: dict | None = None
     raw_judge_output: dict | None = None
     latency_ms: int | None = None
+    # The evaluator ran but could not obtain a measurement — a judge that could
+    # not be reached, refused, or returned unparseable output. ``value`` is then
+    # a placeholder with no meaning, and no consumer may read it as a score.
+    # This exists because 0.0 was serving as both "measured, terrible" and "not
+    # measured", which let an exhausted credit balance render as a catastrophic
+    # quality regression and fail the build.
+    unmeasurable: bool = False
 
 
 class EvalResult(BaseModel):
@@ -49,6 +56,10 @@ class EvalResult(BaseModel):
     raw_judge_output: dict | None = None
     evaluated_at: datetime
     baseline_id: str | None = None
+    # Carried through from ``EvalScore`` — see the note there. A row with this
+    # set records that the metric was attempted and not measured; ``score`` and
+    # ``passed`` are both meaningless on it.
+    unmeasurable: bool = False
 
 
 class MetricConfig(BaseModel):
@@ -195,7 +206,7 @@ class RegressionResult(BaseModel):
     # Reported so a verdict can never be read without knowing how it was
     # reached, which is also why every exit sets it rather than inheriting this
     # default.
-    method: Literal["paired", "welch", "floor", "none"] = "welch"
+    method: Literal["paired", "welch", "floor", "none", "unmeasurable"] = "welch"
     cohens_dz: float | None = None
     paired_n: int | None = None
 

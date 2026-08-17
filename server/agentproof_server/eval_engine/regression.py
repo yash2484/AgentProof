@@ -207,13 +207,51 @@ def _detect_paired(
     )
 
 
+def _detect_unmeasurable(
+    baseline: Baseline, unmeasurable: int, total_pinned: int
+) -> RegressionResult:
+    """The judge could not be reached for some scenarios, so there is no verdict.
+
+    Returned instead of a comparison, never alongside one. A metric whose judge
+    failed has no candidate distribution to test: the placeholder values are not
+    low scores, they are absent ones. Reporting a drop here is how an exhausted
+    credit balance came to look like a destroyed agent.
+    """
+    return RegressionResult(
+        metric_name=baseline.metric_name,
+        baseline_mean=baseline.mean,
+        candidate_mean=baseline.mean,  # no candidate exists; do not imply a delta
+        delta=0.0,
+        t_statistic=None,
+        p_value=None,
+        cohens_d=None,
+        cohens_dz=None,
+        paired_n=None,
+        method="unmeasurable",
+        is_regression=False,
+        is_warning=True,
+        reason=(
+            f"Could not measure: {unmeasurable} of {total_pinned} scenario(s) "
+            f"lost their judge (failed or refused). No verdict is possible for "
+            f"this metric — this is an infrastructure failure, not a quality "
+            f"result, and it is neither a pass nor a regression."
+        ),
+    )
+
+
 def detect_regression(
     baseline: Baseline,
     candidate_scores: Sequence[float],
     cfg: RegressionConfig,
     candidate_by_key: Mapping[str, float] | None = None,
+    unmeasurable_keys: set[str] | None = None,
 ) -> RegressionResult:
     """Decide whether the candidate is a regression against ``baseline``.
+
+    ``unmeasurable_keys`` names scenarios whose judge could not be reached this
+    run. Any such scenario short-circuits to a "could not measure" verdict
+    rather than a comparison: a partially-judged corpus would quietly shrink the
+    population under test, and a fully-unjudged one reads as a total collapse.
 
     Pairs scenario-by-scenario when both sides carry keys and the candidate
     covers **every** pinned scenario; otherwise falls back to the two-sample
@@ -229,6 +267,13 @@ def detect_regression(
     the reason string.
     """
     baseline_by_key = baseline.scores_by_key
+    if unmeasurable_keys:
+        return _detect_unmeasurable(
+            baseline,
+            unmeasurable=len(unmeasurable_keys),
+            total_pinned=len(baseline_by_key or baseline.scores),
+        )
+
     if baseline_by_key and candidate_by_key:
         keys = sorted(set(baseline_by_key) & set(candidate_by_key))
         covers_baseline = len(keys) == len(baseline_by_key)
