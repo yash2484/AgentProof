@@ -58,15 +58,33 @@ metrics:
     # this to true to make a demo fire is tuning the gate to the result.
     ci_block: false
     # Measured, not chosen. Two evaluations of a byte-identical corpus moved
-    # relevance with a per-scenario sd of 0.144 (faithfulness: 0.034), putting
-    # three sigma of purely spurious mean movement at 0.120 — above the global
-    # 0.05 floor. At 0.05 this metric would report regressions invented by the
-    # judge. The instability is concentrated in two scenarios the rubric does
-    # not cover: `unanswerable`, where a correct refusal has no band and the
-    # judge oscillates 0.00-0.40, and `partially_covered`, which straddles the
-    # 0.4 and 0.7 bands and ranges 0.40-0.70. The floor is a containment
-    # measure; the fix is a rubric that covers refusal, and that needs its own
-    # re-pin because it changes what the metric measures.
+    # relevance with a per-scenario sd of 0.144, putting three sigma of purely
+    # spurious mean movement at 0.120 — above the global 0.05 floor. At 0.05
+    # this metric would report regressions invented by the judge. The
+    # instability is concentrated in two scenarios the rubric does not cover:
+    # `unanswerable`, where a correct refusal has no band and the judge
+    # oscillates 0.00-0.40, and `partially_covered`, which straddles the 0.4
+    # and 0.7 bands and ranges 0.40-0.70. The floor is a containment measure;
+    # the fix is a rubric that covers refusal, and that needs its own re-pin
+    # because it changes what the metric measures.
+    #
+    # CORRECTION, 2026-08-14. The parenthetical here read "(faithfulness:
+    # 0.034)" and that figure is too small. It came from two evaluations; five
+    # clean draws over a byte-identical corpus put faithfulness per-scenario sd
+    # at a median of 0.066 and a max of 0.126 — roughly double. Measured on the
+    # degraded corpus of PR #14, every draw checked for failed judge calls.
+    #
+    # This does not change any threshold in this file, but it re-rates the
+    # global `min_mean_drop: 0.05` that `faithfulness` runs on. The standard
+    # error of a 13-scenario mean is sd/sqrt(13): 0.0094 under the old figure,
+    # 0.018 under the measured one. So the 0.05 floor sits at about **2.7
+    # sigma** of purely spurious mean movement, not the ~5 sigma the old number
+    # implied. It is a thinner margin than previously documented.
+    #
+    # The floor is deliberately NOT raised here. Raising it would cut the
+    # gate's sensitivity and move the calibration figures asserted in
+    # `test_regression_calibration.py`, and that is a decision to take on its
+    # own evidence rather than as a side effect of correcting a comment.
     min_mean_drop: 0.15
 
   # ── Cost & performance (deterministic) ──
