@@ -76,7 +76,7 @@ is worth saying so where it is quoted. Across five evaluations of the identical
 fixture it returned 0.00, 0.10, 0.10, 0.40 and 0.40. The rubric has a band for
 "directly answers" and a band for "off-topic or empty", and none for "correctly
 declined because the corpus cannot answer" — so the judge picks a different band
-each run. See the limitations.
+each run. See [docs/limitations.md](docs/limitations.md).
 
 ## Evidence, not adjectives
 
@@ -624,14 +624,15 @@ name their test package `tests`.
 ## Honest limitations
 
 Kept here deliberately, because a harness that overstates itself is the thing it
-exists to prevent.
+exists to prevent. These five change how you should read every number above. The
+complete list — scope, measurement caveats, and the open defects — is in
+[docs/limitations.md](docs/limitations.md).
 
-- **This is not an observability product.** Evaluation is after-the-fact and
-  batch; there is no live ingest, no alerting, and no streaming view. It stores
-  traces because it needs them to grade, not to compete on tracing.
-- **It is the wrong shape for ad-hoc use.** The gate compares a fixed input set
-  against a pinned baseline. A developer using an LLM CLI runs a different task
-  every session, so there is nothing stable to pin a baseline against.
+- **The demo agent is the only agent it has run against.** Every number on this
+  page comes from one 13-scenario LangGraph agent written by the same author.
+  LangGraph is also the only auto-instrumentation adapter, though the core is
+  framework-neutral and manual instrumentation works anywhere. Instrumenting a
+  second, unrelated project is the next real validation.
 - **The LLM judge is not calibrated against human labels.** It discriminates
   fabrication from grounded text by a wide margin, but no agreement statistic
   (Cohen's kappa or otherwise) has been computed against a hand-labelled gold
@@ -640,54 +641,20 @@ exists to prevent.
   stresses the deterministic and security checks hard enough. The dashboard
   reports them as unexercised rather than passing, which is the honest reading
   but not a substitute for exercising them.
-- **One adapter ships.** The core is framework-neutral and manual instrumentation
-  works anywhere, but LangGraph is the only auto-instrumentation adapter today.
-- **The demo agent is the only agent it has run against.** Instrumenting a second,
-  unrelated project is the next real validation.
-- **Alembic migrations are scaffolded, not written.** `versions/` is empty, so a
-  declared `ondelete="CASCADE"` is not in the deployed schema.
-- **The batch eval endpoint can return 200 without persisting.**
-  `test_eval_pipeline_end_to_end` reproduces it intermittently (roughly 2 runs in
-  4): POST a batch, get 200, then 404 on the trace, with no rows written. An
-  endpoint that reports success without writing is the same class of defect as a
-  metric that reports a pass without measuring, and it is open.
-- **`trigger_evals` has a fixed timeout against a variable batch.**
-  `demo_agent/demo_agent/export.py` hard-codes a 30-second HTTP timeout for a
-  batch whose cost depends entirely on the config it runs. It currently passes
-  in about 20 seconds, but only because `injection_resistance` was moved from
-  `dual` to `heuristic`, which stopped it making a judge call on every
-  `llm_call` span. Measured by putting it back: `dual` fails at 36.3s, and
-  `heuristic` passes in three consecutive runs. The symptom is gone; the defect
-  is not. Adding scenarios or re-enabling a judge-backed security metric brings
-  it straight back, and the fix is a timeout that scales with the batch.
 - **A single security breach does not block the build.** The effect-size guard
   is designed for graded quality metrics, where one bad answer should not
   convict a whole suite. Applied to security it reads oddly: one scenario in
   thirteen successfully prompt-injected produces `d_z=0.277` and passes, and it
-  takes three before the gate fires. A breach is not a trend, and the six
-  measured metrics have a run-to-run standard deviation of **0.000**, so there
-  is no noise for a statistical guard to see through — every drop is signal.
-  Reproduction and the full table are in
+  takes three before the gate fires. Reproduction and the full table are in
   [docs/walkthrough.md](docs/walkthrough.md). Open, and the likeliest fix is to
   route zero-noise metrics to an absolute-drop rule rather than a statistical
   one.
-- **`relevance` is not yet trustworthy, and is contained rather than fixed.**
-  Its rubric has a band for "directly answers" and one for "off-topic or empty",
-  and none for *correctly declining because the corpus cannot answer*. On the
-  `unanswerable` scenario the judge therefore picks a different band each run:
-  0.00, 0.10, 0.10, 0.40, 0.40 across five evaluations of an identical fixture.
-  It is held back by a per-metric floor of 0.15 and reports without blocking,
-  but a floor is containment. The rubric needs the missing band, and that
-  changes what the metric measures, so it needs its own re-pin.
-- **A pinned baseline carries one evaluation run's judge noise.** Baselines are
-  built from a single pass, so whatever the judge happened to return that day
-  becomes the reference. Averaging over several runs would reduce it; there is
-  no `--repeat` yet. The practical-significance floors are what keep this from
-  mattering, and they are sized against measured noise, but the reference itself
-  is noisier than it needs to be.
-- **The positioning above is a judgement, not a validated finding.** It is
-  inferred from what the code does well. It has not been checked against a team
-  that ships an agent in production.
+- **The batch eval endpoint can return 200 without persisting.**
+  `server/tests/integration/test_eval_pipeline.py` reproduces it intermittently
+  (measured at 2 failures in 4 consecutive runs): POST a batch, get 200, then
+  404 on the trace, with no rows written. An endpoint that reports success
+  without writing is the same class of defect as a metric that reports a pass
+  without measuring, and it is open.
 
 ## License
 
