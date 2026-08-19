@@ -6,7 +6,7 @@ showed. This brief records the diagnosis, the decisions, and what was
 deliberately deleted.
 
 Written 2026-08-10. Companion to
-`docs/superpowers/specs/2026-08-09-analytics-depth-design.md` and
+`docs/specs/2026-08-09-analytics-depth-design.md` and
 `docs/review-later.md` (R3 opened this work).
 
 ---

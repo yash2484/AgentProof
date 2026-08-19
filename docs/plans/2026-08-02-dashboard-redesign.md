@@ -247,7 +247,7 @@ describe("span-type fills", () => {
 });
 
 describe("measured ratios match the approved design spec", () => {
-  // Exact values from docs/superpowers/specs/2026-08-02-dashboard-redesign-design.md.
+  // Exact values from docs/specs/2026-08-02-dashboard-redesign-design.md.
   // A change here means the palette moved — update the spec, don't loosen the test.
   const EXPECTED: Array<[string, string, number]> = [
     ["ink", tokens.ink, 15.06],

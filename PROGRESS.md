@@ -501,7 +501,7 @@ New pure modules, both TDD: `lib/verdict.ts` (14 tests) and `lib/provenance.ts`
 
 ## Built & verified this phase — Overview analytics (server)
 
-Design spec: `docs/superpowers/specs/2026-08-08-overview-analytics-design.md`.
+Design spec: `docs/specs/2026-08-08-overview-analytics-design.md`.
 Handover: *(session notes, since removed)*.
 
 - [x] **`GET /api/v1/evals/analytics`** — one endpoint, six SQL aggregates
@@ -586,7 +586,7 @@ same trace in *two* runs still counts in each.
 
 ## Built & verified — analytics depth, Phase A (Overview corrections)
 
-Design spec: `docs/superpowers/specs/2026-08-09-analytics-depth-design.md` §6.4.
+Design spec: `docs/specs/2026-08-09-analytics-depth-design.md` §6.4.
 Phase B (the `synthetic-showcase` corpus) shipped first and is what exposed
 three of these four defects — at 25 traces and 4 runs they were invisible.
 
