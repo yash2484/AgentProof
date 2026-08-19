@@ -255,7 +255,7 @@ dashboard is the evidence, not the claim.
 ## Decided, not yet built — Ledger, the theme rework
 
 **Spec:** `docs/design/2026-08-10-ledger-design-system.md` ·
-**Handover:** `docs/handover-ledger-frontend.md` ·
+**Handover:** *(session notes, since removed)* ·
 **Specimen:** https://claude.ai/code/artifact/f11669ac-9f3c-4bb8-8b62-49b0e0d037f0
 
 The dashboard moves from a dark console ("Graphite & Magenta") to a **light
@@ -401,7 +401,7 @@ taking the calibration test's own stale copy on trust.
 ## Built & verified — Ledger (previous phase)
 
 Spec: `docs/design/2026-08-10-ledger-design-system.md`. Built in the eight
-steps of `docs/handover-ledger-frontend.md`, one commit each, every one green.
+steps of the Ledger frontend handover, one commit each, every one green.
 
 **The dashboard is a light document that carries data.** Prose is serif on
 paper, data is mono on a tinted panel, and a colour always means a status.
@@ -502,7 +502,7 @@ New pure modules, both TDD: `lib/verdict.ts` (14 tests) and `lib/provenance.ts`
 ## Built & verified this phase — Overview analytics (server)
 
 Design spec: `docs/superpowers/specs/2026-08-08-overview-analytics-design.md`.
-Handover: `docs/handover-overview-analytics.md`.
+Handover: *(session notes, since removed)*.
 
 - [x] **`GET /api/v1/evals/analytics`** — one endpoint, six SQL aggregates
   (`server/agentproof_server/api/analytics.py`). Every figure computed in SQL;

@@ -1,6 +1,6 @@
 """Ledger visual + accessibility audit.
 
-The browser half of the gate described in `docs/handover-ledger-frontend.md`:
+The browser half of the visual gate:
 zero horizontal overflow, zero console errors, WCAG AA contrast, at 1440px
 and 390px across every route.
 
